@@ -1,0 +1,1 @@
+ALTER TYPE "public"."activity_subject" ADD VALUE 'sop_run_step';

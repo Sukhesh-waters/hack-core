@@ -1,0 +1,1 @@
+ALTER TABLE "harness_rules" ENABLE ROW LEVEL SECURITY;

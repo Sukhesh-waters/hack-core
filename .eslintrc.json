@@ -1,0 +1,35 @@
+{
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "@/lib/realtime",
+            "importNames": ["broadcastSignal"],
+            "message": "Direct use of broadcastSignal is restricted for business mutations. Use emitDomainEvent from @/lib/events/dispatch to ensure activity recording, realtime fan-out, and Inngest triggers."
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/lib/events/**/*",
+        "src/lib/realtime.ts",
+        "src/lib/realtime.test.ts",
+        "src/app/**/chat/**/*",
+        "src/app/**/kb/**/*",
+        "src/inngest/functions/sop-reconciliation.ts",
+        "src/inngest/functions/sop-reverse-sync.ts",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
+}

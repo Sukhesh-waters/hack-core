@@ -1,0 +1,1 @@
+ALTER TYPE "public"."brand_status" ADD VALUE 'declared';

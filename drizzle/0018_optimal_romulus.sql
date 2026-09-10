@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "content_idea_id_unique" ON "content" USING btree ("idea_id") WHERE "content"."idea_id" is not null;
