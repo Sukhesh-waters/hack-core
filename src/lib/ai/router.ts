@@ -43,6 +43,8 @@ export type ChatTask = {
   json?: boolean;
   /** "fast" (default): Groq→Gemini. "quality": Bedrock→Gemini Pro→Groq. */
   tier?: "fast" | "quality";
+  /** Bypass the ladder and call this provider only (Platina debate pin). */
+  pin?: "groq" | "gemini" | "bedrock";
 };
 export type EmbedTask = { kind: "embed"; texts: string[] };
 
@@ -75,8 +77,11 @@ export async function routeAI(
     return vectors;
   }
 
-  const outcome =
-    task.tier === "quality" ? await qualityChat(task) : await fastChat(task);
+  const outcome = task.pin
+    ? await pinnedChat(task)
+    : task.tier === "quality"
+      ? await qualityChat(task)
+      : await fastChat(task);
   logAiUsage({
     provider: outcome.provider,
     model: outcome.model,
@@ -88,6 +93,12 @@ export async function routeAI(
     tokensOut: outcome.tokensOut ?? estimateTokens(outcome.text),
   });
   return outcome.text;
+}
+
+async function pinnedChat(task: ChatTask): Promise<ChatOutcome> {
+  if (task.pin === "groq") return groqChat(task);
+  if (task.pin === "gemini") return geminiChat(task);
+  return bedrockChat(task);
 }
 
 async function fastChat(task: ChatTask): Promise<ChatOutcome> {

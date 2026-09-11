@@ -1,6 +1,9 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./schema";
+import * as instamediaSchema from "./schema";
+import * as platinaSchema from "./platina-schema";
+
+const schema = { ...instamediaSchema, ...platinaSchema };
 
 export function isDbConfigured() {
   return Boolean(process.env.DATABASE_URL);

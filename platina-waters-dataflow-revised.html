@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Platina AI OS — Waters Data Flow Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Public+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0E1F29; --ink2:#1D3B48; --paper:#FBFAF7; --card:#FFFFFF;
+  --a:#0C7C7A; --al:#DCEFEE; --ad:#065654;      /* plane A · first-party */
+  --b:#A8630F; --bl:#FAEEDA; --bd:#6F4006;      /* plane B · market signal */
+  --c:#4C43A8; --cl:#E7E5F7; --cd:#2F2878;      /* plane C · brain */
+  --g:#B03A22; --gl:#F9E6E1; --gd:#742316;      /* gates & loop */
+  --mut:#5C6E76; --line:#DEDDD6; --line2:#C3C7C5;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:'Public Sans',system-ui,sans-serif;font-size:15.5px;line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:0 30px}
+code,.mono{font-family:'IBM Plex Mono',monospace}
+
+.hero{background:var(--ink);color:#E9F1F0;padding:56px 0 44px}
+.eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.17em;
+  text-transform:uppercase;color:var(--a);margin:0 0 16px}
+.hero h1{font-family:'Instrument Serif',serif;font-weight:400;font-size:clamp(38px,6vw,64px);
+  line-height:1;margin:0 0 12px;letter-spacing:-.015em}
+.hero h1 em{font-style:italic;color:#43B5AE}
+.hero p{color:#A2BAC0;max-width:660px;font-weight:300;font-size:17px;margin:0}
+.stats{display:flex;flex-wrap:wrap;gap:34px;margin-top:34px;padding-top:22px;border-top:1px solid #274450}
+.stat b{display:block;font-family:'Instrument Serif',serif;font-size:30px;color:#E9F1F0;line-height:1}
+.stat span{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.09em;
+  text-transform:uppercase;color:#6E8C95}
+
+section{padding:54px 0 0}
+.secnum{font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:.16em;
+  color:var(--a);display:block;margin-bottom:7px}
+h2{font-family:'Instrument Serif',serif;font-weight:400;font-size:34px;line-height:1.1;margin:0 0 10px}
+h3{font-weight:600;font-size:16.5px;margin:28px 0 7px}
+h4{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--mut);margin:22px 0 7px}
+p{margin:0 0 13px;max-width:76ch}
+ul{max-width:76ch;padding-left:20px;margin:0 0 13px}li{margin:0 0 5px}
+hr{border:0;height:1px;background:var(--line);margin:46px 0 0}
+
+figure{margin:24px 0 26px}
+figure svg{display:block;width:100%;height:auto;background:var(--card);
+  border:1px solid var(--line);border-radius:3px}
+figcaption{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--mut);
+  margin-top:9px;line-height:1.5}
+figcaption b{color:var(--ink);font-weight:500}
+
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th{text-align:left;font-family:'IBM Plex Mono',monospace;font-weight:500;font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--mut);
+  padding:0 13px 8px 0;border-bottom:1px solid var(--line2);vertical-align:bottom}
+td{padding:10px 13px 10px 0;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.45}
+td.m{font-family:'IBM Plex Mono',monospace;font-size:12.5px}
+.pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  letter-spacing:.07em;padding:2px 7px;border-radius:2px;text-transform:uppercase;white-space:nowrap}
+.pa{background:var(--al);color:var(--ad)} .pb{background:var(--bl);color:var(--bd)}
+.pc{background:var(--cl);color:var(--cd)} .pg{background:var(--gl);color:var(--gd)}
+.po{background:#EDECE6;color:#57574F}
+
+.flag{border-left:3px solid var(--b);background:var(--bl);padding:15px 20px;margin:18px 0}
+.key{border-left:3px solid var(--g);background:var(--gl);padding:15px 20px;margin:18px 0}
+.note{border-left:3px solid var(--a);background:var(--al);padding:15px 20px;margin:18px 0}
+.flag .t,.key .t,.note .t{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;display:block;margin-bottom:5px}
+.flag .t{color:var(--bd)}.key .t{color:var(--gd)}.note .t{color:var(--ad)}
+.flag p:last-child,.key p:last-child,.note p:last-child{margin-bottom:0}
+pre{background:var(--ink);color:#CBDEDD;font-family:'IBM Plex Mono',monospace;font-size:12.5px;
+  line-height:1.7;padding:18px 22px;border-radius:3px;overflow-x:auto;margin:16px 0}
+pre .c{color:#6D868E}pre .k{color:#46B3AA}pre .v{color:#D69A4E}
+footer{background:var(--ink);color:#8CA6AD;margin-top:70px;padding:38px 0 46px;
+  font-family:'IBM Plex Mono',monospace;font-size:12px}
+footer b{color:#E9F1F0;font-weight:500}
+@media(max-width:720px){.wrap{padding:0 18px}h2{font-size:27px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">Revised architecture · replaces the InstaMedia map</p>
+    <h1>Platina <em>AI OS</em></h1>
+    <p>Real-time marketing intelligence for Waters — campaign planning, brand governance, competitor analysis and in-person event orchestration. Three data planes, a contradiction layer, and a Brain that learns without forgetting where it learned it.</p>
+    <div class="stats">
+      <div class="stat"><b>3</b><span>data planes</span></div>
+      <div class="stat"><b>4</b><span>human gates</span></div>
+      <div class="stat"><b>2</b><span>debating agents, 1 round</span></div>
+      <div class="stat"><b>2</b><span>vector stores</span></div>
+      <div class="stat"><b>20</b><span>min-N honesty gate</span></div>
+      <div class="stat"><b>0</b><span>writes to any Waters system</span></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<section>
+<span class="secnum">01</span>
+<h2>What changed, and why</h2>
+<p>The InstaMedia map was built for social publishing: Instagram reels, hashtag harvesting, engagement z-scores, a posting scheduler. Waters does none of that. Waters runs digital campaigns, brand programmes and in-person events — conferences, symposia, trade shows — with an outcome signal measured in pipeline, not likes.</p>
+<table>
+<thead><tr><th style="width:28%">InstaMedia</th><th style="width:16%">Fate</th><th>Platina at Waters</th></tr></thead>
+<tbody>
+<tr><td>Meta API sync · engagement metrics</td><td><span class="pill po">Cut</span></td><td>Campaign outcome ingest — reach, response, lead quality, pipeline contribution</td></tr>
+<tr><td>Reels, hashtags, comment mining</td><td><span class="pill po">Cut</span></td><td>Nothing. Wrong channel for a considered capital purchase</td></tr>
+<tr><td>Publish scheduler → social</td><td><span class="pill po">Cut</span></td><td>Campaign calendar with event anchors and pre/at/post-event phases</td></tr>
+<tr><td>Caption compliance meter</td><td><span class="pill pb">Retool</span></td><td>Claims and terminology screen for regulated marketing copy</td></tr>
+<tr><td>Engagement z-score as primary signal</td><td><span class="pill pb">Retool</span></td><td>Lead-quality weighted score — conversion rate, not volume</td></tr>
+<tr><td>Two-layer rule (first-party / pattern)</td><td><span class="pill pc">Extended</span></td><td><b>Three planes</b> — declared, market signal, derived Brain. Provenance on every chunk</td></tr>
+<tr><td>Brand DNA agent</td><td><span class="pill pa">Keep</span></td><td>Brand Gene — extract, author, reconcile across divisions</td></tr>
+<tr><td>Model router, budget cap, telemetry</td><td><span class="pill pa">Keep</span></td><td>Unchanged. Single call-site for every model call</td></tr>
+<tr><td>Min-N honesty gate</td><td><span class="pill pa">Keep</span></td><td>Matters more here — the baseline grows slowly on a long sales cycle</td></tr>
+<tr><td>Statistical learning loop</td><td><span class="pill pc">Extended</span></td><td>Two loops at different speeds — see §07</td></tr>
+<tr><td>—</td><td><span class="pill pc">New</span></td><td>Contradiction layer · Brain store · compaction lifecycle · SOP harness</td></tr>
+</tbody>
+</table>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">02</span>
+<h2>Three planes, not two</h2>
+<p>The original rule kept measured first-party data apart from scraped public content. That rule still holds — but the Brain introduces a third category the old model had no name for: <em>reasoning derived from market signal</em>. It is not raw signal, and it is not measured truth. Giving it its own plane is what keeps the honesty property intact.</p>
+
+<figure>
+<svg viewBox="0 0 1000 372" role="img" aria-label="Three data planes with provenance rules">
+<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="26" y="34" width="296" height="220" rx="4" fill="#DCEFEE" stroke="#0C7C7A"/>
+<text x="46" y="62" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#065654">PLANE A · DECLARED + FIRST-PARTY</text>
+<text x="46" y="92" font-family="Instrument Serif, serif" font-size="21" fill="#0E1F29">What we know</text>
+<g font-family="Public Sans" font-size="13" fill="#1D3B48">
+<text x="46" y="120">Brand standard, declared by a human</text>
+<text x="46" y="144">Our own campaign history</text>
+<text x="46" y="168">Measured outcomes — leads, quality,</text>
+<text x="46" y="188">pipeline contribution</text></g>
+<rect x="46" y="206" width="256" height="30" rx="3" fill="#0C7C7A"/>
+<text x="60" y="226" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#FFFFFF">EMBEDDED · CITABLE AS EVIDENCE</text>
+
+<rect x="352" y="34" width="296" height="220" rx="4" fill="#FAEEDA" stroke="#A8630F"/>
+<text x="372" y="62" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#6F4006">PLANE B · MARKET SIGNAL, RAW</text>
+<text x="372" y="92" font-family="Instrument Serif, serif" font-size="21" fill="#0E1F29">What we observed</text>
+<g font-family="Public Sans" font-size="13" fill="#1D3B48">
+<text x="372" y="120">Competitor public pages, releases</text>
+<text x="372" y="144">Published ad creative</text>
+<text x="372" y="168">Conference abstracts, trade editorial</text>
+<text x="372" y="188">Fetched as-is, never interpreted here</text></g>
+<rect x="372" y="206" width="256" height="30" rx="3" fill="#FFFFFF" stroke="#A8630F" stroke-dasharray="4 3"/>
+<text x="386" y="226" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#6F4006">NOT EMBEDDED · NOT CITABLE</text>
+
+<rect x="678" y="34" width="296" height="220" rx="4" fill="#E7E5F7" stroke="#4C43A8"/>
+<text x="698" y="62" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.4" fill="#2F2878">PLANE C · BRAIN, DERIVED</text>
+<text x="698" y="92" font-family="Instrument Serif, serif" font-size="21" fill="#0E1F29">What we inferred</text>
+<g font-family="Public Sans" font-size="13" fill="#1D3B48">
+<text x="698" y="120">Insights that survived contradiction</text>
+<text x="698" y="144">Confidence score + agreement state</text>
+<text x="698" y="168">Source chunk IDs + generation counter</text>
+<text x="698" y="188">Debate transcript ID for audit</text></g>
+<rect x="698" y="206" width="256" height="30" rx="3" fill="#4C43A8"/>
+<text x="712" y="226" font-family="IBM Plex Mono, monospace" font-size="11.5" fill="#FFFFFF">EMBEDDED · CITABLE AS HYPOTHESIS</text>
+
+<line x1="648" y1="144" x2="672" y2="144" class="arr" stroke="#5C6E76" stroke-width="1.4" marker-end="url(#ar)"/>
+<text x="660" y="132" font-family="IBM Plex Mono, monospace" font-size="10" fill="#5C6E76" text-anchor="middle">contradiction</text>
+
+<rect x="26" y="280" width="948" height="62" rx="4" fill="#FFFFFF" stroke="#B03A22" stroke-width="1.4"/>
+<text x="46" y="304" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1.3" fill="#742316">RETRIEVAL CONTRACT — enforced in code</text>
+<text x="46" y="328" font-family="Public Sans" font-size="13.5" fill="#1D3B48">A and C are returned in separate buckets. The generator must phrase them differently: “our own data shows …” versus “market pattern suggests, unvalidated …”. A Plane C chunk can never be the sole support for a recommendation.</text>
+</svg>
+<figcaption><b>Fig. 1</b> — Plane B has no embedding column, so it cannot reach a citation. Plane C is embedded but tagged, so it can inform without impersonating evidence.</figcaption>
+</figure>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">03</span>
+<h2>End-to-end flow</h2>
+
+<figure>
+<svg viewBox="0 0 1000 620" role="img" aria-label="Platina end-to-end data flow for Waters">
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<g font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#5C6E76" letter-spacing="1.1">
+<text x="26" y="24">ONBOARD</text><text x="26" y="150">SCAN</text><text x="26" y="300">REASON</text>
+<text x="26" y="424">DECIDE</text><text x="26" y="548">EXECUTE</text></g>
+
+<rect x="120" y="32" width="180" height="52" rx="4" fill="#DCEFEE" stroke="#0C7C7A"/>
+<text x="134" y="54" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Login · isolation</text>
+<text x="134" y="72" font-family="Public Sans" font-size="11.5" fill="#5C6E76">division + region workspace</text>
+
+<rect x="326" y="32" width="200" height="52" rx="4" fill="#DCEFEE" stroke="#0C7C7A"/>
+<text x="340" y="54" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Brand Gene</text>
+<text x="340" y="72" font-family="Public Sans" font-size="11.5" fill="#5C6E76">extract · author · reconcile</text>
+
+<rect x="552" y="32" width="186" height="52" rx="4" fill="#F9E6E1" stroke="#B03A22" stroke-width="1.5"/>
+<text x="566" y="54" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Gate 1 · declare</text>
+<text x="566" y="72" font-family="Public Sans" font-size="11.5" fill="#742316">human sets the standard</text>
+
+<rect x="764" y="32" width="210" height="52" rx="4" fill="#0C7C7A"/>
+<text x="778" y="54" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#FFFFFF">Brand Gene vector store</text>
+<text x="778" y="72" font-family="Public Sans" font-size="11.5" fill="#BDE5E3">chunk · embed · plane A</text>
+
+<rect x="120" y="106" width="854" height="40" rx="4" fill="#FFFFFF" stroke="#C3C7C5"/>
+<text x="134" y="131" font-family="Public Sans" font-size="13.5" fill="#1D3B48"><tspan font-weight="600">Cockpit</tspan>  ·  single landing surface — every flow below is triggered, monitored and audited from here</text>
+
+<rect x="120" y="168" width="200" height="56" rx="4" fill="#FFFFFF" stroke="#C3C7C5"/>
+<text x="134" y="190" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Define targets</text>
+<text x="134" y="209" font-family="Public Sans" font-size="11.5" fill="#5C6E76">operator names competitors,</text>
+<text x="134" y="223" font-family="Public Sans" font-size="11.5" fill="#5C6E76">topics, sources</text>
+
+<rect x="346" y="168" width="186" height="56" rx="4" fill="#F9E6E1" stroke="#B03A22" stroke-width="1.5"/>
+<text x="360" y="190" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Gate 2 · confirm</text>
+<text x="360" y="209" font-family="Public Sans" font-size="11.5" fill="#742316">scope reviewed before</text>
+<text x="360" y="223" font-family="Public Sans" font-size="11.5" fill="#742316">any fetch runs</text>
+
+<rect x="558" y="168" width="196" height="56" rx="4" fill="#FAEEDA" stroke="#A8630F"/>
+<text x="572" y="190" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Orchestrated fetch</text>
+<text x="572" y="209" font-family="Public Sans" font-size="11.5" fill="#6F4006">public pages only · own code</text>
+<text x="572" y="223" font-family="Public Sans" font-size="11.5" fill="#6F4006">rate-limited · circuit-broken</text>
+
+<rect x="780" y="168" width="194" height="56" rx="4" fill="#FAEEDA" stroke="#A8630F" stroke-dasharray="5 3"/>
+<text x="794" y="190" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Raw signal store</text>
+<text x="794" y="209" font-family="Public Sans" font-size="11.5" fill="#6F4006">plane B · no embedding</text>
+<text x="794" y="223" font-family="Public Sans" font-size="11.5" fill="#6F4006">column exists</text>
+
+<rect x="120" y="252" width="854" height="112" rx="4" fill="#E7E5F7" stroke="#4C43A8" stroke-width="1.5"/>
+<text x="138" y="276" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1.3" fill="#2F2878">CONTRADICTION LAYER — runs BEFORE vectorization</text>
+<rect x="138" y="288" width="188" height="60" rx="3" fill="#FFFFFF" stroke="#4C43A8"/>
+<text x="150" y="310" font-family="Public Sans" font-size="12.5" font-weight="600" fill="#0E1F29">Agent 1 · proposes</text>
+<text x="150" y="330" font-family="Public Sans" font-size="11" fill="#5C6E76">claims a driver, with reasoning</text>
+<rect x="342" y="288" width="188" height="60" rx="3" fill="#FFFFFF" stroke="#4C43A8"/>
+<text x="354" y="310" font-family="Public Sans" font-size="12.5" font-weight="600" fill="#0E1F29">Agent 2 · challenges</text>
+<text x="354" y="330" font-family="Public Sans" font-size="11" fill="#5C6E76">different model, adversarial prompt</text>
+<rect x="546" y="288" width="188" height="60" rx="3" fill="#FFFFFF" stroke="#4C43A8"/>
+<text x="558" y="310" font-family="Public Sans" font-size="12.5" font-weight="600" fill="#0E1F29">Score · resolve</text>
+<text x="558" y="330" font-family="Public Sans" font-size="11" fill="#5C6E76">deterministic scoring, one round</text>
+<rect x="750" y="288" width="208" height="60" rx="3" fill="#F9E6E1" stroke="#B03A22" stroke-width="1.3"/>
+<text x="762" y="310" font-family="Public Sans" font-size="12.5" font-weight="600" fill="#0E1F29">Disagreement → human</text>
+<text x="762" y="330" font-family="Public Sans" font-size="11" fill="#742316">never a second round</text>
+
+<rect x="120" y="384" width="854" height="42" rx="4" fill="#4C43A8"/>
+<text x="138" y="410" font-family="Public Sans" font-size="13.5" fill="#FFFFFF"><tspan font-weight="600">Brain vector store</tspan>  ·  plane C — resolved insight + confidence + source IDs + generation counter + transcript ID</text>
+
+<rect x="120" y="446" width="270" height="56" rx="4" fill="#FFFFFF" stroke="#C3C7C5"/>
+<text x="134" y="468" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Ideation — pooled retrieval</text>
+<text x="134" y="487" font-family="Public Sans" font-size="11.5" fill="#5C6E76">plane A bucket + plane C bucket,</text>
+<text x="134" y="501" font-family="Public Sans" font-size="11.5" fill="#5C6E76">returned separately, labelled</text>
+
+<rect x="410" y="446" width="176" height="56" rx="4" fill="#F9E6E1" stroke="#B03A22" stroke-width="1.5"/>
+<text x="424" y="468" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Gate 3 · approve</text>
+<text x="424" y="487" font-family="Public Sans" font-size="11.5" fill="#742316">human picks a direction</text>
+<text x="424" y="501" font-family="Public Sans" font-size="11.5" fill="#742316">and states a hypothesis</text>
+
+<rect x="606" y="446" width="368" height="56" rx="4" fill="#E7E5F7" stroke="#4C43A8"/>
+<text x="620" y="468" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Campaign detailing</text>
+<text x="620" y="487" font-family="Public Sans" font-size="11.5" fill="#5C6E76">duration · geography · budget · channel mix · event anchor ·</text>
+<text x="620" y="501" font-family="Public Sans" font-size="11.5" fill="#5C6E76">audience · content plan — all AI-proposed, all editable</text>
+
+<rect x="120" y="524" width="418" height="56" rx="4" fill="#DCEFEE" stroke="#0C7C7A"/>
+<text x="134" y="546" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Execute</text>
+<text x="134" y="565" font-family="Public Sans" font-size="11.5" fill="#5C6E76">calendar · Kanban · tickets · team hub · claims gate · Gate 4 publish</text>
+
+<rect x="558" y="524" width="416" height="56" rx="4" fill="#F9E6E1" stroke="#B03A22"/>
+<text x="572" y="546" font-family="Public Sans" font-size="13.5" font-weight="600" fill="#0E1F29">Outcome → grade → receipt</text>
+<text x="572" y="565" font-family="Public Sans" font-size="11.5" fill="#742316">lead quality measured · hypothesis graded · written back to planes A and C</text>
+
+<g stroke="#5C6E76" stroke-width="1.3" fill="none" marker-end="url(#a2)">
+<line x1="300" y1="58" x2="320" y2="58"/><line x1="526" y1="58" x2="546" y2="58"/><line x1="738" y1="58" x2="758" y2="58"/>
+<line x1="320" y1="196" x2="340" y2="196"/><line x1="532" y1="196" x2="552" y2="196"/><line x1="754" y1="196" x2="774" y2="196"/>
+<line x1="390" y1="474" x2="404" y2="474"/><line x1="586" y1="474" x2="600" y2="474"/>
+<line x1="538" y1="552" x2="552" y2="552"/></g>
+<g stroke="#5C6E76" stroke-width="1.3" fill="none" marker-end="url(#a2)">
+<line x1="869" y1="84" x2="869" y2="100"/><line x1="547" y1="146" x2="547" y2="162"/>
+<line x1="877" y1="224" x2="877" y2="246"/><line x1="547" y1="364" x2="547" y2="378"/>
+<line x1="255" y1="426" x2="255" y2="440"/><line x1="790" y1="502" x2="790" y2="518"/></g>
+
+<path d="M974 552 L992 552 L992 406 L978 406" fill="none" stroke="#B03A22" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a2)"/>
+<path d="M572 552 L104 552 L104 405 L116 405" fill="none" stroke="#B03A22" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#a2)"/>
+</svg>
+<figcaption><b>Fig. 2</b> — Four human gates, all blocking. No fetch runs without Gate 2; no insight enters the Brain past a disagreement without a human; nothing ships without Gate 4.</figcaption>
+</figure>
+
+<table>
+<thead><tr><th style="width:5%">#</th><th style="width:16%">Stage</th><th style="width:22%">Input</th><th style="width:28%">Process</th><th>Output · plane</th></tr></thead>
+<tbody>
+<tr><td class="m">S0</td><td>Login</td><td>Credentials</td><td>Division + region workspace resolution; every query filters on it</td><td>Session</td></tr>
+<tr><td class="m">S1</td><td>Brand Gene</td><td>Own site, brand books, declared context</td><td>Extract tokens → author variants → reconcile divergence → <b>Gate 1</b> → chunk → embed</td><td><span class="pill pa">Plane A</span></td></tr>
+<tr><td class="m">S2</td><td>Cockpit</td><td>All stores</td><td>Landing surface; triggers, monitors and audits every flow</td><td>—</td></tr>
+<tr><td class="m">S3</td><td>Target definition</td><td>Operator input</td><td>Name competitors, topics, source URLs, cadence</td><td>Scan spec</td></tr>
+<tr><td class="m">S4</td><td>Confirmation</td><td>Scan spec</td><td><b>Gate 2</b> — scope reviewed and approved before any network call</td><td>Approved spec</td></tr>
+<tr><td class="m">S5</td><td>Fetch</td><td>Approved spec</td><td>Own-code fetch of public pages, rate-limited, per-source circuit breaker</td><td><span class="pill pb">Plane B</span></td></tr>
+<tr><td class="m">S6</td><td>Contradiction</td><td>Raw signal</td><td>Agent 1 proposes → Agent 2 challenges → deterministic scoring → resolve. One round. Disagreement escalates</td><td>Resolved insight</td></tr>
+<tr><td class="m">S7</td><td>Brain write</td><td>Resolved insight</td><td>Embed with confidence, source IDs, generation counter, transcript ID</td><td><span class="pill pc">Plane C</span></td></tr>
+<tr><td class="m">S8</td><td>Ideation</td><td>Planes A + C</td><td>Min-N gate → separate-bucket retrieval → proposals labelled evidence vs hypothesis</td><td>Campaign proposals</td></tr>
+<tr><td class="m">S9</td><td>Selection</td><td>Proposals</td><td><b>Gate 3</b> — human picks a direction and records a hypothesis, owner, review date</td><td>Decision receipt</td></tr>
+<tr><td class="m">S10</td><td>Detailing</td><td>Selected direction</td><td>AI proposes duration, geography, budget, channel mix, event anchor, audience, content plan</td><td>Campaign plan</td></tr>
+<tr><td class="m">S11</td><td>Execute</td><td>Campaign plan</td><td>Calendar, Kanban, tickets, team hub, claims screen, <b>Gate 4</b> before anything ships</td><td>Live campaign</td></tr>
+<tr><td class="m">S12</td><td>Grade</td><td>Outcome data</td><td>Lead quality measured against the hypothesis; receipt graded; written back</td><td><span class="pill pa">A</span> <span class="pill pc">C</span></td></tr>
+</tbody>
+</table>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">04</span>
+<h2>The contradiction layer</h2>
+<p>Two models, different providers, different prompts, opposing objectives. One proposes a driver — <em>"this topic is drawing attention because it addresses a method-validation pain point"</em> — and the other is instructed to attack it: propose a confounder, name what the evidence cannot support, argue the null.</p>
+
+<div class="key">
+<span class="t">Why this runs before vectorization</span>
+<p>Vector chunks are retrieved independently. Embed a claim <em>and</em> its refutation and nothing guarantees they co-retrieve — a refuted claim can surface alone, stripped of the thing that killed it. That is worse than not debating at all. Contradiction is a write-time quality gate: resolve first, embed the resolved insight, keep the transcript stored but unembedded and linked by ID.</p>
+</div>
+
+<h4>Resolution states</h4>
+<table>
+<thead><tr><th style="width:20%">State</th><th style="width:16%">Confidence</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td class="m">agreed</td><td>0.7 – 1.0</td><td>Embedded into the Brain, usable as a hypothesis in ideation</td></tr>
+<tr><td class="m">qualified</td><td>0.4 – 0.7</td><td>Embedded with the challenger's caveat attached to the chunk text itself</td></tr>
+<tr><td class="m">contested</td><td>&lt; 0.4</td><td>Escalated to a human. Not embedded until someone rules</td></tr>
+<tr><td class="m">refuted</td><td>—</td><td>Transcript retained for audit. Never embedded. Never retrievable</td></tr>
+</tbody>
+</table>
+
+<pre><span class="c">// contradiction gate — bounded, deterministic termination</span>
+<span class="k">const</span> claim   = <span class="k">await</span> routeAI({ role: <span class="v">"proposer"</span>,  model: <span class="v">A</span>, input: rawSignal });
+<span class="k">const</span> attack  = <span class="k">await</span> routeAI({ role: <span class="v">"challenger"</span>, model: <span class="v">B</span>, input: { rawSignal, claim } });
+
+<span class="c">// deterministic — not a model decision</span>
+<span class="k">const</span> score = resolve(claim, attack);      <span class="c">// evidence span overlap, specificity, confounder strength</span>
+
+<span class="k">if</span> (score &lt; CONTESTED_FLOOR)  <span class="k">return</span> escalateToHuman(claim, attack);
+<span class="k">if</span> (score &lt; QUALIFIED_FLOOR)  claim.caveat = attack.strongestObjection;
+
+<span class="c">// exactly one round. no code path requests a second.</span>
+<span class="k">return</span> embedIntoBrain({ ...claim, score, sourceIds, transcriptId, generation: <span class="v">0</span> });</pre>
+
+<div class="flag">
+<span class="t">Accountability, as the guardrails define it</span>
+<p>One round, fixed in code. Full chain logged — both positions, the deterministic score, the resolution, and the human ruling where there was one. A named owner starts the run and can halt it at any point. That is monitoring, understood failure modes, authority to intervene, and documented intervention — the four things oversight actually requires.</p>
+</div>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">05</span>
+<h2>The Brain — learning without forgetting its sources</h2>
+<p>The Brain is the store that makes the system feel like it teaches itself. It is also the component most likely to quietly rot, so its maintenance rules matter more than its write path.</p>
+
+<div class="key">
+<span class="t">The failure mode this design exists to prevent</span>
+<p>Compaction is lossy. Compacting summaries of summaries is lossy <em>compounding</em>. Run it blindly every 30 days and by the fifth generation the Brain holds confident-sounding platitudes with no traceable origin — and no way to tell that degradation happened. The fix is not to avoid compaction. It is to make compaction additive, attributable, and triggered by evidence rather than by the calendar.</p>
+</div>
+
+<figure>
+<svg viewBox="0 0 1000 300" role="img" aria-label="Brain compaction lifecycle">
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<text x="26" y="26" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#5C6E76" letter-spacing="1.2">GEN 0 — IMMUTABLE, NEVER REWRITTEN</text>
+<g fill="#E7E5F7" stroke="#4C43A8">
+<rect x="26" y="38" width="150" height="42" rx="3"/><rect x="186" y="38" width="150" height="42" rx="3"/>
+<rect x="346" y="38" width="150" height="42" rx="3"/><rect x="506" y="38" width="150" height="42" rx="3"/>
+<rect x="666" y="38" width="150" height="42" rx="3"/><rect x="826" y="38" width="148" height="42" rx="3"/></g>
+<g font-family="Public Sans" font-size="12" fill="#1D3B48">
+<text x="40" y="64">insight · gen 0</text><text x="200" y="64">insight · gen 0</text><text x="360" y="64">insight · gen 0</text>
+<text x="520" y="64">insight · gen 0</text><text x="680" y="64">insight · gen 0</text><text x="840" y="64">insight · gen 0</text></g>
+
+<rect x="26" y="112" width="948" height="52" rx="4" fill="#FFFFFF" stroke="#B03A22" stroke-width="1.4"/>
+<text x="44" y="134" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1.2" fill="#742316">COMPACTION TRIGGER — evidence-based, not calendar-based</text>
+<text x="44" y="154" font-family="Public Sans" font-size="13" fill="#1D3B48">not retrieved in 90 days  <tspan font-family="IBM Plex Mono, monospace" fill="#742316">AND</tspan>  ≥ 3 near-duplicates above 0.92 cosine  <tspan font-family="IBM Plex Mono, monospace" fill="#742316">AND</tspan>  no contradicting gen-0 chunk</text>
+
+<text x="26" y="200" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#5C6E76" letter-spacing="1.2">GEN 1 — ADDITIVE LAYER, SOURCES PRESERVED</text>
+<rect x="26" y="212" width="470" height="52" rx="3" fill="#4C43A8"/>
+<text x="44" y="234" font-family="Public Sans" font-size="13" font-weight="600" fill="#FFFFFF">compacted insight · gen 1</text>
+<text x="44" y="252" font-family="Public Sans" font-size="11.5" fill="#C9C5EE">absorbed: [3f2a] [9c17] [b04e]  ·  confidence capped at parent minimum</text>
+
+<rect x="516" y="212" width="458" height="52" rx="3" fill="#FAEEDA" stroke="#A8630F"/>
+<text x="534" y="234" font-family="Public Sans" font-size="13" font-weight="600" fill="#0E1F29">Gen ≥ 2 cannot be sole support</text>
+<text x="534" y="252" font-family="Public Sans" font-size="11.5" fill="#6F4006">a recommendation resting only on twice-compacted chunks is refused</text>
+
+<g stroke="#5C6E76" stroke-width="1.3" fill="none" marker-end="url(#a3)">
+<line x1="101" y1="80" x2="101" y2="106"/><line x1="261" y1="80" x2="261" y2="106"/><line x1="421" y1="80" x2="421" y2="106"/></g>
+<line x1="261" y1="164" x2="261" y2="206" stroke="#5C6E76" stroke-width="1.3" marker-end="url(#a3)"/>
+<path d="M60 264 L60 286 L940 286 L940 84" fill="none" stroke="#4C43A8" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+<text x="500" y="300" font-family="IBM Plex Mono, monospace" font-size="10.5" fill="#4C43A8" text-anchor="middle">gen-0 sources stay queryable forever — compaction adds a layer, it never replaces one</text>
+</svg>
+<figcaption><b>Fig. 3</b> — Compaction is additive. The originals are never rewritten, so any compacted claim can be traced back to the observations that produced it.</figcaption>
+</figure>
+
+<table>
+<thead><tr><th style="width:26%">Rule</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>Sources immutable</td><td>Gen-0 chunks are never edited or deleted by compaction. A new gen-1 chunk is written alongside them</td></tr>
+<tr><td>Provenance carried</td><td>Every compacted chunk lists the chunk IDs it absorbed. Traceable to origin at any depth</td></tr>
+<tr><td>Evidence-based trigger</td><td>Retrieval staleness plus near-duplicate density, not a fixed 30-day clock. A calendar is not a reason</td></tr>
+<tr><td>Confidence floors down</td><td>A compacted chunk inherits the <em>minimum</em> confidence of its parents, never the average</td></tr>
+<tr><td>Generation ceiling</td><td>Gen ≥ 2 cannot be the sole support for a recommendation. Prevents drift becoming authority</td></tr>
+<tr><td>Contradiction blocks</td><td>If any gen-0 source contradicts another, the group is not compacted — the tension is the information</td></tr>
+<tr><td>First-party outcome wins</td><td>A measured plane-A outcome that contradicts a Brain chunk demotes it immediately, at any generation</td></tr>
+</tbody>
+</table>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">06</span>
+<h2>SOP and harness layer</h2>
+<p>The layer that makes the system configurable rather than hardcoded. Operators define the operating procedure — which analyses run in what order, with which prompts, under which thresholds — without touching code.</p>
+<table>
+<thead><tr><th style="width:24%">Configurable</th><th style="width:38%">Example</th><th>Scope</th></tr></thead>
+<tbody>
+<tr><td>Analysis sequence</td><td>"Competitor scan first, then brand divergence, then ideation"</td><td>Per division</td></tr>
+<tr><td>Prompt templates</td><td>Proposer and challenger system prompts, per analysis type</td><td>Per workspace, versioned</td></tr>
+<tr><td>Thresholds</td><td>Min-N floor, contested floor, compaction staleness window</td><td>Per workspace</td></tr>
+<tr><td>Scan cadence</td><td>Source refresh frequency, per target</td><td>Per scan spec</td></tr>
+<tr><td>Gate policy</td><td>Which stages require which approver role</td><td>Per division</td></tr>
+<tr><td>Rules and alerts</td><td>Condition → severity → action, composed from any field</td><td>Per workspace</td></tr>
+<tr><td><b>Not configurable</b></td><td>Plane separation, retrieval contract, one-round cap, audit trail, gate existence</td><td>Structural invariants</td></tr>
+</tbody>
+</table>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">07</span>
+<h2>Two loops, running at different speeds</h2>
+<p>InstaMedia had one loop that closed in days: publish, engagement lands, rescore. Waters has no equivalent fast signal — a campaign resolves into pipeline over months. That is not a flaw to engineer around; it is the shape of the business, and the architecture has to admit it.</p>
+
+<figure>
+<svg viewBox="0 0 1000 250" role="img" aria-label="Fast and slow learning loops">
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="26" y="30" width="948" height="86" rx="4" fill="#E7E5F7" stroke="#4C43A8"/>
+<text x="46" y="54" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1.3" fill="#2F2878">FAST LOOP · DAYS — market signal</text>
+<text x="46" y="78" font-family="Public Sans" font-size="13.5" fill="#1D3B48">scan → contradict → Brain → next ideation reads the updated Brain</text>
+<text x="46" y="100" font-family="Public Sans" font-size="12" fill="#5C6E76">Produces <tspan font-weight="600">hypotheses</tspan>. Cheap, frequent, never proof. Carries the system while plane A is thin.</text>
+
+<rect x="26" y="134" width="948" height="86" rx="4" fill="#F9E6E1" stroke="#B03A22" stroke-width="1.4"/>
+<text x="46" y="158" font-family="IBM Plex Mono, monospace" font-size="10.5" letter-spacing="1.3" fill="#742316">SLOW LOOP · MONTHS — measured outcome</text>
+<text x="46" y="182" font-family="Public Sans" font-size="13.5" fill="#1D3B48">campaign → leads → qualification → pipeline → hypothesis graded → receipt written to planes A and C</text>
+<text x="46" y="204" font-family="Public Sans" font-size="12" fill="#5C6E76">Produces <tspan font-weight="600">evidence</tspan>. Slow, expensive, authoritative. Overrides the fast loop wherever the two disagree.</text>
+
+<line x1="500" y1="116" x2="500" y2="130" stroke="#5C6E76" stroke-width="1.4" marker-end="url(#a4)"/>
+</svg>
+<figcaption><b>Fig. 4</b> — The fast loop proposes, the slow loop decides. When a measured outcome contradicts a Brain hypothesis, the hypothesis is demoted immediately regardless of its confidence score.</figcaption>
+</figure>
+
+<div class="note">
+<span class="t">Prototype consequence</span>
+<p>With a real 6–18 month cycle the slow loop cannot be demonstrated live. Generate roughly eighteen months of synthetic campaign and outcome history so the grading, the receipt, and the demotion of a contradicted Brain chunk are all visible on stage. Synthetic data you generate yourself needs no further approval.</p>
+</div>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">08</span>
+<h2>Scheduled movement</h2>
+<table>
+<thead><tr><th style="width:22%">Job</th><th style="width:20%">Trigger</th><th>Moves</th></tr></thead>
+<tbody>
+<tr><td class="m">brand-refresh</td><td>daily 03:00</td><td>Re-crawl declared brand sources, content-hash diff, re-chunk and re-embed on change → plane A</td></tr>
+<tr><td class="m">signal-scan</td><td>cadence per spec, post-Gate 2</td><td>Approved public sources → raw signal store, plane B, never embedded</td></tr>
+<tr><td class="m">contradict-sweep</td><td>on new signal batch</td><td>Unresolved raw signal → contradiction layer → resolved insight → plane C</td></tr>
+<tr><td class="m">brain-maintenance</td><td>weekly evaluation</td><td>Evaluates compaction eligibility; compacts only groups meeting all three conditions</td></tr>
+<tr><td class="m">divergence-scan</td><td>weekly</td><td>Live assets vs declared standard → drift tickets</td></tr>
+<tr><td class="m">outcome-ingest</td><td>nightly</td><td>Campaign outcome data → lead-quality scoring → plane A baseline</td></tr>
+<tr><td class="m">receipt-review</td><td>daily 09:00</td><td>Receipts past their review date → grading → write-back to planes A and C</td></tr>
+<tr><td class="m">event-window</td><td>event-anchored</td><td>Opens pre-event, at-event and post-event follow-up work at fixed offsets</td></tr>
+<tr><td class="m">alert-sweep</td><td>hourly</td><td>Metric thresholds → severity classification → route or suppress below min-N</td></tr>
+</tbody>
+</table>
+</section>
+
+<hr>
+
+<section>
+<span class="secnum">09</span>
+<h2>Structural invariants</h2>
+<p>Everything above is configurable except these. They are properties of the schema and the code path, not settings.</p>
+<ul>
+<li><b>Plane B has no embedding column.</b> Raw market signal cannot reach a citation because there is no mechanism by which it could.</li>
+<li><b>Plane A and Plane C return in separate buckets.</b> The generator cannot merge them, and must label them differently.</li>
+<li><b>A Plane C chunk is never sole support.</b> Every recommendation needs at least one plane-A anchor or it is marked unvalidated.</li>
+<li><b>One contradiction round.</b> No code path requests a second. Disagreement escalates to a human.</li>
+<li><b>Deterministic checks override models.</b> A claims-screen failure is a failure regardless of what any model concluded.</li>
+<li><b>Compaction is additive.</b> Gen-0 sources are never rewritten or deleted.</li>
+<li><b>Min-N gate.</b> Below threshold the system reports insufficient baseline rather than a number — in scoring, in retrieval, and in the interface.</li>
+<li><b>Every gate writes an immutable event</b> carrying approver, decision, timestamp and payload hash.</li>
+<li><b>No write path to any Waters system.</b> Not production, not test, not QA.</li>
+</ul>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <b>PLATINA AI OS</b> · Waters Corporation · revised data flow architecture<br>
+    Three planes · four gates · two loops · prototype scope<br><br>
+    Synthetic and publicly available data only. No production system contacted. No personal data processed.
+  </div>
+</footer>
+
+</body>
+</html>

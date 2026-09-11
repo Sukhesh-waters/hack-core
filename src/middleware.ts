@@ -14,5 +14,6 @@ export const config = {
     "/join/:path*",
     "/join",
     "/w/:path*",
+    "/p/:path*",
   ],
 };

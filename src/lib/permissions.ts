@@ -26,6 +26,10 @@ export const CAPABILITIES = [
   "client.manage",
   "asset.upload",
   "asset.delete",
+  "gate.declare",
+  "gate.confirm",
+  "gate.approve",
+  "gate.publish",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -41,6 +45,10 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   "client.manage": "Add and edit clients",
   "asset.upload": "Upload files to the workspace",
   "asset.delete": "Archive workspace files",
+  "gate.declare": "Declare a brand standard (Gate 1)",
+  "gate.confirm": "Confirm a scan spec before fetch (Gate 2)",
+  "gate.approve": "Approve a campaign direction (Gate 3)",
+  "gate.publish": "Approve a campaign to ship (Gate 4)",
 };
 
 /**
@@ -98,4 +106,8 @@ const PERMISSION_MESSAGES: Record<Capability, string> = {
   "client.manage": "Only an admin can manage clients.",
   "asset.upload": "You don't have permission to upload files to this workspace.",
   "asset.delete": "Only an admin can archive workspace files.",
+  "gate.declare": "Only an admin can declare the brand standard.",
+  "gate.confirm": "Only an admin can confirm a scan before any fetch runs.",
+  "gate.approve": "Only an admin can approve a campaign direction.",
+  "gate.publish": "Only an admin can approve a campaign to ship.",
 };

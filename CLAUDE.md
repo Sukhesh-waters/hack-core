@@ -10,6 +10,12 @@
   Every AI call goes through it — swapping providers is a config change, not a rebuild.
 - Public pattern data: Apify actors only, tagged source=public, weight=neutral. Never
   touches the first-party baseline engine.
+- Platina AI OS is a parallel product at `/p/[ws]`, schema in `src/db/platina-schema.ts`,
+  lib in `src/lib/platina/*`. It shares auth, workspace membership, and the model router
+  only. InstaMedia routes and tables stay untouched. Platina ingestion is a pluggable
+  source-adapter registry (`src/lib/platina/fetch/registry.ts`); adapter 1 is Apify.
+  An own-code web adapter may land later without a schema change. Until that adapter
+  ships, public fetches still go through Apify.
 - Deploy: Vercel only (Pro plan — this is a real client-facing build, not Hobby/personal use).
 
 ## Non-negotiable rules

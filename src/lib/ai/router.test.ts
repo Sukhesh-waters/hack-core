@@ -167,6 +167,23 @@ describe("routeAI quality tier (degradation ladder)", () => {
   });
 });
 
+describe("pinned provider", () => {
+  it("calls Gemini directly when pin=gemini, skipping Groq", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: "pinned" }] } }],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      routeAI({ kind: "chat", prompt: "x", pin: "gemini" }),
+    ).resolves.toBe("pinned");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "generativelanguage.googleapis.com",
+    );
+  });
+});
+
 describe("configuration errors", () => {
   it("throws AIRouterError when the provider key is missing", async () => {
     vi.stubEnv("GROQ_API_KEY", "");

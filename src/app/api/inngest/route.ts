@@ -13,6 +13,14 @@ import { rescoreSweep } from "@/inngest/functions/rescore";
 import { autoDocGenerator } from "@/inngest/functions/auto-docs";
 import { sopReverseSync } from "@/inngest/functions/sop-reverse-sync";
 import { sopReconciliation } from "@/inngest/functions/sop-reconciliation";
+import { platinaSignalScan } from "@/inngest/functions/platina/signal-scan";
+import { platinaContradictSweep } from "@/inngest/functions/platina/contradict-sweep";
+import { platinaBrainMaintenance } from "@/inngest/functions/platina/brain-maintenance";
+import { platinaReceiptReview } from "@/inngest/functions/platina/receipt-review";
+import { platinaOutcomeIngest } from "@/inngest/functions/platina/outcome-ingest";
+import { platinaAlertSweep } from "@/inngest/functions/platina/alert-sweep";
+import { platinaEventWindow } from "@/inngest/functions/platina/event-window";
+import { platinaDivergenceScan } from "@/inngest/functions/platina/divergence-scan";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -30,6 +38,14 @@ export const { GET, POST, PUT } = serve({
     knowledgeRefresh,
     sopReverseSync,
     sopReconciliation,
+    platinaSignalScan,
+    platinaContradictSweep,
+    platinaBrainMaintenance,
+    platinaReceiptReview,
+    platinaOutcomeIngest,
+    platinaAlertSweep,
+    platinaEventWindow,
+    platinaDivergenceScan,
   ],
 });
 

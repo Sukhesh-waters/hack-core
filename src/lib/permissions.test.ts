@@ -151,3 +151,31 @@ describe("asset capabilities", () => {
     expect(isCapability("asset.destroy")).toBe(false);
   });
 });
+
+describe("Platina gate capabilities", () => {
+  const GATES = [
+    "gate.declare",
+    "gate.confirm",
+    "gate.approve",
+    "gate.publish",
+  ] as const;
+
+  it("are recognised capability strings", () => {
+    for (const gate of GATES) {
+      expect(isCapability(gate)).toBe(true);
+    }
+  });
+
+  it("are granted to owner and admin", () => {
+    for (const gate of GATES) {
+      expect(roleCan("owner", gate)).toBe(true);
+      expect(roleCan("admin", gate)).toBe(true);
+    }
+  });
+
+  it("are refused to a member — gates are never membership-only", () => {
+    for (const gate of GATES) {
+      expect(roleCan("member", gate)).toBe(false);
+    }
+  });
+});
