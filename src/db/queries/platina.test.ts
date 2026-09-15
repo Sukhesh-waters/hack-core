@@ -27,9 +27,9 @@ describe("platina query isolation", () => {
   });
 
   it("brainChunksQuery filters workspace_id and active status", () => {
-    const { sql } = brainChunksQuery("ws_p").toSQL();
+    const { sql, params } = brainChunksQuery("ws_p").toSQL();
     expect(sql).toContain('"workspace_id" =');
-    expect(sql).toContain("active");
+    expect(params).toContain("active");
   });
 
   it("gateEventsQuery is workspace-scoped", () => {
@@ -50,9 +50,9 @@ describe("platina query isolation", () => {
   });
 
   it("dueReceiptsQuery is workspace-scoped and pending-only", () => {
-    const { sql } = dueReceiptsQuery("ws_p", new Date()).toSQL();
+    const { sql, params } = dueReceiptsQuery("ws_p", new Date()).toSQL();
     expect(sql).toContain('"workspace_id" =');
-    expect(sql).toContain("pending");
+    expect(params).toContain("pending");
   });
 
   it("outcomesQuery is workspace-scoped", () => {

@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -37,7 +37,9 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 function relSrc(path: string): string {
-  return path.slice(__dirname.length + 1);
+  // Normalise separators: the allowlist is written with POSIX slashes, and
+  // without this the exemption silently stops matching on Windows.
+  return path.slice(__dirname.length + 1).split(sep).join("/");
 }
 
 const files = ROOTS.flatMap((root) => walk(root)).filter(
