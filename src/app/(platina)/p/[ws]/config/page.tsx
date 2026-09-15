@@ -1,4 +1,6 @@
+import { requireUser } from "@/auth";
 import { PlatinaPage } from "@/components/platina/page";
+import { requireCapability } from "@/db/queries/memberships";
 import { getWorkspaceConfig, upsertWorkspaceConfig } from "@/db/queries/platina";
 
 export const dynamic = "force-dynamic";
@@ -6,6 +8,8 @@ export const dynamic = "force-dynamic";
 async function saveConfig(formData: FormData) {
   "use server";
   const ws = String(formData.get("workspaceId"));
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.approve");
   await upsertWorkspaceConfig(ws, {
     minBaselineN: Number(formData.get("minBaselineN") ?? 20),
     contestedFloor: Number(formData.get("contestedFloor") ?? 0.4),

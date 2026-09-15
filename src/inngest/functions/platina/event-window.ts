@@ -24,7 +24,8 @@ export const platinaEventWindow = inngest.createFunction(
       );
       for (const campaign of campaigns) {
         if (!campaign.eventAnchor) continue;
-        const delta = campaign.eventAnchor.getTime() - now;
+        // step.run serialises timestamps to strings on the way out.
+        const delta = new Date(campaign.eventAnchor).getTime() - now;
         const days = delta / 86_400_000;
         if (days <= 14 && days >= -7) opening += 1;
       }

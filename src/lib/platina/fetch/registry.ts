@@ -1,10 +1,16 @@
 import type { PlatinaScanTarget } from "@/db/platina-schema";
 
-export type ApprovedScanSpec = {
+/** Any spec the caller might hand the registry, approved or not. */
+export type ScanSpecCandidate = {
   id: string;
   workspaceId: string;
-  status: "approved" | "running" | "done" | "failed";
+  status: "draft" | "approved" | "running" | "done" | "failed";
   targets: PlatinaScanTarget[];
+};
+
+/** Only this shape may reach an adapter. */
+export type ApprovedScanSpec = ScanSpecCandidate & {
+  status: "approved" | "running";
 };
 
 export type RawSignalDoc = {
@@ -34,14 +40,16 @@ export function listAdapterKeys(): string[] {
   return Array.from(adapters.keys());
 }
 
-export function assertApproved(spec: ApprovedScanSpec): void {
+export function assertApproved(
+  spec: ScanSpecCandidate,
+): asserts spec is ApprovedScanSpec {
   if (spec.status !== "approved" && spec.status !== "running") {
     throw new Error("scan spec is not approved — no fetch may run");
   }
 }
 
 export async function runApprovedScan(
-  spec: ApprovedScanSpec,
+  spec: ScanSpecCandidate,
   adapterKey = "apify",
 ): Promise<RawSignalDoc[]> {
   assertApproved(spec);

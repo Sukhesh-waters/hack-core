@@ -1,3 +1,4 @@
+import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listScanSpecs } from "@/db/queries/platina";
 import { confirmScanAction, createScanSpecAction } from "../actions";
@@ -6,13 +7,16 @@ export const dynamic = "force-dynamic";
 
 export default async function ScansPage({
   params,
+  searchParams,
 }: {
   params: { ws: string };
+  searchParams: { error?: string };
 }) {
   const specs = await listScanSpecs(params.ws);
 
   return (
     <PlatinaPage eyebrow="S3–S5 · gate 2" title="Scan specs">
+      <PlatinaFormError message={searchParams.error} />
       <form action={createScanSpecAction} className="mb-8 flex flex-col gap-2">
         <input type="hidden" name="workspaceId" value={params.ws} />
         <input

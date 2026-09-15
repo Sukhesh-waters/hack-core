@@ -13,7 +13,9 @@ import {
  */
 describe("platina three-plane separation", () => {
   it("plane B has no embedding column so it cannot reach a citation", () => {
-    expect(getTableColumns(platinaSignalDocuments).embedding).toBeUndefined();
+    expect(
+      Object.keys(getTableColumns(platinaSignalDocuments)),
+    ).not.toContain("embedding");
   });
 
   it("plane A and plane C are the only embedded stores", () => {

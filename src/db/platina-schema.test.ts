@@ -38,7 +38,7 @@ describe("three-plane structural invariants", () => {
 
   it("plane B signal documents have NO embedding column", () => {
     const columns = getTableColumns(platina.platinaSignalDocuments);
-    expect(columns.embedding).toBeUndefined();
+    expect(Object.keys(columns)).not.toContain("embedding");
     expect(columns.body).toBeDefined();
   });
 

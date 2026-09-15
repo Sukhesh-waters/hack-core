@@ -27,6 +27,13 @@ const hypo = (
     generation,
   }));
 
+/** Fails loudly if support was granted, so a pass can only mean a refusal. */
+const refusalReason = (buckets: RetrievalBuckets) => {
+  const result = checkSupport(buckets);
+  if (result.ok) throw new Error("expected a refusal, support was granted");
+  return result.reason;
+};
+
 describe("two-bucket retrieval", () => {
   it("keeps evidence and hypotheses as separate arrays", () => {
     const buckets = {
@@ -43,23 +50,32 @@ describe("two-bucket retrieval", () => {
   });
 
   it("refuses a plane-C-only recommendation", () => {
-    expect(
-      checkSupport({ evidence: [], hypotheses: hypo(3) }).reason,
-    ).toBe("plane_c_sole_support");
+    expect(refusalReason({ evidence: [], hypotheses: hypo(3) })).toBe(
+      "plane_c_sole_support",
+    );
   });
 
   it("refuses gen>=2 as sole support", () => {
     expect(canCiteHypothesisAlone(2)).toBe(false);
     expect(canCiteHypothesisAlone(0)).toBe(true);
+    expect(refusalReason({ evidence: [], hypotheses: hypo(2, 2) })).toBe(
+      "compacted_sole_support",
+    );
+  });
+
+  it("still names plane-C sole support when a gen-0 hypothesis is in the mix", () => {
     expect(
-      checkSupport({ evidence: [], hypotheses: hypo(2, 2) }).reason,
-    ).toBe("compacted_sole_support");
+      refusalReason({
+        evidence: [],
+        hypotheses: [...hypo(1, 0), ...hypo(1, 2)],
+      }),
+    ).toBe("plane_c_sole_support");
   });
 
   it("honours the min-N honesty gate", () => {
     expect(minNGate(5).status).toBe("insufficient_baseline");
     expect(minNGate(20).status).toBe("ready");
-    expect(checkSupport(emptyBuckets()).reason).toBe("insufficient_baseline");
+    expect(refusalReason(emptyBuckets())).toBe("insufficient_baseline");
   });
 
   it("accepts a mixed A+C recommendation", () => {

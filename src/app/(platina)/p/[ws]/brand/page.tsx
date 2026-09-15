@@ -1,3 +1,4 @@
+import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listBrandChunks, listGateEvents } from "@/db/queries/platina";
 import { declareBrandAction } from "../actions";
@@ -6,8 +7,10 @@ export const dynamic = "force-dynamic";
 
 export default async function BrandPage({
   params,
+  searchParams,
 }: {
   params: { ws: string };
+  searchParams: { error?: string };
 }) {
   const [chunks, gates] = await Promise.all([
     listBrandChunks(params.ws),
@@ -17,6 +20,7 @@ export default async function BrandPage({
 
   return (
     <PlatinaPage eyebrow="S1 · gate 1" title="Brand Gene">
+      <PlatinaFormError message={searchParams.error} />
       <form action={declareBrandAction} className="mb-8 space-y-3">
         <input type="hidden" name="workspaceId" value={params.ws} />
         <textarea

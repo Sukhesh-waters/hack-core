@@ -28,7 +28,7 @@ export const platinaSignalScan = inngest.createFunction(
         runApprovedScan({
           id: spec.id,
           workspaceId: spec.workspaceId,
-          status: spec.status === "approved" ? "approved" : "approved",
+          status: spec.status,
           targets: spec.targets,
         }),
       );

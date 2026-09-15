@@ -47,34 +47,22 @@ export function labelBuckets(buckets: RetrievalBuckets): {
   };
 }
 
-export function checkSupport(
-  buckets: RetrievalBuckets,
-  minN = DEFAULT_MIN_BASELINE_N,
-): SupportCheck {
-  if (buckets.evidence.length < minN && buckets.evidence.length === 0) {
-    if (buckets.hypotheses.length > 0) {
-      return { ok: false, reason: "plane_c_sole_support" };
-    }
+/**
+ * Support shape only — whether what we hold may be cited at all. Sample size
+ * is a separate question, answered by minNGate: a recommendation can be
+ * properly anchored in plane A and still be below the baseline threshold.
+ */
+export function checkSupport(buckets: RetrievalBuckets): SupportCheck {
+  if (buckets.evidence.length > 0) return { ok: true };
+  if (buckets.hypotheses.length === 0) {
     return { ok: false, reason: "insufficient_baseline" };
   }
-  if (buckets.evidence.length === 0 && buckets.hypotheses.length > 0) {
-    return { ok: false, reason: "plane_c_sole_support" };
-  }
-  const onlyCompacted =
-    buckets.evidence.length === 0 &&
-    buckets.hypotheses.length > 0 &&
-    buckets.hypotheses.every((h) => h.generation >= 2);
-  if (onlyCompacted) {
+  // Report the stricter refusal first: a compacted chunk is a summary of
+  // summaries, so it is even further from evidence than a gen-0 hypothesis.
+  if (buckets.hypotheses.every((h) => !canCiteHypothesisAlone(h.generation))) {
     return { ok: false, reason: "compacted_sole_support" };
   }
-  if (
-    buckets.evidence.length === 0 &&
-    buckets.hypotheses.some((h) => h.generation >= 2) &&
-    buckets.hypotheses.every((h) => h.generation >= 2)
-  ) {
-    return { ok: false, reason: "compacted_sole_support" };
-  }
-  return { ok: true };
+  return { ok: false, reason: "plane_c_sole_support" };
 }
 
 export function canCiteHypothesisAlone(generation: number): boolean {

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireUser } from "@/auth";
 import { requireCapability } from "@/db/queries/memberships";
 import {
@@ -23,11 +24,19 @@ async function actor(ws: string, gate: keyof typeof GATE_CAPABILITY) {
   return user;
 }
 
-export async function declareBrandAction(formData: FormData) {
+/**
+ * Form actions must resolve to void, so a rejected submission comes back as a
+ * message on the page instead of a return value nothing reads.
+ */
+function refuse(ws: string, section: string, message: string): never {
+  redirect(`/p/${ws}/${section}?error=${encodeURIComponent(message)}`);
+}
+
+export async function declareBrandAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const content = String(formData.get("content") ?? "").trim();
   const user = await actor(ws, "declare");
-  if (!content) return { error: "Brand standard is required." };
+  if (!content) refuse(ws, "brand", "Brand standard is required.");
   const id = await insertBrandChunk({ workspaceId: ws, content });
   const event = {
     workspaceId: ws,
@@ -41,27 +50,25 @@ export async function declareBrandAction(formData: FormData) {
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/brand`);
-  return { ok: true, id };
 }
 
-export async function createScanSpecAction(formData: FormData) {
+export async function createScanSpecAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
   await requireCapability(ws, user.id, "gate.confirm");
   const name = String(formData.get("name") ?? "").trim();
   const value = String(formData.get("target") ?? "").trim();
-  if (!name || !value) return { error: "Name and target are required." };
-  const id = await insertScanSpec({
+  if (!name || !value) refuse(ws, "scans", "Name and target are required.");
+  await insertScanSpec({
     workspaceId: ws,
     name,
     createdById: user.id,
     targets: [{ kind: "competitor_site", value }],
   });
   revalidatePath(`/p/${ws}/scans`);
-  return { ok: true, id };
 }
 
-export async function confirmScanAction(formData: FormData) {
+export async function confirmScanAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const specId = String(formData.get("specId"));
   const user = await actor(ws, "confirm");
@@ -82,10 +89,9 @@ export async function confirmScanAction(formData: FormData) {
     data: { specId, workspaceId: ws },
   });
   revalidatePath(`/p/${ws}/scans`);
-  return { ok: true };
 }
 
-export async function approveDirectionAction(formData: FormData) {
+export async function approveDirectionAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await actor(ws, "approve");
   const title = String(formData.get("title") ?? "").trim();
@@ -99,9 +105,11 @@ export async function approveDirectionAction(formData: FormData) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!title || !hypothesis) return { error: "Title and hypothesis are required." };
+  if (!title || !hypothesis) {
+    refuse(ws, "ideation", "Title and hypothesis are required.");
+  }
   if (evidenceBrand.length === 0) {
-    return { error: "A plane-A evidence anchor is required." };
+    refuse(ws, "ideation", "A plane-A evidence anchor is required.");
   }
   const reviewAt = new Date(Date.now() + 90 * 86_400_000);
   const id = await insertReceipt({
@@ -134,10 +142,9 @@ export async function approveDirectionAction(formData: FormData) {
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/receipts`);
   revalidatePath(`/p/${ws}/campaigns`);
-  return { ok: true, id, campaignId };
 }
 
-export async function publishCampaignAction(formData: FormData) {
+export async function publishCampaignAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
   const user = await actor(ws, "publish");
@@ -153,19 +160,18 @@ export async function publishCampaignAction(formData: FormData) {
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/campaigns`);
-  return { ok: true };
 }
 
-export async function gradeReceiptAction(formData: FormData) {
+const RECEIPT_OUTCOMES = ["worked", "did_not_work", "inconclusive"] as const;
+
+export async function gradeReceiptAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
   await requireCapability(ws, user.id, "gate.approve");
   const receiptId = String(formData.get("receiptId"));
-  const outcome = String(formData.get("outcome")) as
-    | "worked"
-    | "did_not_work"
-    | "inconclusive";
+  const submitted = String(formData.get("outcome"));
+  const outcome = RECEIPT_OUTCOMES.find((o) => o === submitted);
+  if (!outcome) refuse(ws, "receipts", "Pick a valid outcome.");
   await recordReceiptOutcome({ workspaceId: ws, receiptId, outcome });
   revalidatePath(`/p/${ws}/receipts`);
-  return { ok: true };
 }

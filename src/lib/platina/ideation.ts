@@ -12,7 +12,7 @@ export type CampaignProposal = {
 
 export function buildIdeationBrief(buckets: RetrievalBuckets, minN: number) {
   const gate = minNGate(buckets.evidence.length, minN);
-  const support = checkSupport(buckets, minN);
+  const support = checkSupport(buckets);
   const labelled = labelBuckets(buckets);
   return { gate, support, labelled };
 }

@@ -23,7 +23,8 @@ export const platinaBrainMaintenance = inngest.createFunction(
           id: c.id,
           generation: c.generation,
           confidence: c.confidence,
-          lastRetrievedAt: c.lastRetrievedAt,
+          // step.run serialises timestamps, so staleness needs a real Date back.
+          lastRetrievedAt: c.lastRetrievedAt ? new Date(c.lastRetrievedAt) : null,
           absorbedChunkIds: c.absorbedChunkIds,
         }));
       if (gen0.length < 3) continue;

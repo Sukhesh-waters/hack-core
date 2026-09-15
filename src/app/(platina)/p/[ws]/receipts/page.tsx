@@ -1,3 +1,4 @@
+import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listReceipts } from "@/db/queries/platina";
 import { gradeReceiptAction } from "../actions";
@@ -6,13 +7,16 @@ export const dynamic = "force-dynamic";
 
 export default async function ReceiptsPage({
   params,
+  searchParams,
 }: {
   params: { ws: string };
+  searchParams: { error?: string };
 }) {
   const receipts = await listReceipts(params.ws);
 
   return (
     <PlatinaPage eyebrow="S9 · S12" title="Decision receipts">
+      <PlatinaFormError message={searchParams.error} />
       <ul className="space-y-3">
         {receipts.map((r) => (
           <li key={r.id} className="rounded-md border border-border p-3 text-sm">

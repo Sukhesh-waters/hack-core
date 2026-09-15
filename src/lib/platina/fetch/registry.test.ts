@@ -5,10 +5,12 @@ import {
   listAdapterKeys,
   registerAdapter,
   runApprovedScan,
-  type ApprovedScanSpec,
+  type ScanSpecCandidate,
 } from "./registry";
 
-const spec = (status: ApprovedScanSpec["status"] = "approved"): ApprovedScanSpec => ({
+const spec = (
+  status: ScanSpecCandidate["status"] = "approved",
+): ScanSpecCandidate => ({
   id: "s1",
   workspaceId: "w1",
   status,

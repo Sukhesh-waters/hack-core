@@ -1,3 +1,4 @@
+import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listBrandChunks, listBrainChunks } from "@/db/queries/platina";
 import { draftProposals } from "@/lib/platina/ideation";
@@ -8,8 +9,10 @@ export const dynamic = "force-dynamic";
 
 export default async function IdeationPage({
   params,
+  searchParams,
 }: {
   params: { ws: string };
+  searchParams: { error?: string };
 }) {
   const [brand, brain] = await Promise.all([
     listBrandChunks(params.ws),
@@ -30,11 +33,12 @@ export default async function IdeationPage({
     })),
   };
   const gate = minNGate(buckets.evidence.length, 1);
-  const support = checkSupport(buckets, 1);
+  const support = checkSupport(buckets);
   const proposals = support.ok ? draftProposals("Waters campaign", buckets) : [];
 
   return (
     <PlatinaPage eyebrow="S8–S10 · gate 3" title="Ideation">
+      <PlatinaFormError message={searchParams.error} />
       {gate.status === "insufficient_baseline" && (
         <p className="mb-4 rounded-md border border-border p-3 text-sm">
           Insufficient baseline — {gate.sampleSize} plane-A chunks.
