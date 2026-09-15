@@ -49,7 +49,11 @@ defines the destination; it does not authorize one large unreviewable rewrite.
   - alerts when findings or approval work arrive;
   - a polling fallback when Realtime is unavailable.
 - Scan competitor sites, product pages, trade press, conference sources, and
-  ad libraries through Apify.
+  ad libraries through Apify in V1. The operator chooses the sites and handles;
+  the adapter registry selects the actor. An own-code scraper is a later
+  registry swap, not a V1 path.
+- Default public-scan cadence is 5 minutes. 10- and 15-minute intervals remain
+  available where cost or source policy requires them.
 - Build a slim Waters-native execution layer under `/p`:
   - campaign work board;
   - event-anchored calendar;
@@ -67,16 +71,27 @@ defines the destination; it does not authorize one large unreviewable rewrite.
 - Preserve core features. Remove or redirect additional features only after a
   manual owner review of the replacement.
 
-Planning defaults to validate at Owner checkpoint A:
+Planning defaults already decided by the owner (2026-09-11):
 
-- One Platina workspace represents one Waters division × region boundary.
-  Division and region metadata live in a Platina workspace profile; they do
-  not weaken or replace `workspace_id` isolation.
+- `workspace_id` is the only security boundary. A Platina workspace profile
+  stores Waters division and region as metadata on that same id. Do not add a
+  second tenant key, a concatenated division-region id, or Postgres RLS.
+- One Platina workspace is one Waters division × region operating boundary.
+  Cross-division rollups stay out of scope.
+- V1 public fetch is Apify-only. The operator picks URLs/handles; the registry
+  maps source kind → actor. The model router may classify a target and choose
+  an actor key. It never fetches, never writes first-party evidence, and never
+  spawns another agent. Custom APIs and an own-code web adapter land later as
+  additional registered adapters with no schema change.
+- Default cadence is 5 minutes, with 10/15 as opt-in.
 - V1 alerts are in-app Platina alerts only.
 - The V1 action packet is a printable HTML view plus a versioned JSON download.
   A browser can save the printable view as PDF without adding a PDF service.
 - Team chat, InstaMedia tickets, and InstaMedia SOP runs are not part of the
-  slim Platina execution layer.
+  slim Platina execution layer. The two latent bridges
+  (`platina_campaigns.sop_run_id` and alert actions `hub_message` / `ticket` /
+  `email`) are archived: never read, never written, never executed. Drop them
+  after a data inspection, do not keep them as live integration points.
 
 ---
 
@@ -136,7 +151,8 @@ Important conflict resolution:
 
 - The revised HTML says an own-code public fetch. The constitution says Platina
   public fetches must use Apify until an own-code adapter is explicitly shipped.
-  This plan uses Apify.
+  This plan uses Apify in V1 and keeps the adapter registry so an own-code
+  adapter can replace it later without a schema change.
 - InstaMedia docs refuse own scrapers and define social engagement workflows.
   Those decisions remain valid for `/w`, but social product behavior is not
   carried into `/p`.
@@ -148,11 +164,12 @@ Important conflict resolution:
   database connection/schema identity tables, and Inngest infrastructure. It
   may not call InstaMedia ticket, Hub, SOP, content, calendar, campaign, or
   notification query/action modules.
-- Existing `platina_campaigns.sop_run_id` remains null and is not used as an
-  integration path. Removal of the legacy column is a separate migration at
-  the manual-elimination checkpoint.
+- Existing `platina_campaigns.sop_run_id` is archived. Application code must
+  not read or write it. Removal of the column is a separate migration after
+  inspecting existing rows.
 - Existing Platina alert actions named `hub_message`, `ticket`, or `email` are
-  not executed. V1 replaces them with Platina-local `in_app` routing.
+  archived and must not execute. V1 replaces them with Platina-local `in_app`
+  routing.
 
 ---
 
@@ -483,8 +500,8 @@ Rules:
 
 ### Cadence
 
-- Audit definitions support 5, 10, or 15 minute intervals where Apify actor
-  cost and source policy permit.
+- Default interval is 5 minutes. Audit definitions may choose 10 or 15 minutes
+  where Apify actor cost and source policy permit.
 - A coordinator runs every five minutes and selects due approved specs.
 - The coordinator emits one `platina/scan.requested` event per due spec with
   workspace/spec identifiers and an idempotency key.
@@ -584,7 +601,10 @@ to make it operable.
 Boundary migrations:
 
 - Replace executable Platina alert action kinds with `in_app` for V1.
-- Keep legacy `sop_run_id` null; do not add a foreign key into InstaMedia.
+  `hub_message`, `ticket`, and `email` become archived enum values: present in
+  historical rows if any, rejected by new writes, never dispatched.
+- Stop reading and writing `sop_run_id`. Do not add a foreign key into
+  InstaMedia. Drop the column after Slice 0 inspects existing rows.
 - Remove `"web"` from user-selectable adapter values and reject it in the
   runtime registry until the constitution is explicitly updated.
 
@@ -652,7 +672,8 @@ Technical terms remain available in the Audit details drawer for traceability.
 - Receipts → decision history plus Outcomes.
 - Claims screen → integrated Claims tab plus Admin rules.
 - Config → authorized Admin.
-- Instagram-oriented Apify fetch → Waters public-source Apify actors.
+- Instagram-oriented Apify fetch → Waters public-source Apify actors chosen by
+  the operator and selected through the adapter registry.
 - Existing analysis-sequence JSON → a run-orchestrator snapshot that controls
   actual stage order.
 
@@ -685,12 +706,14 @@ Every slice follows: spec confirmation → failing tests → minimal implementat
 
 ### Slice 0 — Baseline, safety, and product contract
 
-**Purpose:** Protect yesterday’s uncommitted Platina work and establish a clean
-review baseline.
+**Purpose:** Lock a green review baseline and the product contract before the
+shell redesign.
 
-- Inventory and preserve all current uncommitted Platina files.
+- Platina typecheck was red on `main` after the 2026-09-11 commit. The 2026-09-15
+  compile fix is part of this baseline; do not treat those errors as acceptable
+  pre-existing debt.
 - Run current Platina-focused tests and full typecheck/lint/build.
-- Record pre-existing failures separately.
+- Record any remaining pre-existing failures separately.
 - Add a Platina route/use-case inventory with Live / Partial / Gap / Deferred /
   Refused status.
 - Record the document-precedence rules above.
@@ -760,11 +783,15 @@ tabs converge without refresh; disabling Realtime still converges by polling.
 
 - Block this slice until Slice 0 approves at least one feasible actor for each
   source kind claimed in the release.
+- Operators choose the sites, handles, and URLs. No hardcoded Instagram set.
 - Define actor adapters for:
   - competitor/product pages;
   - press/trade editorial;
   - conference pages/abstracts;
   - approved public ad libraries.
+- The registry maps source kind → Apify actor. The model router may classify a
+  target and recommend an actor key; it does not fetch and does not spawn
+  another agent.
 - Validate URLs and source types.
 - Add 5/10/15-minute cadence options.
 - Add the five-minute due-spec coordinator and per-spec event fan-out.

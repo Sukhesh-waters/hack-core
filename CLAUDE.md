@@ -15,7 +15,10 @@
   only. InstaMedia routes and tables stay untouched. Platina ingestion is a pluggable
   source-adapter registry (`src/lib/platina/fetch/registry.ts`); adapter 1 is Apify.
   An own-code web adapter may land later without a schema change. Until that adapter
-  ships, public fetches still go through Apify.
+  ships, public fetches still go through Apify. Platina code must not call InstaMedia
+  ticket, Hub, SOP, content, calendar, campaign, or notification modules.
+  `platina_campaigns.sop_run_id` and Platina alert actions `hub_message` / `ticket` /
+  `email` are archived: never read, never written, never executed.
 - Deploy: Vercel only (Pro plan — this is a real client-facing build, not Hobby/personal use).
 
 ## Non-negotiable rules
