@@ -52,8 +52,12 @@ defines the destination; it does not authorize one large unreviewable rewrite.
   ad libraries through Apify in V1. The operator chooses the sites and handles;
   the adapter registry selects the actor. An own-code scraper is a later
   registry swap, not a V1 path.
-- Default public-scan cadence is 5 minutes. 10- and 15-minute intervals remain
-  available where cost or source policy requires them.
+- Default probe cadence is 5 minutes (10/15 opt-in). Tier-2 actor fetches are
+  change-triggered, not cadence-driven. Source kinds with no cheap probe
+  signal (JS-rendered pages, ad libraries) use adaptive cadence: 6-hour start,
+  tightening toward the configured interval as observed change frequency rises,
+  backing off after a configurable run of unchanged fetches. Per-source change
+  frequency is recorded.
 - Build a slim Waters-native execution layer under `/p`:
   - campaign work board;
   - event-anchored calendar;
@@ -152,7 +156,9 @@ Important conflict resolution:
 - The revised HTML says an own-code public fetch. The constitution says Platina
   public fetches must use Apify until an own-code adapter is explicitly shipped.
   This plan uses Apify in V1 and keeps the adapter registry so an own-code
-  adapter can replace it later without a schema change.
+  adapter can replace it later without a schema change. A header-only change
+  probe that retrieves no content is permitted as own code under the
+  constitution; Tier-2 content fetches remain Apify-only.
 - InstaMedia docs refuse own scrapers and define social engagement workflows.
   Those decisions remain valid for `/w`, but social product behavior is not
   carried into `/p`.
@@ -921,7 +927,9 @@ are traceable, and passing a re-audit closes the finding.
 - Write measured outcomes into the authoritative first-party layer.
 - Demote conflicting Brain chunks immediately.
 - Broadcast Outcomes and refresh future solution retrieval.
-- Seed clearly labelled synthetic history for demos only.
+- Seed clearly labelled synthetic history for demos only. Synthetic seeds carry
+  a source marker that excludes them from evidence write-back, min-N baselines,
+  and retrieval.
 
 **Done when:** a recorded result changes the related receipt, evidence layer,
 conflicting hypotheses, and next recommendation exactly once.
@@ -1108,3 +1116,232 @@ solution with updated evidence.
 Approval of this document authorizes **Slice 0 only**. Each later slice receives
 its own implementation-ready task plan and reviewable diff. Destructive removal
 remains blocked until Owner checkpoint B.
+
+
+---
+
+## Revision addendum — 2026-09-15
+
+**Status:** Proposed amendments to the approved plan above. Each revision is
+scoped to an existing slice unless it explicitly adds one.
+
+**Precedence:** This addendum sits at the same level as the approved plan. Where
+it amends a specific clause, the amendment wins. Where it is silent, the plan
+above stands unchanged. Nothing here authorizes work beyond Slice 0.
+
+---
+
+### R1 — Add a change-detection tier before actor invocation
+
+**Amends:** Cadence section; Slice 3.
+
+**Problem.** A 5-minute default is 288 runs per source per day. Twenty sources is
+5,760 actor invocations daily, roughly 173,000 per month. Content hashing
+suppresses duplicate *processing* but the fetch is already paid for. Competitor
+product pages, trade press and conference sources change on a scale of days to
+weeks, so the overwhelming majority of those invocations return unchanged
+content at full cost.
+
+The plan already concedes the value ceiling: *"real-time copy must never promise
+instant external-world detection."* The cadence should reflect that.
+
+**Revision.** Split the scan into two tiers.
+
+- **Tier 1 — change probe.** Conditional `GET` with `If-Modified-Since` and
+  `ETag`, sitemap `lastmod` comparison, and RSS/Atom where published. Runs at
+  the configured cadence. Cost is negligible relative to an actor run.
+- **Tier 2 — actor fetch.** Fires only when Tier 1 reports a change, or when the
+  probe is unavailable for that source kind.
+
+Sources with no usable cheap signal — JS-rendered pages, ad libraries — use
+**adaptive cadence** instead: start at 6 hours, tighten toward the configured
+floor as observed change frequency rises, and back off after a configurable run
+of unchanged fetches. Store observed change frequency per source.
+
+Manual "Run now" bypasses Tier 1 and invokes the actor directly, subject to
+existing approval, rate limits and cost caps.
+
+**Copy implication.** The UI continues to state detection latency honestly. A
+5-minute probe cadence with change-triggered fetch is a truthful "checked 5
+minutes ago"; it must not be presented as "scanned every 5 minutes."
+
+**Done when:** daily actor invocations are proportional to observed source
+changes rather than to cadence × source count, per-source change frequency is
+recorded, and a source that never changes measurably reduces its own fetch rate.
+
+---
+
+### R2 — Insert Slice 3.5: thin vertical proof
+
+**Amends:** Implementation roadmap.
+
+**Problem.** No complete user path exists until Slice 5, and the differentiating
+loop does not close until Slice 9. Slice 1 ships a full shell where, correctly,
+*"no button pretends to perform an unwired action"* — so the most visible
+milestone for several slices is a finished-looking surface that performs no
+work. That is the wrong state to be in at any review, demo, or stakeholder
+checkpoint.
+
+**Revision.** After Slice 3, before Slice 4 breadth, build one narrow vertical
+path end to end.
+
+Scope, deliberately minimal:
+
+- one use case only — competitor and market change;
+- one source kind only — whichever Slice 0 proved most reliable;
+- one finding path — agreed and contested only; qualified, dismissed and
+  superseded deferred to Slice 4;
+- one solution with the full recommendation contract, but no work board;
+- one receipt, graded against clearly labelled seeded synthetic outcome data.
+- Synthetic outcome imports are labelled AND structurally excluded from
+  first-party evidence write-back, minimum-N baselines, and retrieval.
+  Labelling alone is not sufficient — the write-back path must refuse synthetic
+  sources.
+
+Hard constraint: this slice uses the **real schema, real orchestrator, real
+workspace scoping and real gate events**. No mocked data path, no parallel
+prototype tables. Slices 4, 5 and 9 widen this path; they do not replace it.
+
+**Done when:** a single competitor change can be traced in a browser from
+scheduled scan through finding, human ruling, approved solution, and graded
+receipt, with every step persisted through the production schema.
+
+---
+
+### R3 — Make the cross-division deferral explicit
+
+**Amends:** Product promise; target information architecture.
+
+**Problem.** One workspace is one division × region, and cross-division rollups
+are out of scope. That is defensible for V1. But the stated business case
+includes leadership visibility across divisions, and a Cockpit that silently
+shows one division while implying organisational coverage will be read as a
+defect the first time it reaches a leadership audience.
+
+**Revision.**
+
+- Add cross-division visibility to a named **Deferred** list in the Slice 0
+  route/use-case inventory, with the reason recorded.
+- The Cockpit header must state the active division and region explicitly, so
+  scope is visible without navigation (lands in Slice 2 with the
+  workspace-profile migration; Slice 1 shows the workspace name only).
+- Where a metric is division-scoped, label it as such. No unqualified
+  organisation-level phrasing in Platina copy.
+- A future read-only cross-workspace executive view requires its own
+  owner-approved contract covering authorization, aggregation rules and minimum
+  sample suppression. It is not implied by this plan.
+
+**Done when:** the active scope is visible on every primary surface and no copy
+implies coverage the data model does not provide.
+
+---
+
+### R4 — Retrieval quality gates
+
+**Amends:** Slice 2 (migration); Slice 5 (retrieval).
+
+Four gaps in the current retrieval design, ordered by return on effort.
+
+**R4.1 — Embedding model version column.** *(Slice 2)*
+Add `embedding_model_version` to every table holding vectors. Mixed-generation
+vectors in one index produce meaningless similarity scores and throw no error.
+Retrieval must filter on the active version; a version change requires an
+explicit backfill rather than silent coexistence. This is a trivial migration
+now and an unrecoverable data-quality incident later.
+
+**R4.2 — Similarity floor and `insufficient_relevance`.** *(Slice 5)*
+Minimum-N checks baseline *size*. It does not check retrieved *relevance*. A
+workspace can hold 200 qualifying records, retrieve five at 0.31 similarity, and
+generate confidently on unrelated evidence. Add a configurable similarity floor;
+when the best retrieved chunk falls below it, return `insufficient_relevance` as
+a distinct state. The two states require different operator action — one means
+"more data is needed", the other means "the question does not match the
+evidence" — so they must not share a message.
+
+**R4.3 — Reranking stage.** *(Slice 5)*
+Bi-encoder similarity optimizes topical resemblance, not answer relevance.
+Retrieve a wider candidate set, then rerank to the final set with a cross-encoder
+or a bounded model-router scoring pass before generation. Reranking runs inside
+the existing router and budget enforcement.
+
+**R4.4 — Hybrid lexical search.** *(Slice 5)*
+Pure vector search misses exact strings: instrument model numbers, method codes,
+catalogue references, product names. For Waters content this is a frequent
+failure, not an edge case. Add BM25 alongside vector retrieval and fuse with
+reciprocal rank fusion. Hybrid retrieval applies to Planes A and C only;
+Plane B remains structurally unsearchable — no vector index, no lexical index.
+
+**R4.5 — Record-boundary chunking.** *(Slice 5)*
+Fixed-size chunking splits structured campaign and outcome records mid-record,
+so retrieval returns fragments of two unrelated records. Chunk campaign and
+outcome data by record boundary — one record and its outcome as an atomic unit.
+Prose sources keep semantic chunking.
+
+**Done when:** retrieval filters on embedding version, both insufficiency states
+are distinguishable in the UI, an exact model-number query returns the correct
+record, and retrieval evaluation (R5.2) shows no regression against the
+pre-rerank baseline.
+
+---
+
+### R5 — Contradiction layer instrumentation
+
+**Amends:** Slice 4.
+
+**R5.1 — Objection rate telemetry.**
+A model instructed to challenge will always find something. If the challenger
+objects to nearly everything, `qualified` stops carrying information and the
+layer becomes cost without signal. Record per-workspace objection rate, add an
+explicit "no material objection" challenger output, and surface the rate in the
+audit drawer. An objection rate above a configurable ceiling raises an
+operational finding against the prompt version, not against the claims.
+
+**R5.2 — Retrieval evaluation set.**
+Add 30–50 hand-labelled query → expected-record pairs, workspace-scoped, run in
+CI against a named CI fixture workspace, not production workspace data. Without
+this, every chunking, prompt or threshold change is unverifiable and
+improvement cannot be distinguished from regression. This gates R4.3 and R4.4.
+
+**R5.3 — Refutation memory.**
+Compaction handles redundancy. Nothing currently handles *"this was tried and it
+did not work."* When a measured outcome contradicts a derived finding, link the
+contradicting evidence, floor the confidence, and exclude the finding from
+retrieval — but retain the record. A recorded failure is what prevents the system
+re-proposing the same direction in six months.
+
+**Done when:** objection rate is visible and alarmed, the evaluation set runs in
+CI, and a contradicted finding is demoted and excluded from future retrieval
+without being deleted.
+
+---
+
+### Revision-to-slice mapping
+
+| Revision | Lands in | Blocking | Effort |
+|---|---|---|---|
+| R1 — change-detection tier | Slice 3 | No | Medium |
+| R2 — thin vertical proof | New Slice 3.5 | Reorders 4–9 breadth | Medium |
+| R3 — cross-division deferral | Slice 0 inventory, Slice 2 header copy | No | Low |
+| R4.1 — embedding version column | Slice 2 migration | Yes, before any embedding | Trivial |
+| R4.2 — similarity floor | Slice 5 | No | Low |
+| R4.3 — reranking | Slice 5 | Gated by R5.2 | Medium |
+| R4.4 — hybrid lexical search | Slice 5 | Gated by R5.2 | Low |
+| R4.5 — record-boundary chunking | Slice 5 | No | Low |
+| R5.1 — objection rate | Slice 4 | No | Low |
+| R5.2 — evaluation set | Slice 4 | Gates R4.3, R4.4 | Medium |
+| R5.3 — refutation memory | Slice 9 | No | Medium |
+
+**R4.1 is the only revision that must land before the slice it sits in
+completes.** Once vectors exist without a version column, adding one requires
+either a full re-embed or an unverifiable assumption about which model produced
+which row.
+
+---
+
+### Approval requested for the addendum
+
+Approval of this addendum amends the roadmap to include Slice 3.5 and the
+revisions listed above. It does not authorize implementation beyond Slice 0.
+Each amended slice still receives its own implementation-ready task plan and
+reviewable diff, and Owner checkpoint B continues to block all destructive
+removal.
