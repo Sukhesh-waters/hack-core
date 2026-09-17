@@ -128,13 +128,12 @@ const FORBIDDEN_PREFIXES: { prefix: string; allowed?: string }[] = [
 ];
 
 /**
- * Grandfathered exceptions — a ratchet: it may only shrink. The one entry
- * is the known audit finding (Instagram connector behind the Platina Apify
- * adapter); Slice 3 replaces it and deletes this entry.
+ * Grandfathered exceptions — a ratchet: it may only shrink. Empty since
+ * Slice 3: the one historical entry (the Instagram connector behind the
+ * Platina Apify adapter) was replaced by the Waters adapter in
+ * `fetch/waters.ts`, which talks to the Apify platform API directly.
  */
-const EXCEPTIONS: { file: string; specifier: string }[] = [
-  { file: "lib/platina/fetch/apify.ts", specifier: "@/lib/connectors/apify" },
-];
+const EXCEPTIONS: { file: string; specifier: string }[] = [];
 
 function isForbidden(specifier: string): boolean {
   if (FORBIDDEN_EXACT.has(specifier)) return true;
@@ -228,8 +227,10 @@ describe("platina/instamedia dependency boundary", () => {
     expect(unlisted).toEqual([]);
   });
 
-  it("the exception table does not grow and does not go stale", () => {
-    expect(EXCEPTIONS).toHaveLength(1);
+  it("the exception table does not grow", () => {
+    // Zero since Slice 3. Adding an entry requires owner review — the table
+    // is a ratchet, not a registry.
+    expect(EXCEPTIONS).toHaveLength(0);
     for (const { file, specifier } of EXCEPTIONS) {
       const content = readFileSync(join(SRC, file), "utf-8");
       expect(

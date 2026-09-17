@@ -26,8 +26,12 @@ type FakeStore = {
   transitions: TransitionInput[];
   broadcasts: string[];
   contradictions: string[];
-  specRuns: string[];
-  fetchImpl: () => Promise<{ fetched: number }>;
+  specOutcomes: { specId: string; inserted: number; failed: boolean }[];
+  fetchImpl: () => Promise<{
+    fetched: number;
+    inserted: number;
+    failures: string[];
+  }>;
 };
 
 function makeDeps(store: FakeStore): OrchestratorDeps {
@@ -45,8 +49,8 @@ function makeDeps(store: FakeStore): OrchestratorDeps {
     dispatchContradiction: async (ws) => {
       store.contradictions.push(ws);
     },
-    markSpecRun: async (ws, specId) => {
-      store.specRuns.push(`${ws}:${specId}`);
+    recordSpecOutcome: async (ws, specId, outcome) => {
+      store.specOutcomes.push({ specId, ...outcome });
     },
     broadcast: async (ws, runId) => {
       store.broadcasts.push(`${ws}:${runId}`);
@@ -56,14 +60,18 @@ function makeDeps(store: FakeStore): OrchestratorDeps {
 
 function makeStore(
   run: AuditRunRecord,
-  fetchImpl: FakeStore["fetchImpl"] = async () => ({ fetched: 3 }),
+  fetchImpl: FakeStore["fetchImpl"] = async () => ({
+    fetched: 3,
+    inserted: 3,
+    failures: [],
+  }),
 ): FakeStore {
   return {
     run,
     transitions: [],
     broadcasts: [],
     contradictions: [],
-    specRuns: [],
+    specOutcomes: [],
     fetchImpl,
   };
 }
@@ -109,7 +117,9 @@ describe("executeAuditRun", () => {
     ]);
     expect(store.broadcasts).toHaveLength(3);
     expect(store.contradictions).toEqual(["ws-1"]);
-    expect(store.specRuns).toEqual(["ws-1:spec-1"]);
+    expect(store.specOutcomes).toEqual([
+      { specId: "spec-1", inserted: 3, failed: false },
+    ]);
   });
 
   it("is a no-op on a terminal run (idempotent re-entry)", async () => {
@@ -146,20 +156,38 @@ describe("executeAuditRun", () => {
     const outcome = await executeAuditRun(makeDeps(store), "ws-1", "run-1");
     expect(outcome.outcome).toBe("degraded");
     expect(store.run.status).toBe("degraded");
-    expect(store.specRuns).toHaveLength(0);
+    expect(store.specOutcomes).toHaveLength(0);
+  });
+
+  it("marks degraded when some targets fail but others succeed", async () => {
+    const store = makeStore(makeRun(), async () => ({
+      fetched: 2,
+      inserted: 2,
+      failures: ["https://bad.example.com (timeout)"],
+    }));
+    const outcome = await executeAuditRun(makeDeps(store), "ws-1", "run-1");
+    expect(outcome.outcome).toBe("degraded");
+    expect(store.run.status).toBe("degraded");
+    expect(store.contradictions).toEqual(["ws-1"]);
   });
 
   it("records deferred stages as skipped in the timeline, never silently", async () => {
     const store = makeStore(makeRun());
     await executeAuditRun(makeDeps(store), "ws-1", "run-1");
     const validating = store.transitions.find((t) => t.to === "validating");
-    expect(validating?.message).toContain("competitor_scan: 3 documents fetched");
+    expect(validating?.message).toContain(
+      "competitor_scan: 3 fetched, 3 new",
+    );
     expect(validating?.message).toContain("brand_divergence: skipped");
     expect(validating?.message).toContain("ideation: skipped");
   });
 
   it("does not dispatch contradiction when nothing was fetched", async () => {
-    const store = makeStore(makeRun(), async () => ({ fetched: 0 }));
+    const store = makeStore(makeRun(), async () => ({
+      fetched: 0,
+      inserted: 0,
+      failures: [],
+    }));
     await executeAuditRun(makeDeps(store), "ws-1", "run-1");
     expect(store.contradictions).toHaveLength(0);
   });

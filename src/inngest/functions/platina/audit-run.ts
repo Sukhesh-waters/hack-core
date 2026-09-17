@@ -3,11 +3,12 @@ import {
   getAuditRun,
   getScanSpec,
   insertSignalDocuments,
-  markSpecLastRun,
+  recordFetchOutcome,
   transitionAuditRun,
 } from "@/db/queries/platina";
-import { registerApifyAdapter } from "@/lib/platina/fetch/apify";
 import { runApprovedScan } from "@/lib/platina/fetch/registry";
+import { backoffInterval, tightenInterval } from "@/lib/platina/fetch/schedule";
+import { registerWatersAdapter } from "@/lib/platina/fetch/waters";
 import {
   executeAuditRun,
   type AuditRunRecord,
@@ -15,7 +16,7 @@ import {
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 import type { RunStatus } from "@/lib/platina/run-status";
 
-registerApifyAdapter();
+registerWatersAdapter();
 
 /**
  * Durable audit-run worker. The orchestrator owns the state machine; every
@@ -58,14 +59,24 @@ export const platinaAuditRun = inngest.createFunction(
             if (spec.status !== "approved") {
               throw new Error("audit source is not approved");
             }
-            const docs = await runApprovedScan({
+            const outcome = await runApprovedScan({
               id: spec.id,
               workspaceId: spec.workspaceId,
               status: spec.status,
               targets: spec.targets,
             });
-            const inserted = await insertSignalDocuments(ws, spec.id, docs);
-            return { fetched: inserted };
+            const inserted = await insertSignalDocuments(
+              ws,
+              spec.id,
+              outcome.docs,
+            );
+            return {
+              fetched: outcome.docs.length,
+              inserted,
+              failures: outcome.failures.map(
+                (f) => `${f.target} (${f.error})`,
+              ),
+            };
           },
           dispatchContradiction: async (ws) => {
             await inngest.send({
@@ -73,7 +84,11 @@ export const platinaAuditRun = inngest.createFunction(
               data: { workspaceId: ws },
             });
           },
-          markSpecRun: (ws, specId) => markSpecLastRun(ws, specId),
+          recordSpecOutcome: (ws, specId, outcome) =>
+            recordFetchOutcome(ws, specId, outcome, {
+              tighten: tightenInterval,
+              backoff: backoffInterval,
+            }),
           broadcast: (ws, id) => broadcastPlatinaSignal(ws, "audits", id),
         },
         workspaceId,

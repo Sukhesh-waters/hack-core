@@ -18,17 +18,35 @@ export type RawSignalDoc = {
   title?: string;
   body: string;
   adapter: string;
+  sourceKind?: string;
+  canonicalUrl?: string;
+  contentHash?: string;
   raw?: unknown;
+};
+
+/** A target that produced nothing usable. Never stored as a signal doc. */
+export type FetchFailure = { target: string; error: string };
+
+export type FetchOutcome = {
+  docs: RawSignalDoc[];
+  failures: FetchFailure[];
 };
 
 export type SignalAdapter = {
   key: string;
-  fetch(spec: ApprovedScanSpec): Promise<RawSignalDoc[]>;
+  fetch(spec: ApprovedScanSpec): Promise<FetchOutcome>;
 };
 
 const adapters = new Map<string, SignalAdapter>();
 
+/** The own-code web adapter is not shipped; content fetches go through
+ *  Apify until the constitution is explicitly updated. */
+const UNSHIPPED_ADAPTERS = new Set(["web"]);
+
 export function registerAdapter(adapter: SignalAdapter) {
+  if (UNSHIPPED_ADAPTERS.has(adapter.key)) {
+    throw new Error(`adapter "${adapter.key}" is not shipped and cannot be registered`);
+  }
   adapters.set(adapter.key, adapter);
 }
 
@@ -51,8 +69,11 @@ export function assertApproved(
 export async function runApprovedScan(
   spec: ScanSpecCandidate,
   adapterKey = "apify",
-): Promise<RawSignalDoc[]> {
+): Promise<FetchOutcome> {
   assertApproved(spec);
+  if (UNSHIPPED_ADAPTERS.has(adapterKey)) {
+    throw new Error(`adapter "${adapterKey}" is not shipped — content fetches go through Apify`);
+  }
   const adapter = getAdapter(adapterKey);
   if (!adapter) {
     throw new Error(`unknown signal adapter: ${adapterKey}`);

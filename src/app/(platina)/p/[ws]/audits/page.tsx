@@ -1,6 +1,7 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listAuditRuns, listScanSpecs } from "@/db/queries/platina";
+import { freshnessState } from "@/lib/platina/run-status";
 import {
   confirmScanAction,
   createScanSpecAction,
@@ -26,6 +27,20 @@ const RUN_STATUS_LABEL: Record<string, string> = {
   degraded: "Degraded",
   failed: "Failed",
 };
+
+const KIND_LABEL: Record<string, string> = {
+  competitor_site: "Competitor",
+  press_release: "Press",
+  conference: "Conference",
+  trade_editorial: "Editorial",
+  ad_library: "Ad library",
+};
+
+const FRESHNESS_LABEL = {
+  fresh: "Fresh",
+  stale: "Stale",
+  unknown: "No data yet",
+} as const;
 
 export default async function AuditsPage({
   params,
@@ -64,7 +79,31 @@ export default async function AuditsPage({
             placeholder="https://competitor.example.com"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
+          <select
+            name="kind"
+            defaultValue="competitor_site"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="competitor_site">Competitor / product page</option>
+            <option value="press_release">Press release</option>
+            <option value="trade_editorial">Trade editorial</option>
+            <option value="conference">Conference page</option>
+            <option value="ad_library">Ad library</option>
+          </select>
+          <select
+            name="cadenceMinutes"
+            defaultValue="5"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm"
+          >
+            <option value="5">Check every 5 minutes</option>
+            <option value="10">Check every 10 minutes</option>
+            <option value="15">Check every 15 minutes</option>
+          </select>
         </div>
+        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+          Checks are cheap header probes; a paid fetch runs only when content
+          changes. Sources without a probe signal adapt their own fetch rate.
+        </p>
         <button
           type="submit"
           className="mt-3 rounded-md border border-border px-3 py-1.5 text-sm"
@@ -87,7 +126,13 @@ export default async function AuditsPage({
                   Source
                 </th>
                 <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Targets
+                  Type
+                </th>
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Cadence
+                </th>
+                <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Freshness
                 </th>
                 <th className="px-4 py-2.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                   Status
@@ -96,23 +141,39 @@ export default async function AuditsPage({
               </tr>
             </thead>
             <tbody>
-              {specs.map((spec) => (
-                <tr key={spec.id} className="border-b border-border last:border-0">
-                  <td className="px-4 py-3 font-medium">{spec.name}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {spec.targets.length}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={
-                        spec.status === "draft"
-                          ? "rounded bg-secondary px-2 py-0.5 font-mono text-[11px] text-secondary-foreground"
-                          : "rounded bg-accent px-2 py-0.5 font-mono text-[11px] text-accent-foreground"
-                      }
-                    >
-                      {STATUS_LABEL[spec.status] ?? spec.status}
-                    </span>
-                  </td>
+              {specs.map((spec) => {
+                const freshness = freshnessState(spec.lastSuccessAt);
+                return (
+                  <tr key={spec.id} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 font-medium">{spec.name}</td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {KIND_LABEL[spec.targets[0]?.kind ?? ""] ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                      {spec.cadenceMinutes}m
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={
+                          freshness === "stale"
+                            ? "rounded bg-destructive/10 px-2 py-0.5 font-mono text-[11px] text-destructive"
+                            : "rounded bg-secondary px-2 py-0.5 font-mono text-[11px] text-secondary-foreground"
+                        }
+                      >
+                        {FRESHNESS_LABEL[freshness]}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={
+                          spec.status === "draft"
+                            ? "rounded bg-secondary px-2 py-0.5 font-mono text-[11px] text-secondary-foreground"
+                            : "rounded bg-accent px-2 py-0.5 font-mono text-[11px] text-accent-foreground"
+                        }
+                      >
+                        {STATUS_LABEL[spec.status] ?? spec.status}
+                      </span>
+                    </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-2">
                       {spec.status === "draft" && (
@@ -150,7 +211,8 @@ export default async function AuditsPage({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

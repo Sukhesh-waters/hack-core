@@ -102,7 +102,9 @@ export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
 export type PlatinaScanTarget = {
   kind: "competitor_site" | "press_release" | "conference" | "trade_editorial" | "ad_library";
   value: string;
-  adapter?: "apify" | "web";
+  // "web" (own-code adapter) is deliberately not a selectable value until the
+  // constitution is updated; the runtime registry rejects it too.
+  adapter?: "apify";
 };
 
 export type PlatinaPromptTemplates = {
@@ -187,6 +189,10 @@ export const platinaSignalDocuments = pgTable(
     workspaceId: workspaceFk(),
     scanSpecId: text("scan_spec_id"),
     sourceUrl: text("source_url").notNull(),
+    canonicalUrl: text("canonical_url"),
+    sourceKind: text("source_kind"),
+    contentHash: text("content_hash"),
+    processingState: text("processing_state").notNull().default("unprocessed"),
     title: text("title"),
     body: text("body").notNull(),
     fetchedAt: timestamp("fetched_at", { mode: "date" }).notNull().defaultNow(),
@@ -198,6 +204,10 @@ export const platinaSignalDocuments = pgTable(
     workspaceIdx: index("platina_signal_documents_workspace_id_idx").on(
       table.workspaceId,
     ),
+    // Dedupe is physical: unchanged content cannot insert twice for a spec.
+    specHashUnique: uniqueIndex(
+      "platina_signal_documents_spec_hash_unique",
+    ).on(table.scanSpecId, table.contentHash),
   }),
 );
 
@@ -302,8 +312,19 @@ export const platinaScanSpecs = pgTable(
     name: text("name").notNull(),
     targets: jsonb("targets").$type<PlatinaScanTarget[]>().notNull().default([]),
     cadence: text("cadence").notNull().default("weekly"),
+    cadenceMinutes: integer("cadence_minutes").notNull().default(5),
+    enabled: boolean("enabled").notNull().default(true),
     status: platinaScanStatus("status").notNull().default("draft"),
     lastRunAt: timestamp("last_run_at", { mode: "date" }),
+    lastSuccessAt: timestamp("last_success_at", { mode: "date" }),
+    lastFailureAt: timestamp("last_failure_at", { mode: "date" }),
+    lastProbeAt: timestamp("last_probe_at", { mode: "date" }),
+    probeEtag: text("probe_etag"),
+    probeLastModified: text("probe_last_modified"),
+    consecutiveUnchanged: integer("consecutive_unchanged").notNull().default(0),
+    currentIntervalMinutes: integer("current_interval_minutes"),
+    fetchesDay: text("fetches_day"),
+    fetchesToday: integer("fetches_today").notNull().default(0),
     createdById: text("created_by_id")
       .notNull()
       .references(() => users.id),

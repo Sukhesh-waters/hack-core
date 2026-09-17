@@ -13,8 +13,9 @@ import { rescoreSweep } from "@/inngest/functions/rescore";
 import { autoDocGenerator } from "@/inngest/functions/auto-docs";
 import { sopReverseSync } from "@/inngest/functions/sop-reverse-sync";
 import { sopReconciliation } from "@/inngest/functions/sop-reconciliation";
-import { platinaSignalScan } from "@/inngest/functions/platina/signal-scan";
 import { platinaAuditRun } from "@/inngest/functions/platina/audit-run";
+import { platinaScanCoordinator } from "@/inngest/functions/platina/scan-coordinator";
+import { platinaProbeTick } from "@/inngest/functions/platina/probe-tick";
 import { platinaContradictSweep } from "@/inngest/functions/platina/contradict-sweep";
 import { platinaBrainMaintenance } from "@/inngest/functions/platina/brain-maintenance";
 import { platinaReceiptReview } from "@/inngest/functions/platina/receipt-review";
@@ -39,8 +40,9 @@ export const { GET, POST, PUT } = serve({
     knowledgeRefresh,
     sopReverseSync,
     sopReconciliation,
-    platinaSignalScan,
     platinaAuditRun,
+    platinaScanCoordinator,
+    platinaProbeTick,
     platinaContradictSweep,
     platinaBrainMaintenance,
     platinaReceiptReview,

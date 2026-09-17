@@ -21,13 +21,16 @@ describe("signal adapter registry", () => {
   beforeEach(() => {
     registerAdapter({
       key: "apify",
-      fetch: async (s) => [
-        {
-          sourceUrl: s.targets[0]?.value ?? "",
-          body: "public page",
-          adapter: "apify",
-        },
-      ],
+      fetch: async (s) => ({
+        docs: [
+          {
+            sourceUrl: s.targets[0]?.value ?? "",
+            body: "public page",
+            adapter: "apify",
+          },
+        ],
+        failures: [],
+      }),
     });
   });
 
@@ -37,17 +40,35 @@ describe("signal adapter registry", () => {
   });
 
   it("runs through the registered adapter", async () => {
-    const docs = await runApprovedScan(spec("approved"));
-    expect(docs).toHaveLength(1);
-    expect(docs[0].adapter).toBe("apify");
+    const outcome = await runApprovedScan(spec("approved"));
+    expect(outcome.docs).toHaveLength(1);
+    expect(outcome.docs[0].adapter).toBe("apify");
+    expect(outcome.failures).toEqual([]);
   });
 
   it("can swap adapters without a schema change", () => {
     registerAdapter({
-      key: "web",
-      fetch: async () => [{ sourceUrl: "x", body: "own-code", adapter: "web" }],
+      key: "test-adapter",
+      fetch: async () => ({
+        docs: [{ sourceUrl: "x", body: "own-code", adapter: "test-adapter" }],
+        failures: [],
+      }),
     });
-    expect(listAdapterKeys()).toEqual(expect.arrayContaining(["apify", "web"]));
-    expect(getAdapter("web")?.key).toBe("web");
+    expect(listAdapterKeys()).toEqual(
+      expect.arrayContaining(["apify", "test-adapter"]),
+    );
+    expect(getAdapter("test-adapter")?.key).toBe("test-adapter");
+  });
+
+  it("rejects the unshipped web adapter at registration and at run time", async () => {
+    expect(() =>
+      registerAdapter({
+        key: "web",
+        fetch: async () => ({ docs: [], failures: [] }),
+      }),
+    ).toThrow(/not shipped/);
+    await expect(runApprovedScan(spec("approved"), "web")).rejects.toThrow(
+      /not shipped/,
+    );
   });
 });

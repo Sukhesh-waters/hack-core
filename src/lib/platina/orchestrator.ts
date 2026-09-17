@@ -38,17 +38,31 @@ export type TransitionInput = {
   degradedReason?: string;
 };
 
+export type FetchStageResult = {
+  /** Documents the actor returned (before dedupe). */
+  fetched: number;
+  /** Rows actually inserted after hash dedupe. */
+  inserted: number;
+  /** Targets that produced nothing usable. */
+  failures: string[];
+};
+
 export type OrchestratorDeps = {
   loadRun: (workspaceId: string, runId: string) => Promise<AuditRunRecord | null>;
   transition: (input: TransitionInput) => Promise<string | null>;
-  /** The fetch stage: approved-spec registry fetch + signal insert. */
+  /** The fetch stage: approved-spec registry fetch + deduped signal insert. */
   runFetchStage: (
     workspaceId: string,
     run: AuditRunRecord,
-  ) => Promise<{ fetched: number }>;
+  ) => Promise<FetchStageResult>;
   /** Hands the new signal batch to the contradiction sweep. */
   dispatchContradiction: (workspaceId: string) => Promise<void>;
-  markSpecRun: (workspaceId: string, specId: string) => Promise<void>;
+  /** Records the outcome on the source (freshness, adaptive cadence state). */
+  recordSpecOutcome: (
+    workspaceId: string,
+    specId: string,
+    outcome: { inserted: number; failed: boolean },
+  ) => Promise<void>;
   broadcast: (workspaceId: string, runId: string) => Promise<void>;
 };
 
@@ -129,6 +143,8 @@ export async function executeAuditRun(
   const stageNotes: string[] = [];
   let fetchFailed: string | null = null;
   let fetchSkipped: string | null = null;
+  let fetchFailures: string[] = [];
+  let inserted = 0;
 
   for (const stage of run.configSnapshot.analysisSequence) {
     const executor = STAGE_EXECUTORS[stage];
@@ -145,10 +161,25 @@ export async function executeAuditRun(
     try {
       const result = await deps.runFetchStage(workspaceId, run);
       counters.fetched = (counters.fetched ?? 0) + result.fetched;
-      stageNotes.push(`${stage}: ${result.fetched} documents fetched`);
+      counters.inserted = (counters.inserted ?? 0) + result.inserted;
+      inserted += result.inserted;
+      fetchFailures = result.failures;
+      stageNotes.push(
+        `${stage}: ${result.fetched} fetched, ${result.inserted} new` +
+          (result.failures.length > 0
+            ? `, ${result.failures.length} target(s) failed`
+            : ""),
+      );
     } catch (error) {
       fetchFailed = error instanceof Error ? error.message : "fetch failed";
     }
+  }
+
+  if (run.specId) {
+    await deps.recordSpecOutcome(workspaceId, run.specId, {
+      inserted,
+      failed: fetchFailed !== null,
+    });
   }
 
   if (fetchFailed) {
@@ -181,11 +212,13 @@ export async function executeAuditRun(
   }
 
   // Deferred stages are the expected V1 shape, not a degradation. Degraded
-  // means something that should have worked did not — in Slice 2, a run with
-  // no source attached to fetch from.
+  // means something that should have worked did not: no source attached, or
+  // some targets failed while others succeeded.
   const degradedReason = fetchSkipped
     ? `fetch stage skipped: ${fetchSkipped}`
-    : null;
+    : fetchFailures.length > 0
+      ? `targets failed: ${fetchFailures.join("; ")}`
+      : null;
 
   await deps.transition({
     workspaceId,
@@ -196,7 +229,6 @@ export async function executeAuditRun(
     degradedReason: degradedReason ?? undefined,
     counters,
   });
-  if (run.specId) await deps.markSpecRun(workspaceId, run.specId);
   await deps.broadcast(workspaceId, runId);
 
   return degradedReason

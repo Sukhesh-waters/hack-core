@@ -223,24 +223,41 @@ export async function insertBrandChunk(input: {
   return row.id;
 }
 
+/**
+ * Dedupe is physical: the unique index on (scan_spec_id, content_hash)
+ * refuses an unchanged re-fetch, so this returns the count of genuinely new
+ * rows — not the count the actor returned.
+ */
 export async function insertSignalDocuments(
   workspaceId: string,
   scanSpecId: string,
   docs: RawSignalDoc[],
 ) {
   if (docs.length === 0) return 0;
-  await db.insert(platinaSignalDocuments).values(
-    docs.map((doc) => ({
-      workspaceId,
-      scanSpecId,
-      sourceUrl: doc.sourceUrl,
-      title: doc.title,
-      body: doc.body,
-      adapter: doc.adapter,
-      raw: doc.raw,
-    })),
-  );
-  return docs.length;
+  const inserted = await db
+    .insert(platinaSignalDocuments)
+    .values(
+      docs.map((doc) => ({
+        workspaceId,
+        scanSpecId,
+        sourceUrl: doc.sourceUrl,
+        canonicalUrl: doc.canonicalUrl ?? null,
+        sourceKind: doc.sourceKind ?? null,
+        contentHash: doc.contentHash ?? null,
+        title: doc.title,
+        body: doc.body,
+        adapter: doc.adapter,
+        raw: doc.raw,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [
+        platinaSignalDocuments.scanSpecId,
+        platinaSignalDocuments.contentHash,
+      ],
+    })
+    .returning({ id: platinaSignalDocuments.id });
+  return inserted.length;
 }
 
 export async function insertBrainChunk(input: {
@@ -292,6 +309,7 @@ export async function insertScanSpec(input: {
   name: string;
   targets: PlatinaScanTarget[];
   createdById: string;
+  cadenceMinutes?: number;
 }) {
   const [row] = await db
     .insert(platinaScanSpecs)
@@ -630,6 +648,101 @@ export async function markSpecLastRun(workspaceId: string, specId: string) {
   await db
     .update(platinaScanSpecs)
     .set({ lastRunAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.id, specId),
+      ),
+    );
+}
+
+/**
+ * Approved + enabled specs for the cadence coordinator. Deliberately a
+ * global enumeration (reviewed exception, same class as
+ * listApprovedScanSpecs): the coordinator fans out per spec, and every
+ * downstream read/write is workspace-scoped by the row's workspace_id.
+ */
+export async function listSchedulableSpecs() {
+  return db
+    .select()
+    .from(platinaScanSpecs)
+    .where(
+      and(
+        eq(platinaScanSpecs.status, "approved"),
+        eq(platinaScanSpecs.enabled, true),
+      ),
+    );
+}
+
+/** Probe-tier bookkeeping: validators and the last probe timestamp. */
+export async function recordProbeState(
+  workspaceId: string,
+  specId: string,
+  state: {
+    etag?: string | null;
+    lastModified?: string | null;
+    currentIntervalMinutes?: number | null;
+  },
+) {
+  await db
+    .update(platinaScanSpecs)
+    .set({
+      lastProbeAt: new Date(),
+      ...(state.etag !== undefined ? { probeEtag: state.etag } : {}),
+      ...(state.lastModified !== undefined
+        ? { probeLastModified: state.lastModified }
+        : {}),
+      ...(state.currentIntervalMinutes !== undefined
+        ? { currentIntervalMinutes: state.currentIntervalMinutes }
+        : {}),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.id, specId),
+      ),
+    );
+}
+
+/**
+ * Run-outcome bookkeeping on the source: freshness timestamps, the adaptive
+ * cadence interval (tighten on new content, back off on unchanged), and the
+ * daily cost-cap counters (reset each UTC day).
+ */
+export async function recordFetchOutcome(
+  workspaceId: string,
+  specId: string,
+  outcome: { inserted: number; failed: boolean },
+  intervals: {
+    tighten: (current: number | null, floor: number) => number;
+    backoff: (current: number | null) => number;
+  },
+) {
+  const spec = await getScanSpec(workspaceId, specId);
+  if (!spec) return;
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const fetchesToday = spec.fetchesDay === today ? spec.fetchesToday + 1 : 1;
+  const changed = outcome.inserted > 0;
+  await db
+    .update(platinaScanSpecs)
+    .set({
+      lastRunAt: now,
+      lastSuccessAt: outcome.failed ? spec.lastSuccessAt : now,
+      lastFailureAt: outcome.failed ? now : spec.lastFailureAt,
+      consecutiveUnchanged: outcome.failed
+        ? spec.consecutiveUnchanged
+        : changed
+          ? 0
+          : spec.consecutiveUnchanged + 1,
+      currentIntervalMinutes: changed
+        ? intervals.tighten(spec.currentIntervalMinutes, spec.cadenceMinutes)
+        : intervals.backoff(spec.currentIntervalMinutes),
+      fetchesDay: today,
+      fetchesToday,
+      updatedAt: now,
+    })
     .where(
       and(
         eq(platinaScanSpecs.workspaceId, workspaceId),

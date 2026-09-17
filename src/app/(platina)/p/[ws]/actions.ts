@@ -64,18 +64,44 @@ export async function declareBrandAction(formData: FormData): Promise<void> {
   revalidatePath(`/p/${ws}`);
 }
 
+const SOURCE_KINDS = [
+  "competitor_site",
+  "press_release",
+  "conference",
+  "trade_editorial",
+  "ad_library",
+] as const;
+const CADENCE_MINUTES = [5, 10, 15] as const;
+
 export async function createScanSpecAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
   await requireCapability(ws, user.id, "gate.confirm");
   const name = String(formData.get("name") ?? "").trim();
   const value = String(formData.get("target") ?? "").trim();
-  if (!name || !value) refuse(ws, "scans", "Name and target are required.");
+  const kind = String(formData.get("kind") ?? "");
+  const cadenceMinutes = Number(formData.get("cadenceMinutes") ?? 5);
+  if (!name || !value) refuse(ws, "audits", "Name and target are required.");
+  if (!SOURCE_KINDS.includes(kind as (typeof SOURCE_KINDS)[number])) {
+    refuse(ws, "audits", "Pick a valid source type.");
+  }
+  if (!CADENCE_MINUTES.includes(cadenceMinutes as 5 | 10 | 15)) {
+    refuse(ws, "audits", "Cadence must be 5, 10, or 15 minutes.");
+  }
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+  } catch {
+    refuse(ws, "audits", "Target must be a valid http(s) URL.");
+  }
   await insertScanSpec({
     workspaceId: ws,
     name,
     createdById: user.id,
-    targets: [{ kind: "competitor_site", value }],
+    targets: [
+      { kind: kind as (typeof SOURCE_KINDS)[number], value },
+    ],
+    cadenceMinutes,
   });
   revalidatePath(`/p/${ws}/scans`);
   revalidatePath(`/p/${ws}/audits`);
@@ -98,10 +124,22 @@ export async function confirmScanAction(formData: FormData): Promise<void> {
   };
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
-  await inngest.send({
-    name: "platina/scan.requested",
-    data: { specId, workspaceId: ws },
+  // Approval kicks off the first run immediately; cadence takes over after.
+  const config = await getWorkspaceConfig(ws);
+  const runId = await createAuditRun({
+    workspaceId: ws,
+    specId,
+    trigger: "event",
+    idempotencyKey: `approved:${specId}:${Date.now()}`,
+    configSnapshot: snapshotRunConfig(config),
   });
+  if (runId) {
+    await inngest.send({
+      name: "platina/audit-run.requested",
+      data: { runId, workspaceId: ws },
+    });
+    await broadcastPlatinaSignal(ws, "audits", runId);
+  }
   revalidatePath(`/p/${ws}/scans`);
   revalidatePath(`/p/${ws}/audits`);
   revalidatePath(`/p/${ws}`);
