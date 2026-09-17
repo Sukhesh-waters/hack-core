@@ -54,6 +54,35 @@
     --input: 217.2 32.6% 17.5%;
     --ring: 174 71% 45%;
   }
+
+  /* Platina AI OS for Waters — executive blue/white system, scoped to /p so
+     InstaMedia's teal identity under /w is untouched. The owner-approved
+     design is a light report-first surface, so the scope pins light tokens
+     even under an OS dark preference. */
+  .platina-shell,
+  .dark .platina-shell {
+    --background: 0 0% 100%;
+    --foreground: 215 45% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 45% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 45% 13%;
+    /* Waters blue #005EB8 */
+    --primary: 211 100% 36%;
+    --primary-foreground: 0 0% 100%;
+    /* pale blue section backgrounds and selected states */
+    --secondary: 210 100% 97%;
+    --secondary-foreground: 215 55% 20%;
+    --muted: 210 60% 96.5%;
+    --muted-foreground: 215 18% 40%;
+    --accent: 210 100% 95%;
+    --accent-foreground: 215 60% 22%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 213 30% 88%;
+    --input: 213 30% 84%;
+    --ring: 211 100% 36%;
+  }
 }
 
 @layer base {

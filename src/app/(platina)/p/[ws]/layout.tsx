@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/auth";
 import { requireMembership } from "@/db/queries/memberships";
+import { getWorkspaceById } from "@/db/queries/workspaces";
+import { PlatinaHeader } from "@/components/platina/header";
 import { PlatinaSidebar } from "@/components/platina/sidebar";
 
 export default async function PlatinaWorkspaceLayout({
@@ -16,11 +18,16 @@ export default async function PlatinaWorkspaceLayout({
   } catch {
     notFound();
   }
+  const workspace = await getWorkspaceById(params.ws);
+  if (!workspace) notFound();
 
   return (
-    <div className="flex h-screen">
-      <PlatinaSidebar workspaceId={params.ws} />
-      <main className="flex-1 overflow-y-auto">{children}</main>
+    <div className="platina-shell flex h-screen bg-background text-foreground">
+      <PlatinaSidebar workspaceId={params.ws} workspaceName={workspace.name} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <PlatinaHeader workspaceId={params.ws} />
+        <main className="flex-1 overflow-y-auto">{children}</main>
+      </div>
     </div>
   );
 }

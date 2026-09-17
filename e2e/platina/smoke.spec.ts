@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { NOT_FOUND_TEXT, PLATINA_ROUTES, platinaPath } from "../fixtures/platina";
+import {
+  NOT_FOUND_TEXT,
+  PLATINA_LEGACY_ROUTES,
+  PLATINA_ROUTES,
+  platinaPath,
+} from "../fixtures/platina";
 
 /**
- * Platina smoke baseline (Slice 0, W0.6).
+ * Platina smoke baseline.
  *
  * Uses the storageState saved by auth.setup.ts (wired via this project's
  * `dependencies` in playwright.config.ts) — no login flow here.
@@ -12,7 +17,7 @@ import { NOT_FOUND_TEXT, PLATINA_ROUTES, platinaPath } from "../fixtures/platina
  * assertion checks real rendered content AND explicitly asserts the 404 body
  * text is absent.
  */
-test("member renders every Platina route", async ({ page }) => {
+test("member renders every primary Platina route", async ({ page }) => {
   for (const route of PLATINA_ROUTES) {
     const response = await page.goto(platinaPath(route.subPath), {
       waitUntil: "domcontentloaded",
@@ -23,6 +28,26 @@ test("member renders every Platina route", async ({ page }) => {
       `${route.subPath || "cockpit"} renders its h1`,
     ).toBeVisible({ timeout: 60_000 });
     // The soft-404 check is load-bearing: notFound() returns HTTP 200.
+    await expect(page.getByText(NOT_FOUND_TEXT)).toHaveCount(0);
+    await expect(page.locator("body")).not.toContainText(NOT_FOUND_TEXT);
+  }
+});
+
+test("legacy Platina routes stay reachable for comparison", async ({
+  page,
+}) => {
+  for (const route of PLATINA_LEGACY_ROUTES) {
+    const response = await page.goto(platinaPath(route.subPath), {
+      waitUntil: "domcontentloaded",
+    });
+    expect(
+      response?.ok(),
+      `legacy ${route.subPath} responded`,
+    ).toBeTruthy();
+    await expect(
+      page.getByRole("heading", { name: route.h1, level: 1 }),
+      `legacy ${route.subPath} renders its h1`,
+    ).toBeVisible({ timeout: 60_000 });
     await expect(page.getByText(NOT_FOUND_TEXT)).toHaveCount(0);
     await expect(page.locator("body")).not.toContainText(NOT_FOUND_TEXT);
   }

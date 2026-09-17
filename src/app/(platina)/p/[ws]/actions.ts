@@ -12,6 +12,7 @@ import {
   insertReceipt,
   insertScanSpec,
   recordReceiptOutcome,
+  upsertWorkspaceConfig,
 } from "@/db/queries/platina";
 import { inngest } from "@/inngest/client";
 import { hashGatePayload } from "@/lib/platina/hash";
@@ -50,6 +51,8 @@ export async function declareBrandAction(formData: FormData): Promise<void> {
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/brand`);
+  revalidatePath(`/p/${ws}/admin/brand`);
+  revalidatePath(`/p/${ws}`);
 }
 
 export async function createScanSpecAction(formData: FormData): Promise<void> {
@@ -66,6 +69,8 @@ export async function createScanSpecAction(formData: FormData): Promise<void> {
     targets: [{ kind: "competitor_site", value }],
   });
   revalidatePath(`/p/${ws}/scans`);
+  revalidatePath(`/p/${ws}/audits`);
+  revalidatePath(`/p/${ws}`);
 }
 
 export async function confirmScanAction(formData: FormData): Promise<void> {
@@ -89,6 +94,8 @@ export async function confirmScanAction(formData: FormData): Promise<void> {
     data: { specId, workspaceId: ws },
   });
   revalidatePath(`/p/${ws}/scans`);
+  revalidatePath(`/p/${ws}/audits`);
+  revalidatePath(`/p/${ws}`);
 }
 
 export async function approveDirectionAction(formData: FormData): Promise<void> {
@@ -142,6 +149,10 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/receipts`);
   revalidatePath(`/p/${ws}/campaigns`);
+  revalidatePath(`/p/${ws}/solutions`);
+  revalidatePath(`/p/${ws}/solutions/new`);
+  revalidatePath(`/p/${ws}/outcomes`);
+  revalidatePath(`/p/${ws}`);
 }
 
 export async function publishCampaignAction(formData: FormData): Promise<void> {
@@ -160,6 +171,8 @@ export async function publishCampaignAction(formData: FormData): Promise<void> {
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
   revalidatePath(`/p/${ws}/campaigns`);
+  revalidatePath(`/p/${ws}/solutions`);
+  revalidatePath(`/p/${ws}`);
 }
 
 const RECEIPT_OUTCOMES = ["worked", "did_not_work", "inconclusive"] as const;
@@ -174,4 +187,18 @@ export async function gradeReceiptAction(formData: FormData): Promise<void> {
   if (!outcome) refuse(ws, "receipts", "Pick a valid outcome.");
   await recordReceiptOutcome({ workspaceId: ws, receiptId, outcome });
   revalidatePath(`/p/${ws}/receipts`);
+  revalidatePath(`/p/${ws}/outcomes`);
+  revalidatePath(`/p/${ws}`);
+}
+
+export async function saveConfigAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.approve");
+  await upsertWorkspaceConfig(ws, {
+    minBaselineN: Number(formData.get("minBaselineN") ?? 20),
+    contestedFloor: Number(formData.get("contestedFloor") ?? 0.4),
+    qualifiedFloor: Number(formData.get("qualifiedFloor") ?? 0.7),
+  });
+  revalidatePath(`/p/${ws}/admin`);
 }
