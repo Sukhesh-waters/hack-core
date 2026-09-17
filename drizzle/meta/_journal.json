@@ -421,6 +421,13 @@
       "when": 1789625910990,
       "tag": "0059_platina_waters_audits",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789629111185,
+      "tag": "0060_platina_findings_vertical",
+      "breakpoints": true
     }
   ]
 }

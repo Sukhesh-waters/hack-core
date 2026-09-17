@@ -95,6 +95,13 @@ export const platinaRunStatus = pgEnum("platina_run_status", [
   "failed",
 ]);
 
+export const platinaFindingStatus = pgEnum("platina_finding_status", [
+  "new",
+  "needs_decision",
+  "validated",
+  "refuted",
+]);
+
 /** The router's current embedding model — bump only with an explicit
  *  re-embed backfill (R4.1). Mixed versions in one index are meaningless. */
 export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
@@ -168,6 +175,10 @@ export const platinaOutcomes = pgTable(
     conversionRate: real("conversion_rate"),
     pipelineContribution: real("pipeline_contribution"),
     qualityScore: real("quality_score"),
+    // Synthetic rows are demo data, never evidence (A4): excluded from
+    // write-back, min-N baselines, and retrieval by construction.
+    synthetic: boolean("synthetic").notNull().default(false),
+    source: text("source"),
     recordedAt: timestamp("recorded_at", { mode: "date" }).notNull().defaultNow(),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
@@ -359,6 +370,13 @@ export const platinaReceipts = pgTable(
       .notNull()
       .default([]),
     reviewAt: timestamp("review_at", { mode: "date" }).notNull(),
+    // Recommendation-contract carriers (Slice 3.5): the decision record holds
+    // what the operator approved, not just that they approved.
+    findingId: text("finding_id"),
+    severity: text("severity"),
+    urgency: text("urgency"),
+    strongestUncertainty: text("strongest_uncertainty"),
+    measurementMethod: text("measurement_method"),
     outcome: platinaReceiptOutcome("outcome").notNull().default("pending"),
     outcomeNote: text("outcome_note"),
     reviewSurfacedAt: timestamp("review_surfaced_at", { mode: "date" }),
@@ -564,6 +582,42 @@ export const platinaAuditRunEvents = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Findings — user-facing, governed output of the contradiction layer.
+// agreed → new (+ Brain chunk); contested → needs_decision (no Brain chunk);
+// refuted → transcript only. Rulings are immutable and attributed.
+// ---------------------------------------------------------------------------
+
+export const platinaFindings = pgTable(
+  "platina_findings",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    signalDocumentId: text("signal_document_id"),
+    transcriptId: text("transcript_id"),
+    brainChunkId: text("brain_chunk_id"),
+    useCase: text("use_case").notNull().default("competitor_change"),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    strongestObjection: text("strongest_objection"),
+    severity: text("severity").notNull().default("medium"),
+    status: platinaFindingStatus("status").notNull().default("new"),
+    humanRuling: text("human_ruling"),
+    ruledBy: text("ruled_by").references(() => users.id),
+    ruledAt: timestamp("ruled_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_findings_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    signalIdx: index("platina_findings_signal_document_id_idx").on(
+      table.signalDocumentId,
+    ),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -579,4 +633,5 @@ export const platinaWorkspaceScopedTables = {
   platinaWorkspaceProfiles,
   platinaAuditRuns,
   platinaAuditRunEvents,
+  platinaFindings,
 } as const;

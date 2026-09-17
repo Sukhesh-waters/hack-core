@@ -1,68 +1,175 @@
+import Link from "next/link";
+import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
-import { listBrainChunks } from "@/db/queries/platina";
+import { listBrainChunks, listFindings } from "@/db/queries/platina";
+import { ruleFindingAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina findings" };
 
+const STATUS_LABEL: Record<string, string> = {
+  new: "New",
+  needs_decision: "Needs your decision",
+  validated: "Validated",
+  refuted: "Ruled out",
+};
+
+const SEVERITY_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
 /**
- * Derived market hypotheses that survived contradiction. Technical
- * provenance (generation, agreement state, confidence) lives in the
- * expandable panel per the copy glossary — never in primary copy.
+ * Governed findings from the validation pass, with the derived-hypothesis
+ * store below as provenance. Technical identifiers live in the expandable
+ * panel per the copy glossary.
  */
 export default async function FindingsPage({
   params,
+  searchParams,
 }: {
   params: { ws: string };
+  searchParams: { error?: string };
 }) {
-  const hypotheses = await listBrainChunks(params.ws);
+  const [findings, hypotheses] = await Promise.all([
+    listFindings(params.ws),
+    listBrainChunks(params.ws),
+  ]);
+  const chunkById = new Map(hypotheses.map((c) => [c.id, c]));
 
   return (
     <PlatinaPage
       eyebrow="Platina · Findings"
       title="Findings"
-      description="Market patterns Platina has derived from approved public sources. These are hypotheses, not validated evidence — they inform, they never prove."
+      description="Market changes Platina detected and validated. Contested changes wait for your ruling — a hypothesis never becomes a finding without surviving validation."
     >
-      {hypotheses.length === 0 ? (
+      <PlatinaFormError message={searchParams.error} />
+
+      {findings.length === 0 ? (
         <div className="rounded-lg border border-border bg-secondary p-5 text-sm text-secondary-foreground">
-          No findings yet. They appear after an approved audit runs and the
-          validation pass resolves. Define a source in Audits to begin.
+          No findings yet. They appear after an approved audit detects a change
+          and the validation pass resolves it. Define a source in Audits to
+          begin.
         </div>
       ) : (
         <ul className="space-y-3">
-          {hypotheses.map((h) => (
-            <li
-              key={h.id}
-              className="rounded-lg border border-border bg-card p-4"
-            >
-              <p className="text-sm">{h.content}</p>
-              <p className="mt-2 font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                Derived market hypothesis · not yet validated
-              </p>
-              <details className="mt-2">
-                <summary className="cursor-pointer font-mono text-[11px] text-muted-foreground">
-                  Technical provenance
-                </summary>
-                <dl className="mt-2 grid grid-cols-2 gap-2 rounded-md bg-secondary p-3 font-mono text-[11px] text-secondary-foreground md:grid-cols-4">
+          {findings.map((f) => {
+            const linked = f.brainChunkId
+              ? chunkById.get(f.brainChunkId)
+              : undefined;
+            return (
+              <li
+                key={f.id}
+                className="rounded-lg border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between gap-4">
                   <div>
-                    <dt className="uppercase">generation</dt>
-                    <dd>{h.generation}</dd>
+                    <p className="font-medium">{f.title}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {f.summary}
+                    </p>
                   </div>
-                  <div>
-                    <dt className="uppercase">agreement</dt>
-                    <dd>{h.agreementState}</dd>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="rounded bg-secondary px-2 py-0.5 font-mono text-[11px] text-secondary-foreground">
+                      {SEVERITY_LABEL[f.severity] ?? f.severity}
+                    </span>
+                    <span
+                      className={
+                        f.status === "needs_decision"
+                          ? "rounded bg-destructive/10 px-2 py-0.5 font-mono text-[11px] text-destructive"
+                          : "rounded bg-accent px-2 py-0.5 font-mono text-[11px] text-accent-foreground"
+                      }
+                    >
+                      {STATUS_LABEL[f.status] ?? f.status}
+                    </span>
                   </div>
-                  <div>
-                    <dt className="uppercase">confidence</dt>
-                    <dd>{h.confidence.toFixed(2)}</dd>
+                </div>
+
+                {f.strongestObjection ? (
+                  <p className="mt-2 border-l-2 border-border pl-3 text-sm text-muted-foreground">
+                    Strongest objection: {f.strongestObjection}
+                  </p>
+                ) : null}
+
+                {f.humanRuling ? (
+                  <p className="mt-2 text-sm">
+                    <span className="font-medium">Ruling:</span> {f.humanRuling}
+                  </p>
+                ) : null}
+
+                {f.status === "needs_decision" && (
+                  <form
+                    action={ruleFindingAction}
+                    className="mt-3 space-y-2 rounded-md bg-secondary p-3"
+                  >
+                    <input type="hidden" name="workspaceId" value={params.ws} />
+                    <input type="hidden" name="findingId" value={f.id} />
+                    <input
+                      name="ruling"
+                      required
+                      placeholder="Why — this note is the audit trail"
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        name="verdict"
+                        value="validated"
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
+                      >
+                        Validate
+                      </button>
+                      <button
+                        type="submit"
+                        name="verdict"
+                        value="refuted"
+                        className="rounded-md border border-border px-3 py-1.5 text-xs"
+                      >
+                        Rule out
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {(f.status === "new" || f.status === "validated") && (
+                  <div className="mt-3">
+                    <Link
+                      href={`/p/${params.ws}/solutions/new?findingId=${f.id}`}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      Draft a solution from this finding →
+                    </Link>
                   </div>
-                  <div>
-                    <dt className="uppercase">status</dt>
-                    <dd>{h.status}</dd>
-                  </div>
-                </dl>
-              </details>
-            </li>
-          ))}
+                )}
+
+                <details className="mt-2">
+                  <summary className="cursor-pointer font-mono text-[11px] text-muted-foreground">
+                    Technical provenance
+                  </summary>
+                  <dl className="mt-2 grid grid-cols-2 gap-2 rounded-md bg-secondary p-3 font-mono text-[11px] text-secondary-foreground md:grid-cols-4">
+                    <div>
+                      <dt className="uppercase">signal</dt>
+                      <dd className="truncate">{f.signalDocumentId ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase">transcript</dt>
+                      <dd className="truncate">{f.transcriptId ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase">hypothesis</dt>
+                      <dd className="truncate">{f.brainChunkId ?? "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase">confidence</dt>
+                      <dd>{linked ? linked.confidence.toFixed(2) : "—"}</dd>
+                    </div>
+                  </dl>
+                </details>
+              </li>
+            );
+          })}
         </ul>
       )}
     </PlatinaPage>

@@ -4,6 +4,7 @@ import {
   listAuditRuns,
   listBrainChunks,
   listCampaigns,
+  listFindings,
   listGateEvents,
   listReceipts,
   listScanSpecs,
@@ -22,7 +23,7 @@ export default async function PlatinaCockpit({
 }: {
   params: { ws: string };
 }) {
-  const [specs, hypotheses, receipts, campaigns, gates, runs] =
+  const [specs, hypotheses, receipts, campaigns, gates, runs, findings] =
     await Promise.all([
       listScanSpecs(params.ws),
       listBrainChunks(params.ws),
@@ -30,6 +31,7 @@ export default async function PlatinaCockpit({
       listCampaigns(params.ws),
       listGateEvents(params.ws),
       listAuditRuns(params.ws, 5),
+      listFindings(params.ws),
     ]);
 
   const base = `/p/${params.ws}`;
@@ -48,6 +50,12 @@ export default async function PlatinaCockpit({
   ];
 
   const decisions = [
+    {
+      label: "Findings awaiting a decision",
+      count: findings.filter((f) => f.status === "needs_decision").length,
+      href: `${base}/findings`,
+      action: "Review findings",
+    },
     {
       label: "Audit scopes awaiting approval",
       count: draftsAwaitingScope,

@@ -126,6 +126,11 @@ export default async function OutcomesPage({
                   <tr key={o.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-3 font-mono text-xs">
                       {o.recordedAt.toISOString().slice(0, 10)}
+                      {o.synthetic && (
+                        <span className="ml-2 rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] uppercase text-secondary-foreground">
+                          Synthetic — not evidence
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">{o.leads}</td>
                     <td className="px-4 py-3">{o.qualifiedLeads}</td>

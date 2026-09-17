@@ -5,6 +5,8 @@ import {
   brandChunksQuery,
   brainChunksQuery,
   dueReceiptsQuery,
+  findingsQuery,
+  firstPartyOutcomesQuery,
   gateEventsQuery,
   outcomesQuery,
   receiptsQuery,
@@ -12,6 +14,7 @@ import {
   signalDocumentsQuery,
   similarBrainChunksQuery,
   similarBrandChunksQuery,
+  unprocessedSignalsQuery,
 } from "./platina";
 
 describe("platina query isolation", () => {
@@ -85,5 +88,26 @@ describe("platina query isolation", () => {
     expect(sql).toContain('"workspace_id" =');
     expect(sql).toContain('"run_id" =');
     expect(params).toEqual(expect.arrayContaining(["ws_p", "run_1"]));
+  });
+
+  it("findingsQuery is workspace-scoped", () => {
+    const { sql, params } = findingsQuery("ws_p").toSQL();
+    expect(sql).toContain("platina_findings");
+    expect(sql).toContain('"workspace_id" =');
+    expect(params).toContain("ws_p");
+  });
+
+  it("the contradiction sweep reads only unprocessed signals", () => {
+    const { sql, params } = unprocessedSignalsQuery("ws_p").toSQL();
+    expect(sql).toContain('"workspace_id" =');
+    expect(sql).toContain('"processing_state" =');
+    expect(params).toEqual(expect.arrayContaining(["ws_p", "unprocessed"]));
+  });
+
+  it("firstPartyOutcomesQuery excludes synthetic demo rows (A4)", () => {
+    const { sql, params } = firstPartyOutcomesQuery("ws_p").toSQL();
+    expect(sql).toContain('"workspace_id" =');
+    expect(sql).toContain('"synthetic" =');
+    expect(params).toEqual(expect.arrayContaining(["ws_p", false]));
   });
 });

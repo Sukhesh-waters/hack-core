@@ -15,6 +15,7 @@ import {
   insertReceipt,
   insertScanSpec,
   recordReceiptOutcome,
+  ruleFinding,
   upsertWorkspaceConfig,
   upsertWorkspaceProfile,
 } from "@/db/queries/platina";
@@ -26,6 +27,7 @@ import {
   manualIdempotencyKey,
   snapshotRunConfig,
 } from "@/lib/platina/orchestrator";
+import { isRulingVerdict } from "@/lib/platina/findings";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 async function actor(ws: string, gate: keyof typeof GATE_CAPABILITY) {
@@ -151,6 +153,13 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
   const title = String(formData.get("title") ?? "").trim();
   const hypothesis = String(formData.get("hypothesis") ?? "").trim();
   const expected = String(formData.get("expectedOutcome") ?? "").trim();
+  const findingId = String(formData.get("findingId") ?? "").trim() || null;
+  const severity = String(formData.get("severity") ?? "").trim() || null;
+  const urgency = String(formData.get("urgency") ?? "").trim() || null;
+  const strongestUncertainty =
+    String(formData.get("strongestUncertainty") ?? "").trim() || null;
+  const measurementMethod =
+    String(formData.get("measurementMethod") ?? "").trim() || null;
   const evidenceBrand = String(formData.get("evidenceBrandIds") ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -160,10 +169,10 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
     .map((s) => s.trim())
     .filter(Boolean);
   if (!title || !hypothesis) {
-    refuse(ws, "ideation", "Title and hypothesis are required.");
+    refuse(ws, "solutions/new", "Title and hypothesis are required.");
   }
   if (evidenceBrand.length === 0) {
-    refuse(ws, "ideation", "A plane-A evidence anchor is required.");
+    refuse(ws, "solutions/new", "A plane-A evidence anchor is required.");
   }
   const reviewAt = new Date(Date.now() + 90 * 86_400_000);
   const id = await insertReceipt({
@@ -175,6 +184,11 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
     evidenceBrainIds: evidenceBrain,
     reviewAt,
     ownerId: user.id,
+    findingId,
+    severity,
+    urgency,
+    strongestUncertainty,
+    measurementMethod,
   });
   const detail = proposeCampaignDetail({ title, hypothesis });
   const campaignId = await insertCampaign({
@@ -261,6 +275,39 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
       String(formData.get("businessUnit") ?? "").trim() || undefined,
   });
   revalidatePath(`/p/${ws}/admin`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/**
+ * Human ruling on a contested finding. Guarded in SQL: only a finding
+ * awaiting a decision can be ruled, and a ruling is final — the second
+ * attempt is a no-op that returns null.
+ */
+export async function ruleFindingAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const findingId = String(formData.get("findingId"));
+  const verdict = String(formData.get("verdict") ?? "");
+  const ruling = String(formData.get("ruling") ?? "").trim();
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.approve");
+  if (!isRulingVerdict(verdict)) {
+    refuse(ws, "findings", "Pick a valid ruling.");
+  }
+  if (!ruling) {
+    refuse(ws, "findings", "A ruling note is required — it is the audit trail.");
+  }
+  const ruled = await ruleFinding({
+    workspaceId: ws,
+    findingId,
+    verdict,
+    ruling,
+    ruledBy: user.id,
+  });
+  if (!ruled) {
+    refuse(ws, "findings", "This finding is not awaiting a decision.");
+  }
+  await broadcastPlatinaSignal(ws, "findings", findingId);
+  revalidatePath(`/p/${ws}/findings`);
   revalidatePath(`/p/${ws}`);
 }
 

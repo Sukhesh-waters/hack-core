@@ -8,6 +8,7 @@ import {
   platinaBrainChunks,
   platinaCampaigns,
   platinaDebateTranscripts,
+  platinaFindings,
   platinaGateEvents,
   platinaOutcomes,
   platinaReceipts,
@@ -360,6 +361,11 @@ export async function insertReceipt(input: {
   evidenceBrainIds: string[];
   reviewAt: Date;
   ownerId: string;
+  findingId?: string | null;
+  severity?: string | null;
+  urgency?: string | null;
+  strongestUncertainty?: string | null;
+  measurementMethod?: string | null;
 }) {
   const [row] = await db
     .insert(platinaReceipts)
@@ -477,13 +483,35 @@ export async function upsertWorkspaceConfig(
   return row.id;
 }
 
-export async function listUnresolvedSignals(workspaceId: string) {
+export function unprocessedSignalsQuery(workspaceId: string) {
   return db
     .select()
     .from(platinaSignalDocuments)
-    .where(eq(platinaSignalDocuments.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.processingState, "unprocessed"),
+      ),
+    )
     .orderBy(desc(platinaSignalDocuments.createdAt))
     .limit(20);
+}
+
+export async function listUnresolvedSignals(workspaceId: string) {
+  return unprocessedSignalsQuery(workspaceId);
+}
+
+/** Mark a signal's contradiction round complete — the sweep never re-reads it. */
+export async function markSignalProcessed(workspaceId: string, signalId: string) {
+  await db
+    .update(platinaSignalDocuments)
+    .set({ processingState: "processed" })
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.id, signalId),
+      ),
+    );
 }
 
 export async function listActiveAlertRules() {
@@ -749,6 +777,99 @@ export async function recordFetchOutcome(
         eq(platinaScanSpecs.id, specId),
       ),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Slice 3.5 — findings
+// ---------------------------------------------------------------------------
+
+export function findingsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaFindings)
+    .where(eq(platinaFindings.workspaceId, workspaceId))
+    .orderBy(desc(platinaFindings.createdAt));
+}
+
+export async function listFindings(workspaceId: string) {
+  return findingsQuery(workspaceId);
+}
+
+export async function getFinding(workspaceId: string, findingId: string) {
+  const rows = await db
+    .select()
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.id, findingId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function insertFinding(input: {
+  workspaceId: string;
+  signalDocumentId?: string | null;
+  transcriptId?: string | null;
+  brainChunkId?: string | null;
+  title: string;
+  summary: string;
+  strongestObjection?: string | null;
+  status: "new" | "needs_decision";
+}) {
+  const [row] = await db
+    .insert(platinaFindings)
+    .values(input)
+    .returning({ id: platinaFindings.id });
+  return row.id;
+}
+
+/**
+ * Guarded ruling: the update only applies while the finding is
+ * `needs_decision`. A ruled finding cannot be re-ruled — the guard makes the
+ * second attempt a no-op that returns null.
+ */
+export async function ruleFinding(input: {
+  workspaceId: string;
+  findingId: string;
+  verdict: "validated" | "refuted";
+  ruling: string;
+  ruledBy: string;
+}) {
+  const updated = await db
+    .update(platinaFindings)
+    .set({
+      status: input.verdict,
+      humanRuling: input.ruling,
+      ruledBy: input.ruledBy,
+      ruledAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, input.workspaceId),
+        eq(platinaFindings.id, input.findingId),
+        eq(platinaFindings.status, "needs_decision"),
+      ),
+    )
+    .returning({ id: platinaFindings.id });
+  return updated[0]?.id ?? null;
+}
+
+/** First-party outcomes only — synthetic demo rows are never evidence (A4). */
+export function firstPartyOutcomesQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaOutcomes)
+    .where(
+      and(
+        eq(platinaOutcomes.workspaceId, workspaceId),
+        eq(platinaOutcomes.synthetic, false),
+      ),
+    )
+    .orderBy(desc(platinaOutcomes.recordedAt));
 }
 
 export { sql };
