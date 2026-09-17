@@ -14,6 +14,7 @@ import { autoDocGenerator } from "@/inngest/functions/auto-docs";
 import { sopReverseSync } from "@/inngest/functions/sop-reverse-sync";
 import { sopReconciliation } from "@/inngest/functions/sop-reconciliation";
 import { platinaSignalScan } from "@/inngest/functions/platina/signal-scan";
+import { platinaAuditRun } from "@/inngest/functions/platina/audit-run";
 import { platinaContradictSweep } from "@/inngest/functions/platina/contradict-sweep";
 import { platinaBrainMaintenance } from "@/inngest/functions/platina/brain-maintenance";
 import { platinaReceiptReview } from "@/inngest/functions/platina/receipt-review";
@@ -39,6 +40,7 @@ export const { GET, POST, PUT } = serve({
     sopReverseSync,
     sopReconciliation,
     platinaSignalScan,
+    platinaAuditRun,
     platinaContradictSweep,
     platinaBrainMaintenance,
     platinaReceiptReview,

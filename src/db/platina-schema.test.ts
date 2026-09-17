@@ -36,6 +36,15 @@ describe("three-plane structural invariants", () => {
     expect(getTableColumns(platina.platinaBrandChunks).embedding).toBeDefined();
   });
 
+  it("every embedded table records its embedding model version (R4.1)", () => {
+    expect(
+      getTableColumns(platina.platinaBrandChunks).embeddingModelVersion,
+    ).toBeDefined();
+    expect(
+      getTableColumns(platina.platinaBrainChunks).embeddingModelVersion,
+    ).toBeDefined();
+  });
+
   it("plane B signal documents have NO embedding column", () => {
     const columns = getTableColumns(platina.platinaSignalDocuments);
     expect(Object.keys(columns)).not.toContain("embedding");

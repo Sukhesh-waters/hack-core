@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  auditRunEventsQuery,
+  auditRunsQuery,
   brandChunksQuery,
   brainChunksQuery,
   dueReceiptsQuery,
@@ -69,5 +71,19 @@ describe("platina query isolation", () => {
     expect(c.sql).not.toContain("platina_brand_chunks");
     expect(a.sql).toContain('"workspace_id" =');
     expect(c.sql).toContain('"workspace_id" =');
+  });
+
+  it("auditRunsQuery is workspace-scoped", () => {
+    const { sql, params } = auditRunsQuery("ws_p").toSQL();
+    expect(sql).toContain('"workspace_id" =');
+    expect(params).toContain("ws_p");
+    expect(sql).toContain("platina_audit_runs");
+  });
+
+  it("auditRunEventsQuery is scoped by workspace AND run", () => {
+    const { sql, params } = auditRunEventsQuery("ws_p", "run_1").toSQL();
+    expect(sql).toContain('"workspace_id" =');
+    expect(sql).toContain('"run_id" =');
+    expect(params).toEqual(expect.arrayContaining(["ws_p", "run_1"]));
   });
 });

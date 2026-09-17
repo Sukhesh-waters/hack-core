@@ -6,6 +6,9 @@ import { requireUser } from "@/auth";
 import { requireCapability } from "@/db/queries/memberships";
 import {
   approveScanSpec,
+  createAuditRun,
+  getScanSpec,
+  getWorkspaceConfig,
   insertBrandChunk,
   insertCampaign,
   insertGateEvent,
@@ -13,11 +16,17 @@ import {
   insertScanSpec,
   recordReceiptOutcome,
   upsertWorkspaceConfig,
+  upsertWorkspaceProfile,
 } from "@/db/queries/platina";
 import { inngest } from "@/inngest/client";
 import { hashGatePayload } from "@/lib/platina/hash";
 import { GATE_CAPABILITY, assertCompleteGateEvent } from "@/lib/platina/gates";
 import { proposeCampaignDetail } from "@/lib/platina/ideation";
+import {
+  manualIdempotencyKey,
+  snapshotRunConfig,
+} from "@/lib/platina/orchestrator";
+import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 async function actor(ws: string, gate: keyof typeof GATE_CAPABILITY) {
   const user = await requireUser();
@@ -201,4 +210,59 @@ export async function saveConfigAction(formData: FormData): Promise<void> {
     qualifiedFloor: Number(formData.get("qualifiedFloor") ?? 0.7),
   });
   revalidatePath(`/p/${ws}/admin`);
+}
+
+export async function saveProfileAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.approve");
+  await upsertWorkspaceProfile(ws, {
+    division: String(formData.get("division") ?? "").trim() || undefined,
+    region: String(formData.get("region") ?? "").trim() || undefined,
+    businessUnit:
+      String(formData.get("businessUnit") ?? "").trim() || undefined,
+  });
+  revalidatePath(`/p/${ws}/admin`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/**
+ * Manual "Run now". Creates one durable queued run with a frozen config
+ * snapshot and a minute-bucketed idempotency key, then dispatches the
+ * worker. Approval is not bypassed: only an approved source can run.
+ */
+export async function runAuditNowAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const specId = String(formData.get("specId"));
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.confirm");
+
+  const spec = await getScanSpec(ws, specId);
+  if (!spec) refuse(ws, "audits", "Audit source not found.");
+  if (spec.status !== "approved") {
+    refuse(ws, "audits", "Approve the audit scope before running it.");
+  }
+
+  const config = await getWorkspaceConfig(ws);
+  const runId = await createAuditRun({
+    workspaceId: ws,
+    specId,
+    trigger: "manual",
+    idempotencyKey: manualIdempotencyKey(specId),
+    configSnapshot: snapshotRunConfig(config),
+  });
+  if (!runId) {
+    refuse(
+      ws,
+      "audits",
+      "A run for this source was already queued in the last minute.",
+    );
+  }
+  await inngest.send({
+    name: "platina/audit-run.requested",
+    data: { runId, workspaceId: ws },
+  });
+  await broadcastPlatinaSignal(ws, "audits", runId);
+  revalidatePath(`/p/${ws}/audits`);
+  revalidatePath(`/p/${ws}`);
 }

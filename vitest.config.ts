@@ -9,6 +9,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),
+      // The real package throws outside an RSC bundler; under Vitest the
+      // marker is meaningless, so it resolves to the stub.
+      "server-only": path.resolve(__dirname, "src/test-utils/server-only.ts"),
     },
   },
 });

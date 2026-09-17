@@ -3,13 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PLATINA_NAV } from "@/lib/platina/nav";
+import { PlatinaLiveStatus } from "@/components/platina/live-status";
 
 /**
- * Executive header: breadcrumbs over the six destinations. Deliberately no
- * search box and no live badge — both arrive with real backends (Slice 2
- * event spine), and an unwired control would violate the honesty rule.
+ * Executive header: breadcrumbs over the six destinations plus the live
+ * transport pill. Deliberately no search box — it arrives with a real
+ * backend, and an unwired control would violate the honesty rule.
  */
-export function PlatinaHeader({ workspaceId }: { workspaceId: string }) {
+export function PlatinaHeader({
+  workspaceId,
+  topicToken,
+}: {
+  workspaceId: string;
+  topicToken: string | null;
+}) {
   const pathname = usePathname();
   const base = `/p/${workspaceId}`;
   const rest = pathname.startsWith(base) ? pathname.slice(base.length) : "";
@@ -46,6 +53,7 @@ export function PlatinaHeader({ workspaceId }: { workspaceId: string }) {
           </span>
         ))}
       </nav>
+      <PlatinaLiveStatus topicToken={topicToken} />
     </header>
   );
 }

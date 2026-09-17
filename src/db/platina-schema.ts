@@ -80,6 +80,25 @@ export const platinaBrainStatus = pgEnum("platina_brain_status", [
   "demoted",
 ]);
 
+export const platinaRunTrigger = pgEnum("platina_run_trigger", [
+  "manual",
+  "schedule",
+  "event",
+]);
+
+export const platinaRunStatus = pgEnum("platina_run_status", [
+  "queued",
+  "running",
+  "validating",
+  "completed",
+  "degraded",
+  "failed",
+]);
+
+/** The router's current embedding model — bump only with an explicit
+ *  re-embed backfill (R4.1). Mixed versions in one index are meaningless. */
+export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
+
 export type PlatinaScanTarget = {
   kind: "competitor_site" | "press_release" | "conference" | "trade_editorial" | "ad_library";
   value: string;
@@ -123,6 +142,9 @@ export const platinaBrandChunks = pgTable(
     content: text("content").notNull(),
     chunkIndex: integer("chunk_index").notNull().default(0),
     embedding: vector("embedding", { dimensions: 768 }),
+    embeddingModelVersion: text("embedding_model_version")
+      .notNull()
+      .default(PLATINA_EMBEDDING_MODEL_VERSION),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
@@ -215,6 +237,9 @@ export const platinaBrainChunks = pgTable(
     workspaceId: workspaceFk(),
     content: text("content").notNull(),
     embedding: vector("embedding", { dimensions: 768 }),
+    embeddingModelVersion: text("embedding_model_version")
+      .notNull()
+      .default(PLATINA_EMBEDDING_MODEL_VERSION),
     confidence: real("confidence").notNull(),
     agreementState: platinaAgreementState("agreement_state").notNull(),
     sourceSignalIds: jsonb("source_signal_ids")
@@ -425,6 +450,99 @@ export const platinaAlertRules = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Workspace profile — one workspace = one division × region (W0.8 ADR).
+// Metadata on the same workspace_id, never a second tenant key.
+// ---------------------------------------------------------------------------
+
+export const platinaWorkspaceProfiles = pgTable(
+  "platina_workspace_profiles",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    division: text("division"),
+    region: text("region"),
+    businessUnit: text("business_unit"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceUnique: uniqueIndex(
+      "platina_workspace_profiles_workspace_unique",
+    ).on(table.workspaceId),
+    workspaceIdx: index("platina_workspace_profiles_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Audit runs — durable run lifecycle + append-only timeline
+// ---------------------------------------------------------------------------
+
+export type PlatinaRunConfigSnapshot = {
+  analysisSequence: PlatinaAnalysisStep[];
+  promptVersion: number;
+  minBaselineN: number;
+  contestedFloor: number;
+  qualifiedFloor: number;
+};
+
+export const platinaAuditRuns = pgTable(
+  "platina_audit_runs",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    specId: text("spec_id"),
+    trigger: platinaRunTrigger("trigger").notNull().default("manual"),
+    status: platinaRunStatus("status").notNull().default("queued"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    configSnapshot: jsonb("config_snapshot")
+      .$type<PlatinaRunConfigSnapshot>()
+      .notNull(),
+    counters: jsonb("counters")
+      .$type<Record<string, number>>()
+      .notNull()
+      .default({}),
+    errorReason: text("error_reason"),
+    degradedReason: text("degraded_reason"),
+    queuedAt: timestamp("queued_at", { mode: "date" }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { mode: "date" }),
+    finishedAt: timestamp("finished_at", { mode: "date" }),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_audit_runs_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    specIdx: index("platina_audit_runs_spec_id_idx").on(table.specId),
+    statusIdx: index("platina_audit_runs_status_idx").on(table.status),
+    idempotencyUnique: uniqueIndex(
+      "platina_audit_runs_workspace_idempotency_unique",
+    ).on(table.workspaceId, table.idempotencyKey),
+  }),
+);
+
+export const platinaAuditRunEvents = pgTable(
+  "platina_audit_run_events",
+  {
+    id: id(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => platinaAuditRuns.id, { onDelete: "cascade" }),
+    workspaceId: workspaceFk(),
+    status: platinaRunStatus("status").notNull(),
+    message: text("message"),
+    payload: jsonb("payload").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_audit_run_events_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    runIdx: index("platina_audit_run_events_run_id_idx").on(table.runId),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -437,4 +555,7 @@ export const platinaWorkspaceScopedTables = {
   platinaCampaigns,
   platinaWorkspaceConfig,
   platinaAlertRules,
+  platinaWorkspaceProfiles,
+  platinaAuditRuns,
+  platinaAuditRunEvents,
 } as const;

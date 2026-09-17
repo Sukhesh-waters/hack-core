@@ -1,7 +1,9 @@
-import { and, cosineDistance, desc, eq, lte, sql } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   platinaAlertRules,
+  platinaAuditRunEvents,
+  platinaAuditRuns,
   platinaBrandChunks,
   platinaBrainChunks,
   platinaCampaigns,
@@ -12,10 +14,13 @@ import {
   platinaScanSpecs,
   platinaSignalDocuments,
   platinaWorkspaceConfig,
+  platinaWorkspaceProfiles,
+  type PlatinaRunConfigSnapshot,
   type PlatinaScanTarget,
 } from "@/db/platina-schema";
 import type { GateWrite } from "@/lib/platina/gates";
 import type { RawSignalDoc } from "@/lib/platina/fetch/registry";
+import type { RunStatus } from "@/lib/platina/run-status";
 
 export function similarBrandChunksQuery(
   workspaceId: string,
@@ -468,6 +473,169 @@ export async function listActiveAlertRules() {
     .select()
     .from(platinaAlertRules)
     .where(eq(platinaAlertRules.enabled, true));
+}
+
+// ---------------------------------------------------------------------------
+// Slice 2 — workspace profile, audit runs, run events
+// ---------------------------------------------------------------------------
+
+export async function getWorkspaceProfile(workspaceId: string) {
+  const rows = await db
+    .select()
+    .from(platinaWorkspaceProfiles)
+    .where(eq(platinaWorkspaceProfiles.workspaceId, workspaceId))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function upsertWorkspaceProfile(
+  workspaceId: string,
+  patch: { division?: string; region?: string; businessUnit?: string },
+) {
+  const existing = await getWorkspaceProfile(workspaceId);
+  if (existing) {
+    await db
+      .update(platinaWorkspaceProfiles)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(platinaWorkspaceProfiles.workspaceId, workspaceId));
+    return existing.id;
+  }
+  const [row] = await db
+    .insert(platinaWorkspaceProfiles)
+    .values({ workspaceId, ...patch })
+    .returning({ id: platinaWorkspaceProfiles.id });
+  return row.id;
+}
+
+export function auditRunsQuery(workspaceId: string, limit = 20) {
+  return db
+    .select()
+    .from(platinaAuditRuns)
+    .where(eq(platinaAuditRuns.workspaceId, workspaceId))
+    .orderBy(desc(platinaAuditRuns.queuedAt))
+    .limit(limit);
+}
+
+export async function listAuditRuns(workspaceId: string, limit = 20) {
+  return auditRunsQuery(workspaceId, limit);
+}
+
+export async function getAuditRun(workspaceId: string, runId: string) {
+  const rows = await db
+    .select()
+    .from(platinaAuditRuns)
+    .where(
+      and(
+        eq(platinaAuditRuns.workspaceId, workspaceId),
+        eq(platinaAuditRuns.id, runId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export function auditRunEventsQuery(workspaceId: string, runId: string) {
+  return db
+    .select()
+    .from(platinaAuditRunEvents)
+    .where(
+      and(
+        eq(platinaAuditRunEvents.workspaceId, workspaceId),
+        eq(platinaAuditRunEvents.runId, runId),
+      ),
+    )
+    .orderBy(platinaAuditRunEvents.createdAt);
+}
+
+export async function listAuditRunEvents(workspaceId: string, runId: string) {
+  return auditRunEventsQuery(workspaceId, runId);
+}
+
+export async function createAuditRun(input: {
+  workspaceId: string;
+  specId?: string | null;
+  trigger: "manual" | "schedule" | "event";
+  idempotencyKey: string;
+  configSnapshot: PlatinaRunConfigSnapshot;
+}) {
+  const [row] = await db
+    .insert(platinaAuditRuns)
+    .values({
+      workspaceId: input.workspaceId,
+      specId: input.specId ?? null,
+      trigger: input.trigger,
+      idempotencyKey: input.idempotencyKey,
+      configSnapshot: input.configSnapshot,
+    })
+    .onConflictDoNothing({
+      target: [platinaAuditRuns.workspaceId, platinaAuditRuns.idempotencyKey],
+    })
+    .returning({ id: platinaAuditRuns.id });
+  // A conflict means this exact run was already created — idempotent replay.
+  return row?.id ?? null;
+}
+
+/**
+ * Bounded transition: the update only applies when the run's current status
+ * is in `from`. A mismatched guard returns null — illegal transitions are
+ * unrepresentable rather than logged. Every successful transition appends
+ * one event row to the timeline in the same workspace.
+ */
+export async function transitionAuditRun(input: {
+  workspaceId: string;
+  runId: string;
+  from: readonly RunStatus[];
+  to: RunStatus;
+  message?: string;
+  payload?: Record<string, unknown>;
+  counters?: Record<string, number>;
+  errorReason?: string;
+  degradedReason?: string;
+}) {
+  const now = new Date();
+  const updated = await db
+    .update(platinaAuditRuns)
+    .set({
+      status: input.to,
+      ...(input.to === "running" ? { startedAt: now } : {}),
+      ...(input.to === "completed" ||
+      input.to === "degraded" ||
+      input.to === "failed"
+        ? { finishedAt: now }
+        : {}),
+      ...(input.counters ? { counters: input.counters } : {}),
+      ...(input.errorReason ? { errorReason: input.errorReason } : {}),
+      ...(input.degradedReason ? { degradedReason: input.degradedReason } : {}),
+    })
+    .where(
+      and(
+        eq(platinaAuditRuns.workspaceId, input.workspaceId),
+        eq(platinaAuditRuns.id, input.runId),
+        inArray(platinaAuditRuns.status, input.from),
+      ),
+    )
+    .returning({ id: platinaAuditRuns.id });
+  if (updated.length === 0) return null;
+  await db.insert(platinaAuditRunEvents).values({
+    runId: input.runId,
+    workspaceId: input.workspaceId,
+    status: input.to,
+    message: input.message,
+    payload: input.payload,
+  });
+  return updated[0].id;
+}
+
+export async function markSpecLastRun(workspaceId: string, specId: string) {
+  await db
+    .update(platinaScanSpecs)
+    .set({ lastRunAt: new Date(), updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.id, specId),
+      ),
+    );
 }
 
 export { sql };

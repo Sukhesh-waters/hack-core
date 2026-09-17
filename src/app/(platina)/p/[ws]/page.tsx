@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { PlatinaPage } from "@/components/platina/page";
 import {
+  listAuditRuns,
   listBrainChunks,
   listCampaigns,
   listGateEvents,
@@ -21,13 +22,15 @@ export default async function PlatinaCockpit({
 }: {
   params: { ws: string };
 }) {
-  const [specs, hypotheses, receipts, campaigns, gates] = await Promise.all([
-    listScanSpecs(params.ws),
-    listBrainChunks(params.ws),
-    listReceipts(params.ws),
-    listCampaigns(params.ws),
-    listGateEvents(params.ws),
-  ]);
+  const [specs, hypotheses, receipts, campaigns, gates, runs] =
+    await Promise.all([
+      listScanSpecs(params.ws),
+      listBrainChunks(params.ws),
+      listReceipts(params.ws),
+      listCampaigns(params.ws),
+      listGateEvents(params.ws),
+      listAuditRuns(params.ws, 5),
+    ]);
 
   const base = `/p/${params.ws}`;
   const draftsAwaitingScope = specs.filter((s) => s.status === "draft").length;
@@ -172,6 +175,51 @@ export default async function PlatinaCockpit({
             </Link>
           ))}
         </div>
+      </section>
+
+      <section aria-label="Recent audit activity" className="mt-8">
+        <div className="flex items-baseline justify-between">
+          <h2 className="font-display text-lg font-medium">
+            Recent audit activity
+          </h2>
+          <Link
+            href={`${base}/audits`}
+            className="font-mono text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            all runs →
+          </Link>
+        </div>
+        {runs.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-border bg-secondary p-4 text-sm text-secondary-foreground">
+            No audit runs yet. Runs start from approved sources in Audits.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {runs.map((run) => (
+              <li
+                key={run.id}
+                className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-2.5 text-sm"
+              >
+                <span className="font-mono text-xs text-muted-foreground">
+                  {run.queuedAt.toLocaleString("en-GB", {
+                    dateStyle: "short",
+                    timeStyle: "short",
+                  })}
+                </span>
+                <span className="text-muted-foreground">{run.trigger}</span>
+                <span
+                  className={
+                    run.status === "failed" || run.status === "degraded"
+                      ? "rounded bg-destructive/10 px-2 py-0.5 font-mono text-[11px] text-destructive"
+                      : "rounded bg-accent px-2 py-0.5 font-mono text-[11px] text-accent-foreground"
+                  }
+                >
+                  {run.status}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {specs.length === 0 && (

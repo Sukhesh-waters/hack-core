@@ -12,9 +12,12 @@ import { cn } from "@/lib/utils";
 export function PlatinaSidebar({
   workspaceId,
   workspaceName,
+  scope,
 }: {
   workspaceId: string;
   workspaceName: string;
+  /** "Division · Region" once the workspace profile is set (R3). */
+  scope?: string | null;
 }) {
   const pathname = usePathname();
   const base = `/p/${workspaceId}`;
@@ -29,7 +32,7 @@ export function PlatinaSidebar({
           {workspaceName}
         </p>
         <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Waters executive surface
+          {scope ?? "Waters executive surface"}
         </p>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 px-3 py-4">
