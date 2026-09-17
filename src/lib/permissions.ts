@@ -31,6 +31,14 @@ export const CAPABILITIES = [
   "gate.approve",
   "gate.publish",
   "platina.task.edit",
+  "platina.audit.run",
+  "platina.audit.manage",
+  "platina.finding.review",
+  "platina.solution.edit",
+  "platina.solution.approve",
+  "platina.execution.approve",
+  "platina.outcome.import",
+  "platina.config.manage",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -51,6 +59,14 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   "gate.approve": "Approve a campaign direction (Gate 3)",
   "gate.publish": "Approve a campaign to ship (Gate 4)",
   "platina.task.edit": "Work on Platina solution tasks",
+  "platina.audit.run": "Run an already-approved Platina audit",
+  "platina.audit.manage": "Create and approve Platina audit scopes",
+  "platina.finding.review": "Review and triage Platina findings",
+  "platina.solution.edit": "Edit draft Platina solutions",
+  "platina.solution.approve": "Approve a Platina solution direction",
+  "platina.execution.approve": "Approve a Platina solution for external execution",
+  "platina.outcome.import": "Import Platina outcomes and grade receipts",
+  "platina.config.manage": "Manage Platina workspace configuration",
 };
 
 /**
@@ -67,9 +83,18 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
 const MATRIX: Record<MembershipRole, readonly Capability[]> = {
   owner: [...CAPABILITIES],
   admin: [...CAPABILITIES],
-  // A member does the work: they start runs and upload the client's files.
-  // They do not archive files — that destroys bytes and is not reversible.
-  member: ["sop.run.start", "asset.upload", "platina.task.edit"],
+  // A member does the work: they start runs, upload the client's files, run
+  // approved audits, triage findings, and edit/work solution tasks. They do
+  // not approve scope, direction, or execution, and cannot touch config or
+  // authoritative outcomes — that separation is the entire point.
+  member: [
+    "sop.run.start",
+    "asset.upload",
+    "platina.task.edit",
+    "platina.audit.run",
+    "platina.finding.review",
+    "platina.solution.edit",
+  ],
 };
 
 export function roleCan(role: MembershipRole, capability: Capability): boolean {
@@ -90,6 +115,11 @@ export class PermissionError extends Error {
     super(PERMISSION_MESSAGES[capability]);
     this.name = "PermissionError";
   }
+}
+
+/** Test accessor — the messages table itself stays private. */
+export function permissionMessageFor(capability: Capability): string {
+  return PERMISSION_MESSAGES[capability];
 }
 
 /**
@@ -113,4 +143,14 @@ const PERMISSION_MESSAGES: Record<Capability, string> = {
   "gate.approve": "Only an admin can approve a campaign direction.",
   "gate.publish": "Only an admin can approve a campaign to ship.",
   "platina.task.edit": "You don't have permission to work on solution tasks.",
+  "platina.audit.run": "You don't have permission to run audits.",
+  "platina.audit.manage": "Only an admin can create or approve audit scopes.",
+  "platina.finding.review": "You don't have permission to review findings.",
+  "platina.solution.edit": "You don't have permission to edit solutions.",
+  "platina.solution.approve": "Only an admin can approve a solution direction.",
+  "platina.execution.approve":
+    "Only an admin can approve a solution for external execution.",
+  "platina.outcome.import":
+    "Only an admin can import outcomes or grade receipts.",
+  "platina.config.manage": "Only an admin can change workspace configuration.",
 };

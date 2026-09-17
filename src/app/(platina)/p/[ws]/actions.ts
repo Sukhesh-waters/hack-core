@@ -30,6 +30,7 @@ import {
   insertReceipt,
   insertScanSpec,
   insertSolutionTask,
+  insertAlertRule,
   listActiveClaimsRules,
   listBrandChunks,
   listOutcomeDedupeRows,
@@ -37,6 +38,7 @@ import {
   listTemplateTaskTitles,
   markCampaignPlanned,
   recordReceiptOutcome,
+  setAlertRuleEnabled,
   transitionFinding,
   updateDraftCampaign,
   updateSolutionTask,
@@ -47,6 +49,7 @@ import { inngest } from "@/inngest/client";
 import { hashGatePayload } from "@/lib/platina/hash";
 import { GATE_CAPABILITY, assertCompleteGateEvent } from "@/lib/platina/gates";
 import { proposeCampaignDetail } from "@/lib/platina/ideation";
+import type { Capability } from "@/lib/permissions";
 import {
   manualIdempotencyKey,
   snapshotRunConfig,
@@ -80,6 +83,14 @@ import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 async function actor(ws: string, gate: keyof typeof GATE_CAPABILITY) {
   const user = await requireUser();
   await requireCapability(ws, user.id, GATE_CAPABILITY[gate]);
+  return user;
+}
+
+/** Operational (non-gate) actions authorize against the Platina capability
+ *  set — the Slice 10 role policy. Gate-writing actions keep gate.*. */
+async function operator(ws: string, capability: Capability) {
+  const user = await requireUser();
+  await requireCapability(ws, user.id, capability);
   return user;
 }
 
@@ -139,7 +150,7 @@ const CADENCE_MINUTES = [5, 10, 15] as const;
 export async function createScanSpecAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.confirm");
+  await requireCapability(ws, user.id, "platina.audit.manage");
   const presetKey = String(formData.get("preset") ?? "").trim();
   const preset = presetKey ? getConferencePreset(presetKey) : null;
   if (presetKey && !preset) {
@@ -179,7 +190,7 @@ export async function createScanSpecAction(formData: FormData): Promise<void> {
 export async function confirmScanAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const specId = String(formData.get("specId"));
-  const user = await actor(ws, "confirm");
+  const user = await operator(ws, "platina.audit.manage");
   await approveScanSpec(ws, specId);
   const event = {
     workspaceId: ws,
@@ -215,7 +226,7 @@ export async function confirmScanAction(formData: FormData): Promise<void> {
 
 export async function approveDirectionAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
-  const user = await actor(ws, "approve");
+  const user = await operator(ws, "platina.solution.approve");
   const title = String(formData.get("title") ?? "").trim();
   const hypothesis = String(formData.get("hypothesis") ?? "").trim();
   const expected = String(formData.get("expectedOutcome") ?? "").trim();
@@ -316,7 +327,7 @@ export async function editSolutionAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
   // The capability check is the authorization; no user id is written here.
-  await actor(ws, "approve");
+  await operator(ws, "platina.solution.edit");
   const channelMix = String(formData.get("channelMix") ?? "")
     .split(",")
     .map((s) => s.trim())
@@ -348,7 +359,7 @@ export async function rejectSolutionAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
   const reason = String(formData.get("reason") ?? "").trim();
-  const user = await actor(ws, "approve");
+  const user = await operator(ws, "platina.execution.approve");
   if (!reason) {
     refuse(ws, "solutions", "A rejection reason is required — it is the audit trail.");
   }
@@ -376,7 +387,7 @@ export async function rejectSolutionAction(formData: FormData): Promise<void> {
 export async function publishCampaignAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
-  const user = await actor(ws, "publish");
+  const user = await operator(ws, "platina.execution.approve");
 
   // Final approval is gated on real state: no open blocking work, and no
   // unresolved deterministic claims violation without a named exception.
@@ -431,7 +442,7 @@ const RECEIPT_OUTCOMES = ["worked", "did_not_work", "inconclusive"] as const;
 export async function gradeReceiptAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.approve");
+  await requireCapability(ws, user.id, "platina.outcome.import");
   const receiptId = String(formData.get("receiptId"));
   const submitted = String(formData.get("outcome"));
   const outcome = RECEIPT_OUTCOMES.find((o) => o === submitted);
@@ -483,7 +494,7 @@ export async function gradeReceiptAction(formData: FormData): Promise<void> {
 export async function importOutcomesAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.approve");
+  await requireCapability(ws, user.id, "platina.outcome.import");
   const csv = String(formData.get("csv") ?? "").trim();
   if (!csv) refuse(ws, "outcomes", "Paste the outcome CSV to import.");
 
@@ -540,22 +551,57 @@ export async function importOutcomesAction(formData: FormData): Promise<void> {
   revalidatePath(`/p/${ws}`);
 }
 
+const ANALYSIS_STEPS = [
+  "competitor_scan",
+  "brand_divergence",
+  "ideation",
+  "claims_screen",
+] as const;
+
 export async function saveConfigAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.approve");
+  await requireCapability(ws, user.id, "platina.config.manage");
+  // The analysis sequence is the stored order filtered to the steps the
+  // operator left enabled — order is preserved, not re-invented.
+  const existing = await getWorkspaceConfig(ws);
+  const enabled = new Set(formData.getAll("analysisStep"));
+  const analysisSequence = (existing?.analysisSequence ?? [...ANALYSIS_STEPS])
+    .filter((step) => enabled.has(step));
+  const promptVersion = Number(formData.get("promptVersion") ?? 1);
   await upsertWorkspaceConfig(ws, {
     minBaselineN: Number(formData.get("minBaselineN") ?? 20),
     contestedFloor: Number(formData.get("contestedFloor") ?? 0.4),
     qualifiedFloor: Number(formData.get("qualifiedFloor") ?? 0.7),
+    similarityFloor: Number(formData.get("similarityFloor") ?? 0.35),
+    ...(analysisSequence.length > 0 ? { analysisSequence } : {}),
+    ...(promptVersion >= 1
+      ? { promptVersion: Math.floor(promptVersion) }
+      : {}),
   });
+  // Configuration history: every change is a recorded, attributed event.
+  const event = {
+    workspaceId: ws,
+    gate: "confirm" as const,
+    decision: "approved" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({
+      minBaselineN: Number(formData.get("minBaselineN") ?? 20),
+      promptVersion,
+      at: Date.now(),
+    }),
+    subjectType: "workspace_config",
+    subjectId: ws,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
   revalidatePath(`/p/${ws}/admin`);
 }
 
 export async function saveProfileAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.approve");
+  await requireCapability(ws, user.id, "platina.config.manage");
   await upsertWorkspaceProfile(ws, {
     division: String(formData.get("division") ?? "").trim() || undefined,
     region: String(formData.get("region") ?? "").trim() || undefined,
@@ -578,7 +624,7 @@ export async function reviewFindingAction(formData: FormData): Promise<void> {
   const verdict = String(formData.get("verdict") ?? "");
   const ruling = String(formData.get("ruling") ?? "").trim();
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.approve");
+  await requireCapability(ws, user.id, "platina.finding.review");
   if (!isFindingVerdict(verdict)) {
     refuse(ws, "findings", "Pick a valid review action.");
   }
@@ -619,7 +665,7 @@ export async function runAuditNowAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const specId = String(formData.get("specId"));
   const user = await requireUser();
-  await requireCapability(ws, user.id, "gate.confirm");
+  await requireCapability(ws, user.id, "platina.audit.run");
 
   const spec = await getScanSpec(ws, specId);
   if (!spec) refuse(ws, "audits", "Audit source not found.");
@@ -768,7 +814,7 @@ export async function claimsExceptionAction(
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
   const reason = String(formData.get("reason") ?? "").trim();
-  const user = await actor(ws, "publish");
+  const user = await operator(ws, "platina.execution.approve");
   if (!reason) {
     refuse(
       ws,
@@ -912,7 +958,7 @@ export async function refreshBrandSourceAction(
 
 export async function addClaimsRuleAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
-  const user = await actor(ws, "approve");
+  const user = await operator(ws, "platina.config.manage");
   const kind = String(formData.get("kind") ?? "");
   const term = String(formData.get("term") ?? "").trim();
   if (kind !== "banned_term" && kind !== "regulated_claim") {
@@ -945,7 +991,7 @@ export async function archiveClaimsRuleAction(
 ): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const ruleId = String(formData.get("ruleId"));
-  const user = await actor(ws, "approve");
+  const user = await operator(ws, "platina.config.manage");
   const archived = await archiveClaimsRule(ws, ruleId);
   if (!archived) refuse(ws, "admin/claims", "Rule not found.");
   const event = {
@@ -971,7 +1017,7 @@ export async function recordDriftFindingAction(
   formData: FormData,
 ): Promise<void> {
   const ws = String(formData.get("workspaceId"));
-  await actor(ws, "approve");
+  await operator(ws, "platina.finding.review");
   const copy = String(formData.get("copy") ?? "").trim();
   if (!copy) refuse(ws, "admin/claims", "Paste the copy to record.");
 
@@ -1014,7 +1060,7 @@ export async function reauditDriftAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const findingId = String(formData.get("findingId") ?? "").trim();
   const copy = String(formData.get("copy") ?? "").trim();
-  const user = await actor(ws, "approve");
+  const user = await operator(ws, "platina.finding.review");
   if (!copy) refuse(ws, "findings", "Paste the remediated copy to re-audit.");
 
   const finding = await getFinding(ws, findingId);
@@ -1048,4 +1094,57 @@ export async function reauditDriftAction(formData: FormData): Promise<void> {
   });
   await broadcastPlatinaSignal(ws, "findings", findingId);
   revalidatePath(`/p/${ws}/findings`);
+}
+
+// ---------------------------------------------------------------------------
+// Slice 10 — alert rules
+// ---------------------------------------------------------------------------
+
+const ALERT_FIELDS = [
+  "leads",
+  "qualifiedLeads",
+  "conversionRate",
+  "pipelineContribution",
+  "qualityScore",
+] as const;
+
+export async function addAlertRuleAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  await operator(ws, "platina.config.manage");
+  const name = String(formData.get("name") ?? "").trim();
+  const field = String(formData.get("field") ?? "");
+  const op = String(formData.get("op") ?? "");
+  const value = Number(formData.get("value"));
+  const severity = String(formData.get("severity") ?? "warning");
+  if (!name) refuse(ws, "admin", "Rule name is required.");
+  if (!ALERT_FIELDS.includes(field as (typeof ALERT_FIELDS)[number])) {
+    refuse(ws, "admin", "Pick a valid metric.");
+  }
+  if (!["gt", "lt", "eq", "gte", "lte"].includes(op)) {
+    refuse(ws, "admin", "Pick a valid comparison.");
+  }
+  if (!Number.isFinite(value)) refuse(ws, "admin", "Threshold must be a number.");
+  if (!["info", "warning", "critical"].includes(severity)) {
+    refuse(ws, "admin", "Pick a valid severity.");
+  }
+  await insertAlertRule({
+    workspaceId: ws,
+    name,
+    conditions: [{ field, op: op as "gt" | "lt" | "eq" | "gte" | "lte", value }],
+    severity: severity as "info" | "warning" | "critical",
+  });
+  revalidatePath(`/p/${ws}/admin`);
+  revalidatePath(`/p/${ws}`);
+}
+
+export async function toggleAlertRuleAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  await operator(ws, "platina.config.manage");
+  const ruleId = String(formData.get("ruleId"));
+  const enabled = formData.get("enabled") === "true";
+  const updated = await setAlertRuleEnabled(ws, ruleId, enabled);
+  if (!updated) refuse(ws, "admin", "Alert rule not found.");
+  revalidatePath(`/p/${ws}/admin`);
 }

@@ -53,12 +53,25 @@ export const platinaContradictSweep = inngest.createFunction(
     let written = 0;
     let escalated = 0;
     for (const workspaceId of workspaceIds) {
+      // Stored thresholds govern this workspace's contradiction pass.
+      const config = await step.run(`config-${workspaceId}`, () =>
+        getWorkspaceConfig(workspaceId),
+      );
+      const floors = config
+        ? {
+            contestedFloor: config.contestedFloor,
+            qualifiedFloor: config.qualifiedFloor,
+          }
+        : undefined;
       const signals = await step.run(`signals-${workspaceId}`, () =>
         listUnresolvedSignals(workspaceId),
       );
       for (const signal of signals.slice(0, 5)) {
         const result = await step.run(`debate-${signal.id}`, () =>
-          runContradictionRound(`${signal.title ?? ""}\n${signal.body}`),
+          runContradictionRound(
+            `${signal.title ?? ""}\n${signal.body}`,
+            floors,
+          ),
         );
         const transcriptId = await step.run(`transcript-${signal.id}`, () =>
           insertTranscript({
@@ -142,9 +155,7 @@ export const platinaContradictSweep = inngest.createFunction(
           listOpenOperationalFindings(workspaceId),
         );
         if (open.length === 0) {
-          const config = await step.run(`config-${workspaceId}`, () =>
-            getWorkspaceConfig(workspaceId),
-          );
+          // The config was loaded at the top of this workspace's pass.
           const rate = objectionRate(rounds.map((r) => ({ state: r.state })));
           await step.run(`operational-finding-${workspaceId}`, () =>
             insertFinding({

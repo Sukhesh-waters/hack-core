@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { evaluateAlert, matchCondition } from "./alerts";
+import {
+  DELIVERY_WINDOW_MS,
+  deliveryDecision,
+  evaluateAlert,
+  matchCondition,
+} from "./alerts";
 
 describe("alert rules", () => {
   it("composes AND conditions from any field", () => {
@@ -35,5 +40,28 @@ describe("alert rules", () => {
       minN: 20,
     });
     expect(result.matched).toBe(false);
+  });
+});
+
+describe("deliveryDecision", () => {
+  it("sends when the rule has never delivered", () => {
+    expect(deliveryDecision(null)).toBe("send");
+  });
+
+  it("suppresses a repeat inside the 24h window", () => {
+    const now = new Date("2026-09-17T12:00:00Z");
+    const recent = new Date(now.getTime() - DELIVERY_WINDOW_MS + 60_000);
+    expect(deliveryDecision(recent, now)).toBe("suppress");
+  });
+
+  it("sends again after the window", () => {
+    const now = new Date("2026-09-17T12:00:00Z");
+    const old = new Date(now.getTime() - DELIVERY_WINDOW_MS - 60_000);
+    expect(deliveryDecision(old, now)).toBe("send");
+  });
+
+  it("accepts serialized dates (Inngest step boundary)", () => {
+    const now = new Date("2026-09-17T12:00:00Z");
+    expect(deliveryDecision("2026-09-17T11:00:00Z", now)).toBe("suppress");
   });
 });

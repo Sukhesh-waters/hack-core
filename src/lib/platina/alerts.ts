@@ -42,3 +42,21 @@ export function evaluateAlert(input: {
   if (!matched) return { matched: false, actions: [] };
   return { matched: true, severity: input.severity, actions: input.actions };
 }
+
+/** One delivery per rule per 24 h — a repeat inside the window is recorded
+ *  as suppressed with the reason, never silently dropped. */
+export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function deliveryDecision(
+  lastDeliveredAt: Date | string | null,
+  now = new Date(),
+): "send" | "suppress" {
+  if (!lastDeliveredAt) return "send";
+  const last =
+    lastDeliveredAt instanceof Date
+      ? lastDeliveredAt
+      : new Date(lastDeliveredAt);
+  return now.getTime() - last.getTime() < DELIVERY_WINDOW_MS
+    ? "suppress"
+    : "send";
+}

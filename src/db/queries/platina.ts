@@ -12,6 +12,7 @@ import {
   platinaDebateTranscripts,
   platinaFindings,
   platinaGateEvents,
+  platinaAlertDeliveries,
   platinaOutcomeImports,
   platinaOutcomes,
   platinaReceipts,
@@ -185,6 +186,15 @@ export function alertRulesQuery(workspaceId: string) {
         eq(platinaAlertRules.enabled, true),
       ),
     );
+}
+
+/** All rules including disabled — the Admin management view. */
+export function allAlertRulesQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaAlertRules)
+    .where(eq(platinaAlertRules.workspaceId, workspaceId))
+    .orderBy(desc(platinaAlertRules.createdAt));
 }
 
 export async function listBrandChunks(workspaceId: string) {
@@ -608,6 +618,9 @@ export async function upsertWorkspaceConfig(
     minBaselineN: number;
     contestedFloor: number;
     qualifiedFloor: number;
+    similarityFloor: number;
+    analysisSequence: ("competitor_scan" | "brand_divergence" | "ideation" | "claims_screen")[];
+    promptVersion: number;
   }>,
 ) {
   const existing = await getWorkspaceConfig(workspaceId);
@@ -661,6 +674,89 @@ export async function listActiveAlertRules() {
     .select()
     .from(platinaAlertRules)
     .where(eq(platinaAlertRules.enabled, true));
+}
+
+// ---------------------------------------------------------------------------
+// Slice 10 — alert rules CRUD + delivery ledger
+// ---------------------------------------------------------------------------
+
+export async function listAlertRules(workspaceId: string) {
+  return allAlertRulesQuery(workspaceId);
+}
+
+export async function insertAlertRule(input: {
+  workspaceId: string;
+  name: string;
+  conditions: { field: string; op: "gt" | "lt" | "eq" | "gte" | "lte"; value: number | string }[];
+  severity: "info" | "warning" | "critical";
+}) {
+  const [row] = await db
+    .insert(platinaAlertRules)
+    .values({ ...input, actions: [] })
+    .returning({ id: platinaAlertRules.id });
+  return row.id;
+}
+
+export async function setAlertRuleEnabled(
+  workspaceId: string,
+  ruleId: string,
+  enabled: boolean,
+) {
+  const updated = await db
+    .update(platinaAlertRules)
+    .set({ enabled })
+    .where(
+      and(
+        eq(platinaAlertRules.workspaceId, workspaceId),
+        eq(platinaAlertRules.id, ruleId),
+      ),
+    )
+    .returning({ id: platinaAlertRules.id });
+  return updated[0]?.id ?? null;
+}
+
+export async function insertAlertDelivery(input: {
+  workspaceId: string;
+  ruleId: string;
+  severity: "info" | "warning" | "critical";
+  route: "in_app";
+  status: "sent" | "suppressed" | "failed";
+  reason?: string | null;
+}) {
+  const [row] = await db
+    .insert(platinaAlertDeliveries)
+    .values(input)
+    .returning({ id: platinaAlertDeliveries.id });
+  return row.id;
+}
+
+export function alertDeliveriesQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaAlertDeliveries)
+    .where(eq(platinaAlertDeliveries.workspaceId, workspaceId))
+    .orderBy(desc(platinaAlertDeliveries.createdAt))
+    .limit(50);
+}
+
+export async function listAlertDeliveries(workspaceId: string) {
+  return alertDeliveriesQuery(workspaceId);
+}
+
+/** Stamps the rule's last delivery — the 24h suppression window reads it. */
+export async function markAlertRuleDelivered(
+  workspaceId: string,
+  ruleId: string,
+) {
+  await db
+    .update(platinaAlertRules)
+    .set({ lastRunAt: new Date() })
+    .where(
+      and(
+        eq(platinaAlertRules.workspaceId, workspaceId),
+        eq(platinaAlertRules.id, ruleId),
+      ),
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,10 @@
 import { inngest } from "@/inngest/client";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
-import { insertBrainChunk, listBrainChunks } from "@/db/queries/platina";
+import {
+  getWorkspaceConfig,
+  insertBrainChunk,
+  listBrainChunks,
+} from "@/db/queries/platina";
 import { compactedRecord, compactionEligible } from "@/lib/platina/brain";
 
 export const platinaBrainMaintenance = inngest.createFunction(
@@ -14,6 +18,10 @@ export const platinaBrainMaintenance = inngest.createFunction(
     );
     let compacted = 0;
     for (const workspaceId of workspaceIds) {
+      // Stored compaction thresholds govern this workspace's pass.
+      const config = await step.run(`config-${workspaceId}`, () =>
+        getWorkspaceConfig(workspaceId),
+      );
       const chunks = await step.run(`chunks-${workspaceId}`, () =>
         listBrainChunks(workspaceId),
       );
@@ -28,7 +36,12 @@ export const platinaBrainMaintenance = inngest.createFunction(
           absorbedChunkIds: c.absorbedChunkIds,
         }));
       if (gen0.length < 3) continue;
-      const verdict = compactionEligible(gen0);
+      const verdict = compactionEligible(
+        gen0,
+        new Date(),
+        config?.compactionStaleDays,
+        config?.compactionNearDupes,
+      );
       if (!verdict.eligible) continue;
       const record = compactedRecord(gen0.slice(0, 3), "Compacted market insight");
       await step.run(`compact-${workspaceId}`, () =>

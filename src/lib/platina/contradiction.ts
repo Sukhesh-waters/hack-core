@@ -26,7 +26,15 @@ export type ResolveResult = {
  * Deterministic contradiction scoring. One round only — no code path
  * requests a second. Not a model decision.
  */
-export function resolve(claim: Claim, attack: Attack): ResolveResult {
+export function resolve(
+  claim: Claim,
+  attack: Attack,
+  floors?: { contestedFloor?: number; qualifiedFloor?: number },
+): ResolveResult {
+  // Stored workspace thresholds win; the constants are the documented
+  // defaults when no config exists (Slice 10 — runtime paths consume config).
+  const contestedFloor = floors?.contestedFloor ?? CONTESTED_FLOOR;
+  const qualifiedFloor = floors?.qualifiedFloor ?? QUALIFIED_FLOOR;
   const overlap =
     claim.evidenceSpans.length === 0
       ? 0
@@ -45,10 +53,10 @@ export function resolve(claim: Claim, attack: Attack): ResolveResult {
   if (confounder >= 0.9 && specificity < 0.3) {
     return { state: "refuted", score };
   }
-  if (score < CONTESTED_FLOOR) {
+  if (score < contestedFloor) {
     return { state: "contested", score };
   }
-  if (score < QUALIFIED_FLOOR) {
+  if (score < qualifiedFloor) {
     return {
       state: "qualified",
       score,

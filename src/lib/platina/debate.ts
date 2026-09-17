@@ -9,7 +9,10 @@ import { nextRoundAllowed, resolve, type Attack, type Claim } from "./contradict
  */
 export const NO_MATERIAL_OBJECTION = "no material objection";
 
-export async function runContradictionRound(rawSignal: string) {
+export async function runContradictionRound(
+  rawSignal: string,
+  floors?: { contestedFloor?: number; qualifiedFloor?: number },
+) {
   if (nextRoundAllowed()) {
     throw new Error("unreachable: a second contradiction round is forbidden");
   }
@@ -33,7 +36,7 @@ export async function runContradictionRound(rawSignal: string) {
 
   const claim = parseClaim(proposerRaw);
   const attack = parseAttack(challengerRaw);
-  const result = resolve(claim, attack);
+  const result = resolve(claim, attack, floors);
   return { claim, attack, result };
 }
 

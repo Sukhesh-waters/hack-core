@@ -773,6 +773,33 @@ export const platinaOutcomeImports = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Alert deliveries — every alert is sent, suppressed, or failed with a
+// recorded reason (Slice 10). V1 routes in_app only.
+// ---------------------------------------------------------------------------
+
+export const platinaAlertDeliveries = pgTable(
+  "platina_alert_deliveries",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    ruleId: text("rule_id")
+      .notNull()
+      .references(() => platinaAlertRules.id, { onDelete: "cascade" }),
+    severity: platinaAlertSeverity("severity").notNull().default("warning"),
+    route: text("route").notNull().default("in_app"),
+    status: text("status").notNull().default("sent"),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_alert_deliveries_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    ruleIdx: index("platina_alert_deliveries_rule_id_idx").on(table.ruleId),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -793,4 +820,5 @@ export const platinaWorkspaceScopedTables = {
   platinaBrandSources,
   platinaClaimsRules,
   platinaOutcomeImports,
+  platinaAlertDeliveries,
 } as const;
