@@ -1,6 +1,7 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { listAuditRuns, listScanSpecs } from "@/db/queries/platina";
+import { CONFERENCE_PRESETS } from "@/lib/platina/presets";
 import { freshnessState } from "@/lib/platina/run-status";
 import {
   confirmScanAction,
@@ -67,16 +68,26 @@ export default async function AuditsPage({
         <h2 className="text-sm font-medium">New audit source</h2>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           <input type="hidden" name="workspaceId" value={params.ws} />
+          <select
+            name="preset"
+            defaultValue=""
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm md:col-span-2"
+          >
+            <option value="">Custom source…</option>
+            {CONFERENCE_PRESETS.map((p) => (
+              <option key={p.key} value={p.key}>
+                Conference preset: {p.name}
+              </option>
+            ))}
+          </select>
           <input
             name="name"
-            required
-            placeholder="Competitor watch — LC/MS"
+            placeholder="Competitor watch — LC/MS (not needed for a preset)"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <input
             name="target"
-            required
-            placeholder="https://competitor.example.com"
+            placeholder="https://competitor.example.com (not needed for a preset)"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <select

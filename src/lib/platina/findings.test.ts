@@ -4,6 +4,7 @@ import {
   FINDING_STATUSES,
   FINDING_TRANSITIONS,
   findingPathFor,
+  findingUseCaseForSourceKind,
   isFindingVerdict,
 } from "./findings";
 
@@ -79,5 +80,17 @@ describe("finding review transitions", () => {
     }
     expect(isFindingVerdict("approved")).toBe(false);
     expect(isFindingVerdict("")).toBe(false);
+  });
+});
+
+describe("findingUseCaseForSourceKind", () => {
+  it("maps conference sources to event readiness", () => {
+    expect(findingUseCaseForSourceKind("conference")).toBe("event_readiness");
+  });
+
+  it("defaults everything else to competitor change", () => {
+    expect(findingUseCaseForSourceKind("competitor_site")).toBe("competitor_change");
+    expect(findingUseCaseForSourceKind("ad_library")).toBe("competitor_change");
+    expect(findingUseCaseForSourceKind(undefined)).toBe("competitor_change");
   });
 });

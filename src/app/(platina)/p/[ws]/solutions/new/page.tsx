@@ -263,6 +263,24 @@ export default async function NewSolutionPage({
               placeholder="Measurement method — how the outcome will be recorded"
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
             />
+            <div className="grid gap-2 md:grid-cols-2">
+              <label className="text-xs font-medium">
+                Event anchor date (required for event readiness)
+                <input
+                  name="eventAnchor"
+                  type="date"
+                  className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                />
+              </label>
+              <label className="text-xs font-medium">
+                Event label
+                <input
+                  name="eventLabel"
+                  placeholder="ASMS 2026"
+                  className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                />
+              </label>
+            </div>
             <textarea
               name="strongestUncertainty"
               rows={2}

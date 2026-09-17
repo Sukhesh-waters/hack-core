@@ -1,6 +1,7 @@
 import { inngest } from "@/inngest/client";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import {
+  getScanSpec,
   getWorkspaceConfig,
   insertBrainChunk,
   insertFinding,
@@ -12,7 +13,7 @@ import {
 } from "@/db/queries/platina";
 import { runContradictionRound } from "@/lib/platina/debate";
 import { embedText } from "@/lib/platina/embed";
-import { findingPathFor } from "@/lib/platina/findings";
+import { findingPathFor, findingUseCaseForSourceKind } from "@/lib/platina/findings";
 import {
   OBJECTION_RATE_CEILING,
   OBJECTION_WINDOW,
@@ -98,12 +99,21 @@ export const platinaContradictSweep = inngest.createFunction(
         }
 
         if (path.finding) {
+          // The source kind sets the use case (Slice 7).
+          let useCase = "competitor_change";
+          if (signal.scanSpecId) {
+            const spec = await step.run(`spec-${signal.id}`, () =>
+              getScanSpec(workspaceId, signal.scanSpecId!),
+            );
+            useCase = findingUseCaseForSourceKind(spec?.targets[0]?.kind);
+          }
           await step.run(`finding-${signal.id}`, () =>
             insertFinding({
               workspaceId,
               signalDocumentId: signal.id,
               transcriptId,
               brainChunkId,
+              useCase,
               title:
                 signal.title ??
                 result.claim.text.slice(0, 80),

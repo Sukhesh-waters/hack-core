@@ -41,6 +41,7 @@ import {
 import { embedText } from "@/lib/platina/embed";
 import { chunkProse } from "@/lib/platina/chunking";
 import { claimsGate } from "@/lib/platina/claims-gate";
+import { getConferencePreset } from "@/lib/platina/presets";
 import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
 import {
   canTransitionFinding,
@@ -114,9 +115,14 @@ export async function createScanSpecAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
   await requireCapability(ws, user.id, "gate.confirm");
-  const name = String(formData.get("name") ?? "").trim();
-  const value = String(formData.get("target") ?? "").trim();
-  const kind = String(formData.get("kind") ?? "");
+  const presetKey = String(formData.get("preset") ?? "").trim();
+  const preset = presetKey ? getConferencePreset(presetKey) : null;
+  if (presetKey && !preset) {
+    refuse(ws, "audits", "Unknown conference preset.");
+  }
+  const name = (preset?.name ?? String(formData.get("name") ?? "")).trim();
+  const value = (preset?.url ?? String(formData.get("target") ?? "")).trim();
+  const kind = preset ? "conference" : String(formData.get("kind") ?? "");
   const cadenceMinutes = Number(formData.get("cadenceMinutes") ?? 5);
   if (!name || !value) refuse(ws, "audits", "Name and target are required.");
   if (!SOURCE_KINDS.includes(kind as (typeof SOURCE_KINDS)[number])) {
@@ -220,6 +226,15 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
     );
   }
   const useCase = String(formData.get("useCase") ?? "").trim() || null;
+  const eventAnchorRaw = String(formData.get("eventAnchor") ?? "").trim();
+  const eventLabel = String(formData.get("eventLabel") ?? "").trim() || null;
+  if (useCase === "event_readiness" && !eventAnchorRaw) {
+    refuse(
+      ws,
+      "solutions/new",
+      "An event-anchored solution needs the event date.",
+    );
+  }
   const reviewAt = new Date(Date.now() + 90 * 86_400_000);
   const id = await insertReceipt({
     workspaceId: ws,
@@ -243,6 +258,13 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
     receiptId: id,
     useCase: useCase ?? undefined,
     ...detail,
+    // Operator-set anchor wins over the template default.
+    ...(eventAnchorRaw
+      ? {
+          eventAnchor: new Date(eventAnchorRaw),
+          eventLabel: eventLabel ?? detail.eventLabel,
+        }
+      : {}),
   });
   const event = {
     workspaceId: ws,
@@ -281,6 +303,9 @@ export async function editSolutionAction(formData: FormData): Promise<void> {
     audience: String(formData.get("audience") ?? "").trim() || undefined,
     contentPlan: String(formData.get("contentPlan") ?? "").trim() || undefined,
     eventLabel: String(formData.get("eventLabel") ?? "").trim() || undefined,
+    eventAnchor: String(formData.get("eventAnchor") ?? "").trim()
+      ? new Date(String(formData.get("eventAnchor")))
+      : undefined,
   });
   if (!updated) {
     refuse(ws, "solutions", "Only a draft solution can be edited.");

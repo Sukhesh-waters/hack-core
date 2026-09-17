@@ -82,3 +82,9 @@ export const FINDING_VERDICT_LABEL: Record<FindingVerdict, string> = {
   dismissed: "Dismiss",
   superseded: "Supersede",
 };
+
+/** The source kind sets the finding's use case (Slice 7): conference sources
+ *  feed event readiness; everything else is a competitor/market change. */
+export function findingUseCaseForSourceKind(kind: string | undefined): string {
+  return kind === "conference" ? "event_readiness" : "competitor_change";
+}

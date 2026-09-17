@@ -54,7 +54,7 @@ export default async function FindingsPage({
   searchParams,
 }: {
   params: { ws: string };
-  searchParams: { error?: string; status?: string };
+  searchParams: { error?: string; status?: string; useCase?: string };
 }) {
   const [findings, hypotheses, transcripts] = await Promise.all([
     listFindings(params.ws),
@@ -63,10 +63,14 @@ export default async function FindingsPage({
   ]);
   const chunkById = new Map(hypotheses.map((c) => [c.id, c]));
   const activeTab = TABS.find((t) => t.key === searchParams.status) ?? TABS[0];
+  const useCase = searchParams.useCase ?? "";
+  const useCaseFiltered = useCase
+    ? findings.filter((f) => f.useCase === useCase)
+    : findings;
   const visible =
     activeTab.key === "all"
-      ? findings
-      : findings.filter((f) =>
+      ? useCaseFiltered
+      : useCaseFiltered.filter((f) =>
           activeTab.statuses.includes(f.status as FindingStatus),
         );
 
@@ -109,18 +113,18 @@ export default async function FindingsPage({
         </span>
       </section>
 
-      <nav className="mb-4 flex gap-1 rounded-lg border border-border bg-card p-1">
+      <nav className="mb-4 flex flex-wrap items-center gap-1 rounded-lg border border-border bg-card p-1">
         {TABS.map((tab) => {
           const count =
             tab.key === "all"
-              ? findings.length
-              : findings.filter((f) =>
+              ? useCaseFiltered.length
+              : useCaseFiltered.filter((f) =>
                   tab.statuses.includes(f.status as FindingStatus),
                 ).length;
           return (
             <Link
               key={tab.key}
-              href={`/p/${params.ws}/findings?status=${tab.key}`}
+              href={`/p/${params.ws}/findings?status=${tab.key}${useCase ? `&useCase=${useCase}` : ""}`}
               className={
                 tab.key === activeTab.key
                   ? "rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground"
@@ -131,6 +135,25 @@ export default async function FindingsPage({
             </Link>
           );
         })}
+        <form method="GET" className="ml-auto flex items-center gap-1">
+          <input type="hidden" name="status" value={activeTab.key} />
+          <select
+            name="useCase"
+            defaultValue={useCase}
+            className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+          >
+            <option value="">All use cases</option>
+            <option value="competitor_change">Competitor / market</option>
+            <option value="event_readiness">Event readiness</option>
+            <option value="operational">Operational</option>
+          </select>
+          <button
+            type="submit"
+            className="rounded-md border border-border px-2 py-1.5 text-xs"
+          >
+            Filter
+          </button>
+        </form>
       </nav>
 
       {visible.length === 0 ? (

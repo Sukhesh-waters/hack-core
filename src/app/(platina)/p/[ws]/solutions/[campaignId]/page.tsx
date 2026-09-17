@@ -11,6 +11,7 @@ import {
   listSolutionTasks,
 } from "@/db/queries/platina";
 import { claimsGate } from "@/lib/platina/claims-gate";
+import { readinessFor } from "@/lib/platina/readiness";
 import {
   BOARD_COLUMN_LABEL,
   BOARD_COLUMNS,
@@ -78,6 +79,14 @@ export default async function SolutionDetailPage({
     hasException: claimsException,
   });
   const blockers = blockersFor(tasks);
+  const readiness = readinessFor(
+    {
+      eventAnchor: campaign.eventAnchor,
+      eventLabel: campaign.eventLabel,
+      tasks,
+    },
+    new Date(),
+  );
   const tab = TABS.find((t) => t.key === searchParams.tab)?.key ?? "summary";
   const tabHref = (key: string) =>
     `/p/${ws}/solutions/${campaignId}?tab=${key}`;
@@ -152,6 +161,56 @@ export default async function SolutionDetailPage({
               <dd>{campaign.status}</dd>
             </div>
           </dl>
+
+          <section
+            aria-label="Event readiness"
+            className="rounded-lg border border-border bg-card p-4"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                Event readiness
+              </h2>
+              {readiness.hasAnchor && (
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {readiness.postEvent
+                    ? "event passed"
+                    : `${readiness.daysToEvent} days to event`}
+                </span>
+              )}
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {readiness.phases.map((p) => (
+                <div
+                  key={p.phase}
+                  className="rounded-md bg-secondary p-3 text-center"
+                >
+                  <p className="font-mono text-[10px] uppercase text-secondary-foreground">
+                    {p.phase === "pre"
+                      ? "Pre-event"
+                      : p.phase === "at"
+                        ? "At event"
+                        : "Post-event"}
+                  </p>
+                  <p className="mt-1 font-display text-lg">
+                    {p.done}/{p.total}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {readiness.gaps.length > 0 ? (
+              <ul className="mt-3 list-inside list-disc text-sm text-muted-foreground">
+                {readiness.gaps.map((gap) => (
+                  <li key={gap}>{gap}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-muted-foreground">
+                No readiness gaps — every phase has planned work and nothing is
+                overdue.
+              </p>
+            )}
+          </section>
+
           {campaign.status === "draft" && (
             <div className="rounded-lg border border-border bg-card p-4">
               {blockers.blocked || claims.blocksApproval ? (

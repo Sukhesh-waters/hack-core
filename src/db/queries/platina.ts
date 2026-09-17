@@ -469,6 +469,7 @@ export async function updateDraftCampaign(
     audience?: string;
     contentPlan?: string;
     eventLabel?: string;
+    eventAnchor?: Date;
   },
 ) {
   const updated = await db
