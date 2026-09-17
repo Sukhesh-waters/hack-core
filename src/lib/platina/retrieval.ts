@@ -69,6 +69,28 @@ export function canCiteHypothesisAlone(generation: number): boolean {
   return generation < 2;
 }
 
+export const DEFAULT_SIMILARITY_FLOOR = 0.35;
+
+/**
+ * R4.2 — relevance is a separate question from baseline size. A workspace
+ * can hold hundreds of qualifying records and still retrieve nothing
+ * relevant to the question. The floor passes when either channel has real
+ * signal: a vector hit at or above the floor, or an exact lexical hit (the
+ * model-number case R4.4 exists for). Both weak → insufficient_relevance,
+ * which tells the operator "the question does not match the evidence" —
+ * a different action from "more data is needed" (insufficient_baseline).
+ */
+export function relevanceGate(
+  input: { bestVectorScore: number | null; hasLexicalHit: boolean },
+  floor = DEFAULT_SIMILARITY_FLOOR,
+): { status: "ready" } | { status: "insufficient_relevance"; bestScore: number | null } {
+  if (input.bestVectorScore !== null && input.bestVectorScore >= floor) {
+    return { status: "ready" };
+  }
+  if (input.hasLexicalHit) return { status: "ready" };
+  return { status: "insufficient_relevance", bestScore: input.bestVectorScore };
+}
+
 export function minNGate(
   sampleSize: number,
   minN = DEFAULT_MIN_BASELINE_N,

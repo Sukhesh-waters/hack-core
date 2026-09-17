@@ -30,11 +30,13 @@ export function similarBrandChunksQuery(
   embedding: number[],
   limit = 8,
 ) {
+  const distance = cosineDistance(platinaBrandChunks.embedding, embedding);
   return db
     .select({
       id: platinaBrandChunks.id,
       content: platinaBrandChunks.content,
       sourceUrl: platinaBrandChunks.sourceUrl,
+      score: sql<number>`(1 - (${distance}))`,
     })
     .from(platinaBrandChunks)
     .where(
@@ -48,7 +50,7 @@ export function similarBrandChunksQuery(
         ),
       ),
     )
-    .orderBy(cosineDistance(platinaBrandChunks.embedding, embedding))
+    .orderBy(distance)
     .limit(limit);
 }
 
@@ -57,12 +59,14 @@ export function similarBrainChunksQuery(
   embedding: number[],
   limit = 6,
 ) {
+  const distance = cosineDistance(platinaBrainChunks.embedding, embedding);
   return db
     .select({
       id: platinaBrainChunks.id,
       content: platinaBrainChunks.content,
       confidence: platinaBrainChunks.confidence,
       generation: platinaBrainChunks.generation,
+      score: sql<number>`(1 - (${distance}))`,
     })
     .from(platinaBrainChunks)
     .where(
@@ -75,7 +79,7 @@ export function similarBrainChunksQuery(
         ),
       ),
     )
-    .orderBy(cosineDistance(platinaBrainChunks.embedding, embedding))
+    .orderBy(distance)
     .limit(limit);
 }
 
@@ -233,6 +237,7 @@ export async function insertBrandChunk(input: {
   sourceUrl?: string;
   title?: string;
   embedding?: number[];
+  chunkIndex?: number;
 }) {
   const [row] = await db
     .insert(platinaBrandChunks)
@@ -427,12 +432,75 @@ export async function insertCampaign(input: {
   eventLabel?: string;
   audience?: string;
   contentPlan?: string;
+  useCase?: string;
 }) {
   const [row] = await db
     .insert(platinaCampaigns)
     .values(input)
     .returning({ id: platinaCampaigns.id });
   return row.id;
+}
+
+/** Solutions index: campaigns joined to their decision receipts. */
+export function solutionsQuery(workspaceId: string) {
+  return db
+    .select({
+      campaign: platinaCampaigns,
+      receipt: platinaReceipts,
+    })
+    .from(platinaCampaigns)
+    .leftJoin(
+      platinaReceipts,
+      eq(platinaCampaigns.receiptId, platinaReceipts.id),
+    )
+    .where(eq(platinaCampaigns.workspaceId, workspaceId))
+    .orderBy(desc(platinaCampaigns.createdAt));
+}
+
+/** Plan fields are editable only while a solution is a draft. */
+export async function updateDraftCampaign(
+  workspaceId: string,
+  campaignId: string,
+  patch: {
+    durationDays?: number;
+    geography?: string;
+    channelMix?: string[];
+    audience?: string;
+    contentPlan?: string;
+    eventLabel?: string;
+  },
+) {
+  const updated = await db
+    .update(platinaCampaigns)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaCampaigns.workspaceId, workspaceId),
+        eq(platinaCampaigns.id, campaignId),
+        eq(platinaCampaigns.status, "draft"),
+      ),
+    )
+    .returning({ id: platinaCampaigns.id });
+  return updated[0]?.id ?? null;
+}
+
+/** Rejection closes the draft; the gate event carries the decision. */
+export async function closeDraftCampaign(
+  workspaceId: string,
+  campaignId: string,
+) {
+  const updated = await db
+    .update(platinaCampaigns)
+    .set({ status: "closed", updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaCampaigns.workspaceId, workspaceId),
+        eq(platinaCampaigns.id, campaignId),
+        eq(platinaCampaigns.status, "draft"),
+      ),
+    )
+    .returning({ id: platinaCampaigns.id });
+  return updated[0]?.id ?? null;
 }
 
 export async function insertOutcome(input: {
@@ -906,6 +974,77 @@ export async function listOpenOperationalFindings(workspaceId: string) {
     );
 }
 
+/**
+ * Lexical (BM25-style) candidates via Postgres full-text search (R4.4).
+ * Exact strings — instrument model numbers, method codes, catalogue
+ * references — that pure vector search misses. Plane A only; Plane B stays
+ * structurally unsearchable.
+ */
+export function lexicalBrandChunksQuery(
+  workspaceId: string,
+  query: string,
+  limit = 20,
+) {
+  const tsQuery = sql`plainto_tsquery('english', ${query})`;
+  return db
+    .select({
+      id: platinaBrandChunks.id,
+      content: platinaBrandChunks.content,
+      rank: sql<number>`ts_rank(to_tsvector('english', ${platinaBrandChunks.content}), ${tsQuery})`,
+    })
+    .from(platinaBrandChunks)
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        eq(
+          platinaBrandChunks.embeddingModelVersion,
+          PLATINA_EMBEDDING_MODEL_VERSION,
+        ),
+        sql`to_tsvector('english', ${platinaBrandChunks.content}) @@ ${tsQuery}`,
+      ),
+    )
+    .orderBy(
+      desc(
+        sql`ts_rank(to_tsvector('english', ${platinaBrandChunks.content}), ${tsQuery})`,
+      ),
+    )
+    .limit(limit);
+}
+
+export function lexicalBrainChunksQuery(
+  workspaceId: string,
+  query: string,
+  limit = 20,
+) {
+  const tsQuery = sql`plainto_tsquery('english', ${query})`;
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      generation: platinaBrainChunks.generation,
+      rank: sql<number>`ts_rank(to_tsvector('english', ${platinaBrainChunks.content}), ${tsQuery})`,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.status, "active"),
+        eq(
+          platinaBrainChunks.embeddingModelVersion,
+          PLATINA_EMBEDDING_MODEL_VERSION,
+        ),
+        sql`to_tsvector('english', ${platinaBrainChunks.content}) @@ ${tsQuery}`,
+      ),
+    )
+    .orderBy(
+      desc(
+        sql`ts_rank(to_tsvector('english', ${platinaBrainChunks.content}), ${tsQuery})`,
+      ),
+    )
+    .limit(limit);
+}
+
 /** First-party outcomes only — synthetic demo rows are never evidence (A4). */
 export function firstPartyOutcomesQuery(workspaceId: string) {
   return db
@@ -921,7 +1060,47 @@ export function firstPartyOutcomesQuery(workspaceId: string) {
 }
 
 /**
- * Eval-harness hygiene (R5.2): remove only the harness's own seeded rows,
+ * Citation validation (Slice 5): the approval form's evidence ids arrive as
+ * hidden form fields — client-tamperable. Every cited id must exist as a row
+ * in THIS workspace; foreign or fabricated ids are returned so the action
+ * can refuse.
+ */
+export async function findInvalidCitationIds(
+  workspaceId: string,
+  brandIds: string[],
+  brainIds: string[],
+): Promise<string[]> {
+  const invalid: string[] = [];
+  if (brandIds.length > 0) {
+    const rows = await db
+      .select({ id: platinaBrandChunks.id })
+      .from(platinaBrandChunks)
+      .where(
+        and(
+          eq(platinaBrandChunks.workspaceId, workspaceId),
+          inArray(platinaBrandChunks.id, brandIds),
+        ),
+      );
+    const found = new Set(rows.map((r) => r.id));
+    invalid.push(...brandIds.filter((id) => !found.has(id)));
+  }
+  if (brainIds.length > 0) {
+    const rows = await db
+      .select({ id: platinaBrainChunks.id })
+      .from(platinaBrainChunks)
+      .where(
+        and(
+          eq(platinaBrainChunks.workspaceId, workspaceId),
+          inArray(platinaBrainChunks.id, brainIds),
+        ),
+      );
+    const found = new Set(rows.map((r) => r.id));
+    invalid.push(...brainIds.filter((id) => !found.has(id)));
+  }
+  return invalid;
+}
+
+/** Eval-harness hygiene (R5.2): remove only the harness's own seeded rows,
  * identified by the eval:// source prefix, in the given workspace. Nothing
  * else is deletable through this path.
  */

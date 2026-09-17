@@ -415,6 +415,8 @@ export const platinaCampaigns = pgTable(
     eventLabel: text("event_label"),
     audience: text("audience"),
     contentPlan: text("content_plan"),
+    // One of the five Waters use cases; set at direction approval (Slice 5).
+    useCase: text("use_case"),
     sopRunId: text("sop_run_id"),
     status: platinaCampaignStatus("status").notNull().default("draft"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
@@ -439,6 +441,9 @@ export const platinaWorkspaceConfig = pgTable(
     minBaselineN: integer("min_baseline_n").notNull().default(20),
     contestedFloor: real("contested_floor").notNull().default(0.4),
     qualifiedFloor: real("qualified_floor").notNull().default(0.7),
+    // R4.2 — below this fused similarity, retrieval answers
+    // "insufficient_relevance" instead of ranking noise. Slice 10 exposes it.
+    similarityFloor: real("similarity_floor").notNull().default(0.35),
     compactionStaleDays: integer("compaction_stale_days").notNull().default(90),
     compactionNearDupes: integer("compaction_near_dupes").notNull().default(3),
     compactionCosine: real("compaction_cosine").notNull().default(0.92),

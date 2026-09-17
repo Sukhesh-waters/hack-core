@@ -1,56 +1,72 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
-import {
-  getFinding,
-  listBrandChunks,
-  listBrainChunks,
-} from "@/db/queries/platina";
+import { getFinding, getWorkspaceConfig } from "@/db/queries/platina";
 import { draftProposals } from "@/lib/platina/ideation";
-import { checkSupport, minNGate } from "@/lib/platina/retrieval";
+import { retrieveBuckets } from "@/lib/platina/retrieve";
+import {
+  checkSupport,
+  minNGate,
+  relevanceGate,
+} from "@/lib/platina/retrieval";
 import { approveDirectionAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina — new solution" };
 
+const USE_CASES = [
+  { value: "competitor_change", label: "Competitor / market change" },
+  { value: "event_readiness", label: "Conference / event readiness" },
+  { value: "brand_drift", label: "Brand drift remediation" },
+  { value: "claims", label: "Claims and compliance" },
+  { value: "campaign_performance", label: "Campaign performance" },
+];
+
 /**
- * Evidence-grounded solution drafting with the full recommendation contract.
- * Approved evidence and derived hypotheses stay in separate, differently
- * labelled buckets; a hypothesis can never be the sole support.
+ * Topic-driven, evidence-grounded drafting. Retrieval runs server-side over
+ * the version-current vector store plus lexical search, fused and reranked.
+ * The two buckets stay separate and differently labelled; the similarity
+ * floor and the workspace minimum-N are enforced before any proposal shows.
  */
 export default async function NewSolutionPage({
   params,
   searchParams,
 }: {
   params: { ws: string };
-  searchParams: { error?: string; findingId?: string };
+  searchParams: { error?: string; findingId?: string; topic?: string };
 }) {
-  const [brand, brain] = await Promise.all([
-    listBrandChunks(params.ws),
-    listBrainChunks(params.ws),
+  const [config, finding] = await Promise.all([
+    getWorkspaceConfig(params.ws),
+    searchParams.findingId
+      ? getFinding(params.ws, searchParams.findingId)
+      : Promise.resolve(null),
   ]);
-  const finding = searchParams.findingId
-    ? await getFinding(params.ws, searchParams.findingId)
+  const minN = config?.minBaselineN ?? 20;
+  const floor = config?.similarityFloor ?? 0.35;
+
+  const topic =
+    searchParams.topic ??
+    (finding ? `${finding.title}\n${finding.summary}` : "");
+  const retrieved = topic.trim()
+    ? await retrieveBuckets(params.ws, topic)
     : null;
 
-  const buckets = {
-    evidence: brand.map((c) => ({
-      id: c.id,
-      content: c.content,
-      plane: "A" as const,
-    })),
-    hypotheses: brain.map((c) => ({
-      id: c.id,
-      content: c.content,
-      plane: "C" as const,
-      confidence: c.confidence,
-      generation: c.generation,
-    })),
-  };
-  const gate = minNGate(buckets.evidence.length, 1);
+  const buckets = retrieved ?? { evidence: [], hypotheses: [] };
+  const gate = minNGate(buckets.evidence.length, minN);
   const support = checkSupport(buckets);
-  const proposals = support.ok
-    ? draftProposals(finding?.title ?? "Waters campaign", buckets)
-    : [];
+  const relevance = retrieved
+    ? relevanceGate(
+        {
+          bestVectorScore: retrieved.bestEvidenceScore,
+          hasLexicalHit: retrieved.hasEvidenceLexicalHit,
+        },
+        floor,
+      )
+    : { status: "ready" as const };
+
+  const ready =
+    support.ok && gate.status === "ready" && relevance.status === "ready";
+  const proposals =
+    ready && topic.trim() ? draftProposals(finding?.title ?? topic, buckets) : [];
 
   return (
     <PlatinaPage
@@ -70,17 +86,94 @@ export default async function NewSolutionPage({
         </div>
       )}
 
-      {gate.status === "insufficient_baseline" && (
+      <form className="mb-6 rounded-lg border border-border bg-card p-4" method="GET">
+        {searchParams.findingId && (
+          <input type="hidden" name="findingId" value={searchParams.findingId} />
+        )}
+        <label className="text-xs font-medium">
+          What are you responding to?
+          <textarea
+            name="topic"
+            rows={2}
+            defaultValue={topic}
+            placeholder="e.g. Competitor launched a mid-range LC-MS for QC labs"
+            className="mt-1 w-full rounded-md border border-input bg-background p-3 text-sm"
+          />
+        </label>
+        <button
+          type="submit"
+          className="mt-3 rounded-md border border-border px-3 py-1.5 text-sm"
+        >
+          Retrieve evidence
+        </button>
+      </form>
+
+      {retrieved && (
+        <section aria-label="Retrieved evidence" className="mb-6">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-primary">
+                Approved evidence ({buckets.evidence.length})
+              </p>
+              <ul className="mt-2 space-y-2">
+                {buckets.evidence.map((e) => (
+                  <li key={e.id} className="text-sm">
+                    {e.content.slice(0, 140)}
+                  </li>
+                ))}
+                {buckets.evidence.length === 0 && (
+                  <li className="text-sm text-muted-foreground">
+                    None retrieved for this topic.
+                  </li>
+                )}
+              </ul>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-4">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                Derived market hypotheses — unvalidated (
+                {buckets.hypotheses.length})
+              </p>
+              <ul className="mt-2 space-y-2">
+                {buckets.hypotheses.map((h) => (
+                  <li key={h.id} className="text-sm text-muted-foreground">
+                    {h.content.slice(0, 140)}
+                  </li>
+                ))}
+                {buckets.hypotheses.length === 0 && (
+                  <li className="text-sm text-muted-foreground">None.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+          <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+            {retrieved.reranked
+              ? "Ranked by relevance pass"
+              : "Ranked by fused vector + lexical order"}
+          </p>
+        </section>
+      )}
+
+      {retrieved && relevance.status === "insufficient_relevance" && (
         <p className="mb-4 rounded-lg border border-border bg-secondary p-4 text-sm text-secondary-foreground">
-          Insufficient approved evidence — {gate.sampleSize} on record. Confirm
-          the brand standard in Admin before drafting a direction.
+          Nothing retrieved is relevant to this topic
+          {relevance.bestScore !== null &&
+            ` (best match ${(relevance.bestScore * 100).toFixed(0)}%, floor ${floor * 100}%)`}
+          . The question does not match the evidence on record — reframe the
+          topic or declare more of the standard in Admin. This is not a
+          sample-size problem.
         </p>
       )}
-      {!support.ok && (
+      {retrieved && relevance.status === "ready" && gate.status === "insufficient_baseline" && (
         <p className="mb-4 rounded-lg border border-border bg-secondary p-4 text-sm text-secondary-foreground">
-          {support.reason === "insufficient_baseline"
-            ? "Nothing to build on yet — no approved evidence and no derived hypotheses."
-            : "A derived market hypothesis can never be the sole support for a solution. Anchor the direction in approved evidence first."}
+          Insufficient approved evidence — {gate.sampleSize} of {minN} required
+          on record. Confirm more of the brand standard in Admin before
+          drafting.
+        </p>
+      )}
+      {retrieved && relevance.status === "ready" && gate.status === "ready" && !support.ok && (
+        <p className="mb-4 rounded-lg border border-border bg-secondary p-4 text-sm text-secondary-foreground">
+          A derived market hypothesis can never be the sole support for a
+          solution. Anchor the direction in approved evidence first.
         </p>
       )}
 
@@ -109,7 +202,21 @@ export default async function NewSolutionPage({
               value={p.hypothesisIds.join(",")}
             />
 
-            <div className="grid gap-2 md:grid-cols-2">
+            <div className="grid gap-2 md:grid-cols-3">
+              <label className="text-xs font-medium">
+                Use case
+                <select
+                  name="useCase"
+                  defaultValue="competitor_change"
+                  className="mt-1 w-full rounded-md border border-input bg-background px-2 py-2 text-sm"
+                >
+                  {USE_CASES.map((u) => (
+                    <option key={u.value} value={u.value}>
+                      {u.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <label className="text-xs font-medium">
                 Severity
                 <select

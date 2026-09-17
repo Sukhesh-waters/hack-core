@@ -6,7 +6,9 @@ import { requireUser } from "@/auth";
 import { requireCapability } from "@/db/queries/memberships";
 import {
   approveScanSpec,
+  closeDraftCampaign,
   createAuditRun,
+  findInvalidCitationIds,
   getFinding,
   getScanSpec,
   getWorkspaceConfig,
@@ -17,6 +19,7 @@ import {
   insertScanSpec,
   recordReceiptOutcome,
   transitionFinding,
+  updateDraftCampaign,
   upsertWorkspaceConfig,
   upsertWorkspaceProfile,
 } from "@/db/queries/platina";
@@ -29,6 +32,7 @@ import {
   snapshotRunConfig,
 } from "@/lib/platina/orchestrator";
 import { embedText } from "@/lib/platina/embed";
+import { chunkProse } from "@/lib/platina/chunking";
 import {
   canTransitionFinding,
   FINDING_TRANSITIONS,
@@ -57,14 +61,21 @@ export async function declareBrandAction(formData: FormData): Promise<void> {
   const content = String(formData.get("content") ?? "").trim();
   const user = await actor(ws, "declare");
   if (!content) refuse(ws, "brand", "Brand standard is required.");
-  // Embed at write time so semantic retrieval can anchor to this standard.
-  // A router outage stores the chunk without a vector — never a fake one.
-  const embedding = await embedText(content);
-  const id = await insertBrandChunk({
-    workspaceId: ws,
-    content,
-    embedding: embedding ?? undefined,
-  });
+  // R4.5: long declarations split on paragraph boundaries; each chunk is
+  // embedded at write time. A router outage stores without a vector —
+  // never a fake one.
+  const chunks = chunkProse(content);
+  let lastId = "";
+  for (const [index, chunk] of chunks.entries()) {
+    const embedding = await embedText(chunk);
+    lastId = await insertBrandChunk({
+      workspaceId: ws,
+      content: chunk,
+      embedding: embedding ?? undefined,
+      chunkIndex: index,
+    });
+  }
+  const id = lastId;
   const event = {
     workspaceId: ws,
     gate: "declare" as const,
@@ -189,6 +200,17 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
   if (evidenceBrand.length === 0) {
     refuse(ws, "solutions/new", "A plane-A evidence anchor is required.");
   }
+  // Citation ids arrive as hidden form fields — validate them against this
+  // workspace's rows before they persist anywhere.
+  const invalid = await findInvalidCitationIds(ws, evidenceBrand, evidenceBrain);
+  if (invalid.length > 0) {
+    refuse(
+      ws,
+      "solutions/new",
+      "One or more cited evidence records do not belong to this workspace. Reload and redraft.",
+    );
+  }
+  const useCase = String(formData.get("useCase") ?? "").trim() || null;
   const reviewAt = new Date(Date.now() + 90 * 86_400_000);
   const id = await insertReceipt({
     workspaceId: ws,
@@ -210,6 +232,7 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
     workspaceId: ws,
     title,
     receiptId: id,
+    useCase: useCase ?? undefined,
     ...detail,
   });
   const event = {
@@ -223,11 +246,71 @@ export async function approveDirectionAction(formData: FormData): Promise<void> 
   };
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
   revalidatePath(`/p/${ws}/receipts`);
   revalidatePath(`/p/${ws}/campaigns`);
   revalidatePath(`/p/${ws}/solutions`);
   revalidatePath(`/p/${ws}/solutions/new`);
   revalidatePath(`/p/${ws}/outcomes`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/** Edit a draft solution's plan fields. Only drafts are editable. */
+export async function editSolutionAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  // The capability check is the authorization; no user id is written here.
+  await actor(ws, "approve");
+  const channelMix = String(formData.get("channelMix") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const updated = await updateDraftCampaign(ws, campaignId, {
+    durationDays: Number(formData.get("durationDays")) || undefined,
+    geography: String(formData.get("geography") ?? "").trim() || undefined,
+    channelMix: channelMix.length > 0 ? channelMix : undefined,
+    audience: String(formData.get("audience") ?? "").trim() || undefined,
+    contentPlan: String(formData.get("contentPlan") ?? "").trim() || undefined,
+    eventLabel: String(formData.get("eventLabel") ?? "").trim() || undefined,
+  });
+  if (!updated) {
+    refuse(ws, "solutions", "Only a draft solution can be edited.");
+  }
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/**
+ * Reject a draft solution: the draft closes and an immutable rejected
+ * decision is recorded on the approve gate. Nothing is deleted.
+ */
+export async function rejectSolutionAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  const user = await actor(ws, "approve");
+  if (!reason) {
+    refuse(ws, "solutions", "A rejection reason is required — it is the audit trail.");
+  }
+  const closed = await closeDraftCampaign(ws, campaignId);
+  if (!closed) {
+    refuse(ws, "solutions", "Only a draft solution can be rejected.");
+  }
+  const event = {
+    workspaceId: ws,
+    gate: "approve" as const,
+    decision: "rejected" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({ campaignId, reason }),
+    subjectType: "campaign",
+    subjectId: campaignId,
+    reason,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions`);
   revalidatePath(`/p/${ws}`);
 }
 
@@ -246,6 +329,7 @@ export async function publishCampaignAction(formData: FormData): Promise<void> {
   };
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
   revalidatePath(`/p/${ws}/campaigns`);
   revalidatePath(`/p/${ws}/solutions`);
   revalidatePath(`/p/${ws}`);

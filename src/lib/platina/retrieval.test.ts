@@ -5,6 +5,7 @@ import {
   emptyBuckets,
   labelBuckets,
   minNGate,
+  relevanceGate,
   type RetrievalBuckets,
 } from "./retrieval";
 
@@ -76,6 +77,28 @@ describe("two-bucket retrieval", () => {
     expect(minNGate(5).status).toBe("insufficient_baseline");
     expect(minNGate(20).status).toBe("ready");
     expect(refusalReason(emptyBuckets())).toBe("insufficient_baseline");
+  });
+
+  it("distinguishes insufficient relevance from insufficient baseline (R4.2)", () => {
+    // Baseline is about SIZE; relevance is about the QUESTION matching.
+    expect(
+      relevanceGate({ bestVectorScore: 0.8, hasLexicalHit: false }, 0.35)
+        .status,
+    ).toBe("ready");
+    expect(
+      relevanceGate({ bestVectorScore: 0.2, hasLexicalHit: false }, 0.35),
+    ).toEqual({ status: "insufficient_relevance", bestScore: 0.2 });
+    // An exact lexical hit is relevance evidence even with weak vectors —
+    // the model-number case R4.4 exists for.
+    expect(
+      relevanceGate({ bestVectorScore: 0.2, hasLexicalHit: true }, 0.35)
+        .status,
+    ).toBe("ready");
+    // No vectors at all (embed outage) with no lexical hit → not relevant.
+    expect(
+      relevanceGate({ bestVectorScore: null, hasLexicalHit: false }, 0.35)
+        .status,
+    ).toBe("insufficient_relevance");
   });
 
   it("accepts a mixed A+C recommendation", () => {
