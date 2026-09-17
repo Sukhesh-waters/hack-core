@@ -64,7 +64,12 @@ export default async function SolutionsPage({
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="font-medium">{c.title}</p>
+                  <Link
+                    href={`/p/${params.ws}/solutions/${c.id}`}
+                    className="font-medium hover:underline"
+                  >
+                    {c.title}
+                  </Link>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     {[
                       c.useCase ? USE_CASE_LABEL[c.useCase] ?? c.useCase : null,

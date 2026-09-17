@@ -30,6 +30,7 @@ export const CAPABILITIES = [
   "gate.confirm",
   "gate.approve",
   "gate.publish",
+  "platina.task.edit",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -49,6 +50,7 @@ export const CAPABILITY_LABELS: Record<Capability, string> = {
   "gate.confirm": "Confirm a scan spec before fetch (Gate 2)",
   "gate.approve": "Approve a campaign direction (Gate 3)",
   "gate.publish": "Approve a campaign to ship (Gate 4)",
+  "platina.task.edit": "Work on Platina solution tasks",
 };
 
 /**
@@ -67,7 +69,7 @@ const MATRIX: Record<MembershipRole, readonly Capability[]> = {
   admin: [...CAPABILITIES],
   // A member does the work: they start runs and upload the client's files.
   // They do not archive files — that destroys bytes and is not reversible.
-  member: ["sop.run.start", "asset.upload"],
+  member: ["sop.run.start", "asset.upload", "platina.task.edit"],
 };
 
 export function roleCan(role: MembershipRole, capability: Capability): boolean {
@@ -110,4 +112,5 @@ const PERMISSION_MESSAGES: Record<Capability, string> = {
   "gate.confirm": "Only an admin can confirm a scan before any fetch runs.",
   "gate.approve": "Only an admin can approve a campaign direction.",
   "gate.publish": "Only an admin can approve a campaign to ship.",
+  "platina.task.edit": "You don't have permission to work on solution tasks.",
 };

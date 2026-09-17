@@ -22,6 +22,11 @@ export const PLATINA_ROUTES: { subPath: string; h1: string }[] = [
   { subPath: "findings", h1: "Findings" },
   { subPath: "solutions", h1: "Solutions" },
   { subPath: "solutions/new", h1: "New solution" },
+  // Seeded by scripts/seed-platina-fixture.ts (idempotent).
+  {
+    subPath: "solutions/e2e0a11f-1a1a-4a1a-8a1a-0000000000c1",
+    h1: "Fixture solution — QC lab validation response",
+  },
   { subPath: "outcomes", h1: "Outcomes and decision history" },
   { subPath: "admin", h1: "Workspace administration" },
   { subPath: "admin/brand", h1: "Brand standard" },

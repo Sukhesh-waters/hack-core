@@ -104,6 +104,20 @@ export const platinaFindingStatus = pgEnum("platina_finding_status", [
   "superseded",
 ]);
 
+export const platinaTaskStatus = pgEnum("platina_task_status", [
+  "todo",
+  "in_progress",
+  "blocked",
+  "review",
+  "done",
+]);
+
+export const platinaEventPhase = pgEnum("platina_event_phase", [
+  "pre",
+  "at",
+  "post",
+]);
+
 /** The router's current embedding model — bump only with an explicit
  *  re-embed backfill (R4.1). Mixed versions in one index are meaningless. */
 export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
@@ -625,6 +639,39 @@ export const platinaFindings = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Solution tasks — the workspace-local work board (Slice 6)
+// ---------------------------------------------------------------------------
+
+export const platinaSolutionTasks = pgTable(
+  "platina_solution_tasks",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    campaignId: text("campaign_id")
+      .notNull()
+      .references(() => platinaCampaigns.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    status: platinaTaskStatus("status").notNull().default("todo"),
+    assigneeId: text("assignee_id").references(() => users.id),
+    dueDate: timestamp("due_date", { mode: "date" }),
+    eventPhase: platinaEventPhase("event_phase"),
+    dependsOn: text("depends_on"),
+    risk: text("risk"),
+    claimsBlocked: boolean("claims_blocked").notNull().default(false),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_solution_tasks_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    campaignIdx: index("platina_solution_tasks_campaign_id_idx").on(
+      table.campaignId,
+    ),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -641,4 +688,5 @@ export const platinaWorkspaceScopedTables = {
   platinaAuditRuns,
   platinaAuditRunEvents,
   platinaFindings,
+  platinaSolutionTasks,
 } as const;

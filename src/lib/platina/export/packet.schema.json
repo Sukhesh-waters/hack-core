@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "platina-action-packet",
+  "title": "Platina action packet (V1 export contract)",
+  "type": "object",
+  "required": [
+    "packetVersion",
+    "packetId",
+    "workspaceId",
+    "solutionId",
+    "title",
+    "problemStatement",
+    "findingRefs",
+    "affectedScope",
+    "severity",
+    "urgency",
+    "evidence",
+    "strongestUncertainty",
+    "actionSteps",
+    "owner",
+    "reviewers",
+    "dueDate",
+    "expectedOutcome",
+    "measurementPlan",
+    "claimsStatus",
+    "approvals",
+    "provenance",
+    "exportedAt",
+    "exportedBy"
+  ],
+  "properties": {
+    "packetVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "packetId": { "type": "string", "minLength": 1 },
+    "workspaceId": { "type": "string", "minLength": 1 },
+    "solutionId": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "problemStatement": { "type": "string", "minLength": 1 },
+    "findingRefs": { "type": "array", "items": { "type": "string" } },
+    "affectedScope": {
+      "type": "object",
+      "properties": {
+        "division": { "type": "string" },
+        "region": { "type": "string" },
+        "product": { "type": "string" },
+        "event": { "type": "string" },
+        "campaign": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "severity": { "enum": ["critical", "high", "medium", "low"] },
+    "urgency": { "enum": ["immediate", "this_quarter", "monitor"] },
+    "evidence": {
+      "type": "object",
+      "required": ["approvedEvidenceRefs", "unvalidatedMarketSignalRefs"],
+      "additionalProperties": false,
+      "properties": {
+        "approvedEvidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["brand_chunk", "outcome", "receipt"] },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "unvalidatedMarketSignalRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind"],
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["brain_chunk", "transcript"] },
+              "note": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    "unvalidatedDirection": { "const": true },
+    "strongestUncertainty": { "type": "string" },
+    "actionSteps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "owner", "dueDate", "status"],
+        "properties": {
+          "title": { "type": "string" },
+          "owner": { "type": "string" },
+          "dueDate": { "type": "string", "format": "date-time" },
+          "eventPhase": { "enum": ["pre", "at", "post"] },
+          "status": {
+            "enum": ["todo", "in_progress", "blocked", "review", "done"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "owner": { "type": "string", "minLength": 1 },
+    "reviewers": { "type": "array", "items": { "type": "string" } },
+    "dueDate": { "type": "string", "format": "date-time" },
+    "eventAnchor": {
+      "type": "object",
+      "required": ["at", "label"],
+      "properties": {
+        "at": { "type": "string", "format": "date-time" },
+        "label": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "expectedOutcome": { "type": "string", "minLength": 1 },
+    "measurementPlan": {
+      "type": "object",
+      "required": ["method", "reviewDate"],
+      "properties": {
+        "method": { "type": "string" },
+        "reviewDate": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "claimsStatus": {
+      "type": "object",
+      "required": ["verdict", "blockingViolations", "exceptions"],
+      "properties": {
+        "verdict": { "enum": ["passed", "flagged", "not_run"] },
+        "blockingViolations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "excerpt", "why"],
+            "properties": {
+              "rule": { "type": "string" },
+              "excerpt": { "type": "string" },
+              "why": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "exceptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["rule", "approverId", "reason", "at"],
+            "properties": {
+              "rule": { "type": "string" },
+              "approverId": { "type": "string" },
+              "reason": { "type": "string" },
+              "at": { "type": "string", "format": "date-time" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "approvals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "decision", "approverId", "at", "payloadHash"],
+        "properties": {
+          "step": {
+            "enum": [
+              "brand_standard_confirmed",
+              "audit_scope_approved",
+              "direction_approved",
+              "ready_for_external_execution"
+            ]
+          },
+          "decision": { "enum": ["approved", "rejected"] },
+          "approverId": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" },
+          "payloadHash": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "signalDocumentIds",
+        "transcriptIds",
+        "brainChunkIds",
+        "gateEventIds",
+        "syntheticDataExcluded"
+      ],
+      "properties": {
+        "signalDocumentIds": { "type": "array", "items": { "type": "string" } },
+        "transcriptIds": { "type": "array", "items": { "type": "string" } },
+        "brainChunkIds": { "type": "array", "items": { "type": "string" } },
+        "receiptId": { "type": "string" },
+        "gateEventIds": { "type": "array", "items": { "type": "string" } },
+        "syntheticDataExcluded": { "const": true }
+      },
+      "additionalProperties": false
+    },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "exportedBy": { "type": "string", "minLength": 1 }
+  },
+  "additionalProperties": false
+}

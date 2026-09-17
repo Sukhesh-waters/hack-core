@@ -9,17 +9,24 @@ import {
   closeDraftCampaign,
   createAuditRun,
   findInvalidCitationIds,
+  getCampaign,
   getFinding,
   getScanSpec,
   getWorkspaceConfig,
+  hasClaimsException,
   insertBrandChunk,
   insertCampaign,
   insertGateEvent,
   insertReceipt,
   insertScanSpec,
+  insertSolutionTask,
+  listSolutionTasks,
+  listTemplateTaskTitles,
+  markCampaignPlanned,
   recordReceiptOutcome,
   transitionFinding,
   updateDraftCampaign,
+  updateSolutionTask,
   upsertWorkspaceConfig,
   upsertWorkspaceProfile,
 } from "@/db/queries/platina";
@@ -33,6 +40,8 @@ import {
 } from "@/lib/platina/orchestrator";
 import { embedText } from "@/lib/platina/embed";
 import { chunkProse } from "@/lib/platina/chunking";
+import { claimsGate } from "@/lib/platina/claims-gate";
+import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
 import {
   canTransitionFinding,
   FINDING_TRANSITIONS,
@@ -318,6 +327,35 @@ export async function publishCampaignAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const campaignId = String(formData.get("campaignId"));
   const user = await actor(ws, "publish");
+
+  // Final approval is gated on real state: no open blocking work, and no
+  // unresolved deterministic claims violation without a named exception.
+  const campaign = await getCampaign(ws, campaignId);
+  if (!campaign) refuse(ws, "solutions", "Solution not found.");
+  const tasks = await listSolutionTasks(ws, campaignId);
+  const blockers = blockersFor(tasks);
+  if (blockers.blocked) {
+    refuse(
+      ws,
+      "solutions",
+      `Final approval is blocked: ${blockers.reasons.join("; ")}.`,
+    );
+  }
+  const gate = claimsGate({
+    contentPlan: campaign.contentPlan,
+    taskTitles: tasks.map((t) => t.title),
+    hasException: await hasClaimsException(ws, campaignId),
+  });
+  if (gate.blocksApproval) {
+    refuse(
+      ws,
+      "solutions",
+      `Claims review flags this solution: ${gate.violations
+        .map((v) => v.why)
+        .join("; ")}. Resolve or record a named exception first.`,
+    );
+  }
+
   const event = {
     workspaceId: ws,
     gate: "publish" as const,
@@ -329,9 +367,11 @@ export async function publishCampaignAction(formData: FormData): Promise<void> {
   };
   assertCompleteGateEvent(event);
   await insertGateEvent(event);
+  await markCampaignPlanned(ws, campaignId);
   await broadcastPlatinaSignal(ws, "solutions", campaignId);
   revalidatePath(`/p/${ws}/campaigns`);
   revalidatePath(`/p/${ws}/solutions`);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
   revalidatePath(`/p/${ws}`);
 }
 
@@ -460,4 +500,145 @@ export async function runAuditNowAction(formData: FormData): Promise<void> {
   await broadcastPlatinaSignal(ws, "audits", runId);
   revalidatePath(`/p/${ws}/audits`);
   revalidatePath(`/p/${ws}`);
+}
+
+// ---------------------------------------------------------------------------
+// Slice 6 — solution tasks and the claims exception
+// ---------------------------------------------------------------------------
+
+export async function addTaskAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  await requireCapability(ws, (await requireUser()).id, "platina.task.edit");
+  const title = String(formData.get("title") ?? "").trim();
+  if (!title) refuse(ws, `solutions/${campaignId}`, "Task title is required.");
+  const phase = String(formData.get("eventPhase") ?? "");
+  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+  await insertSolutionTask({
+    workspaceId: ws,
+    campaignId,
+    title,
+    assigneeId: String(formData.get("assigneeId") ?? "").trim() || null,
+    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+    eventPhase: phase === "pre" || phase === "at" || phase === "post" ? phase : null,
+    risk: String(formData.get("risk") ?? "").trim() || null,
+    claimsBlocked: formData.get("claimsBlocked") === "on",
+  });
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
+}
+
+export async function moveTaskAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  const taskId = String(formData.get("taskId"));
+  await requireCapability(ws, (await requireUser()).id, "platina.task.edit");
+  const status = String(formData.get("status"));
+  if (!isBoardStatus(status)) {
+    refuse(ws, `solutions/${campaignId}`, "Pick a valid board column.");
+  }
+  const updated = await updateSolutionTask(ws, taskId, { status });
+  if (!updated) refuse(ws, `solutions/${campaignId}`, "Task not found.");
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
+}
+
+export async function updateTaskAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  const taskId = String(formData.get("taskId"));
+  await requireCapability(ws, (await requireUser()).id, "platina.task.edit");
+  const dueDateRaw = String(formData.get("dueDate") ?? "").trim();
+  const phase = String(formData.get("eventPhase") ?? "");
+  const updated = await updateSolutionTask(ws, taskId, {
+    title: String(formData.get("title") ?? "").trim() || undefined,
+    assigneeId: String(formData.get("assigneeId") ?? "").trim() || null,
+    dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+    eventPhase: phase === "pre" || phase === "at" || phase === "post" ? phase : null,
+    risk: String(formData.get("risk") ?? "").trim() || null,
+    claimsBlocked: formData.get("claimsBlocked") === "on",
+  });
+  if (!updated) refuse(ws, `solutions/${campaignId}`, "Task not found.");
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
+}
+
+/**
+ * Materialize the pre/at/post template for an event-anchored solution.
+ * Idempotent per campaign: existing template titles are not duplicated.
+ */
+export async function materializeEventTasksAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  await requireCapability(ws, (await requireUser()).id, "platina.task.edit");
+  const campaign = await getCampaign(ws, campaignId);
+  if (!campaign) refuse(ws, "solutions", "Solution not found.");
+  if (!campaign.eventAnchor) {
+    refuse(
+      ws,
+      `solutions/${campaignId}`,
+      "Set an event anchor on the solution before materializing event tasks.",
+    );
+  }
+  const existing = await listTemplateTaskTitles(ws, campaignId);
+  const anchor = new Date(campaign.eventAnchor);
+  let created = 0;
+  for (const t of eventTaskTemplate()) {
+    if (existing.has(t.title)) continue;
+    await insertSolutionTask({
+      workspaceId: ws,
+      campaignId,
+      title: t.title,
+      eventPhase: t.eventPhase,
+      dueDate: templateDueDate(anchor, t.offsetDays),
+      claimsBlocked: t.claimsBlocked,
+    });
+    created += 1;
+  }
+  if (created === 0) {
+    refuse(
+      ws,
+      `solutions/${campaignId}`,
+      "The event task template is already materialized for this solution.",
+    );
+  }
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
+}
+
+/**
+ * A named-approver claims exception. The violation stays visible on the
+ * Claims tab; the exception only unblocks final approval, with the reason
+ * recorded immutably.
+ */
+export async function claimsExceptionAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const campaignId = String(formData.get("campaignId"));
+  const reason = String(formData.get("reason") ?? "").trim();
+  const user = await actor(ws, "publish");
+  if (!reason) {
+    refuse(
+      ws,
+      `solutions/${campaignId}`,
+      "An exception reason is required — it is the audit trail.",
+    );
+  }
+  const event = {
+    workspaceId: ws,
+    gate: "publish" as const,
+    decision: "approved" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({ campaignId, reason }),
+    subjectType: "claims_exception",
+    subjectId: campaignId,
+    reason,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
+  await broadcastPlatinaSignal(ws, "solutions", campaignId);
+  revalidatePath(`/p/${ws}/solutions/${campaignId}`);
 }

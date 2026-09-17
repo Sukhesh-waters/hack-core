@@ -14,6 +14,7 @@ import {
   platinaReceipts,
   platinaScanSpecs,
   platinaSignalDocuments,
+  platinaSolutionTasks,
   platinaWorkspaceConfig,
   platinaWorkspaceProfiles,
   PLATINA_EMBEDDING_MODEL_VERSION,
@@ -492,6 +493,40 @@ export async function closeDraftCampaign(
   const updated = await db
     .update(platinaCampaigns)
     .set({ status: "closed", updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaCampaigns.workspaceId, workspaceId),
+        eq(platinaCampaigns.id, campaignId),
+        eq(platinaCampaigns.status, "draft"),
+      ),
+    )
+    .returning({ id: platinaCampaigns.id });
+  return updated[0]?.id ?? null;
+}
+
+export async function getCampaign(workspaceId: string, campaignId: string) {
+  const rows = await db
+    .select()
+    .from(platinaCampaigns)
+    .where(
+      and(
+        eq(platinaCampaigns.workspaceId, workspaceId),
+        eq(platinaCampaigns.id, campaignId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** Final approval moves the solution from draft to planned — a real state
+ *  change, not just a recorded event. */
+export async function markCampaignPlanned(
+  workspaceId: string,
+  campaignId: string,
+) {
+  const updated = await db
+    .update(platinaCampaigns)
+    .set({ status: "planned", updatedAt: new Date() })
     .where(
       and(
         eq(platinaCampaigns.workspaceId, workspaceId),
@@ -1113,6 +1148,189 @@ export async function deleteEvalBrandChunks(workspaceId: string) {
         sql`${platinaBrandChunks.sourceUrl} LIKE 'eval://%'`,
       ),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Slice 6 — solution tasks
+// ---------------------------------------------------------------------------
+
+export function solutionTasksQuery(workspaceId: string, campaignId: string) {
+  return db
+    .select()
+    .from(platinaSolutionTasks)
+    .where(
+      and(
+        eq(platinaSolutionTasks.workspaceId, workspaceId),
+        eq(platinaSolutionTasks.campaignId, campaignId),
+      ),
+    )
+    .orderBy(platinaSolutionTasks.createdAt);
+}
+
+export async function listSolutionTasks(
+  workspaceId: string,
+  campaignId: string,
+) {
+  return solutionTasksQuery(workspaceId, campaignId);
+}
+
+export async function insertSolutionTask(input: {
+  workspaceId: string;
+  campaignId: string;
+  title: string;
+  assigneeId?: string | null;
+  dueDate?: Date | null;
+  eventPhase?: "pre" | "at" | "post" | null;
+  risk?: string | null;
+  claimsBlocked?: boolean;
+}) {
+  const [row] = await db
+    .insert(platinaSolutionTasks)
+    .values(input)
+    .returning({ id: platinaSolutionTasks.id });
+  return row.id;
+}
+
+/** Board moves and edits are guarded by workspace + task id. */
+export async function updateSolutionTask(
+  workspaceId: string,
+  taskId: string,
+  patch: {
+    status?: "todo" | "in_progress" | "blocked" | "review" | "done";
+    assigneeId?: string | null;
+    dueDate?: Date | null;
+    eventPhase?: "pre" | "at" | "post" | null;
+    risk?: string | null;
+    claimsBlocked?: boolean;
+    title?: string;
+  },
+) {
+  const updated = await db
+    .update(platinaSolutionTasks)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaSolutionTasks.workspaceId, workspaceId),
+        eq(platinaSolutionTasks.id, taskId),
+      ),
+    )
+    .returning({ id: platinaSolutionTasks.id });
+  return updated[0]?.id ?? null;
+}
+
+/** Titles of already-materialized template tasks (idempotency check). */
+export async function listTemplateTaskTitles(
+  workspaceId: string,
+  campaignId: string,
+) {
+  const rows = await db
+    .select({ title: platinaSolutionTasks.title })
+    .from(platinaSolutionTasks)
+    .where(
+      and(
+        eq(platinaSolutionTasks.workspaceId, workspaceId),
+        eq(platinaSolutionTasks.campaignId, campaignId),
+        sql`${platinaSolutionTasks.eventPhase} IS NOT NULL`,
+      ),
+    );
+  return new Set(rows.map((r) => r.title));
+}
+
+/** A recorded claims exception for this campaign (named approver + reason). */
+export async function hasClaimsException(
+  workspaceId: string,
+  campaignId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: platinaGateEvents.id })
+    .from(platinaGateEvents)
+    .where(
+      and(
+        eq(platinaGateEvents.workspaceId, workspaceId),
+        eq(platinaGateEvents.subjectType, "claims_exception"),
+        eq(platinaGateEvents.subjectId, campaignId),
+        eq(platinaGateEvents.decision, "approved"),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function getReceipt(workspaceId: string, receiptId: string) {
+  const rows = await db
+    .select()
+    .from(platinaReceipts)
+    .where(
+      and(
+        eq(platinaReceipts.workspaceId, workspaceId),
+        eq(platinaReceipts.id, receiptId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function getBrandChunksByIds(workspaceId: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(platinaBrandChunks)
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        inArray(platinaBrandChunks.id, ids),
+      ),
+    );
+}
+
+export async function getBrainChunksByIds(workspaceId: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        inArray(platinaBrainChunks.id, ids),
+      ),
+    );
+}
+
+/** Gate events for one subject (a campaign's decision history). */
+export function gateEventsForSubjectQuery(workspaceId: string, subjectId: string) {
+  return db
+    .select()
+    .from(platinaGateEvents)
+    .where(
+      and(
+        eq(platinaGateEvents.workspaceId, workspaceId),
+        eq(platinaGateEvents.subjectId, subjectId),
+      ),
+    )
+    .orderBy(platinaGateEvents.createdAt);
+}
+
+export async function listGateEventsForSubject(
+  workspaceId: string,
+  subjectId: string,
+) {
+  return gateEventsForSubjectQuery(workspaceId, subjectId);
+}
+
+/** Synthetic outcome ids — the A4 guard input for packet building. */
+export async function listSyntheticOutcomeIds(
+  workspaceId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: platinaOutcomes.id })
+    .from(platinaOutcomes)
+    .where(
+      and(
+        eq(platinaOutcomes.workspaceId, workspaceId),
+        eq(platinaOutcomes.synthetic, true),
+      ),
+    );
+  return rows.map((r) => r.id);
 }
 
 export { sql };
