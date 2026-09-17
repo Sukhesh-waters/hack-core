@@ -428,6 +428,13 @@
       "when": 1789629111185,
       "tag": "0060_platina_findings_vertical",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789634838429,
+      "tag": "0061_platina_finding_states",
+      "breakpoints": true
     }
   ]
 }

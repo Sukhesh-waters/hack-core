@@ -16,11 +16,13 @@ import {
   platinaSignalDocuments,
   platinaWorkspaceConfig,
   platinaWorkspaceProfiles,
+  PLATINA_EMBEDDING_MODEL_VERSION,
   type PlatinaRunConfigSnapshot,
   type PlatinaScanTarget,
 } from "@/db/platina-schema";
 import type { GateWrite } from "@/lib/platina/gates";
 import type { RawSignalDoc } from "@/lib/platina/fetch/registry";
+import type { FindingStatus } from "@/lib/platina/findings";
 import type { RunStatus } from "@/lib/platina/run-status";
 
 export function similarBrandChunksQuery(
@@ -32,9 +34,20 @@ export function similarBrandChunksQuery(
     .select({
       id: platinaBrandChunks.id,
       content: platinaBrandChunks.content,
+      sourceUrl: platinaBrandChunks.sourceUrl,
     })
     .from(platinaBrandChunks)
-    .where(eq(platinaBrandChunks.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        // R4.1: only the active embedding generation is retrievable. A model
+        // change requires an explicit backfill, never silent coexistence.
+        eq(
+          platinaBrandChunks.embeddingModelVersion,
+          PLATINA_EMBEDDING_MODEL_VERSION,
+        ),
+      ),
+    )
     .orderBy(cosineDistance(platinaBrandChunks.embedding, embedding))
     .limit(limit);
 }
@@ -56,6 +69,10 @@ export function similarBrainChunksQuery(
       and(
         eq(platinaBrainChunks.workspaceId, workspaceId),
         eq(platinaBrainChunks.status, "active"),
+        eq(
+          platinaBrainChunks.embeddingModelVersion,
+          PLATINA_EMBEDDING_MODEL_VERSION,
+        ),
       ),
     )
     .orderBy(cosineDistance(platinaBrainChunks.embedding, embedding))
@@ -814,6 +831,7 @@ export async function insertFinding(input: {
   signalDocumentId?: string | null;
   transcriptId?: string | null;
   brainChunkId?: string | null;
+  useCase?: string;
   title: string;
   summary: string;
   strongestObjection?: string | null;
@@ -827,21 +845,23 @@ export async function insertFinding(input: {
 }
 
 /**
- * Guarded ruling: the update only applies while the finding is
- * `needs_decision`. A ruled finding cannot be re-ruled — the guard makes the
- * second attempt a no-op that returns null.
+ * Guarded finding transition: the update only applies while the finding's
+ * current status is in `from`. Illegal and repeat transitions return null —
+ * they are unrepresentable, not logged. Every applied transition records the
+ * human note and attribution.
  */
-export async function ruleFinding(input: {
+export async function transitionFinding(input: {
   workspaceId: string;
   findingId: string;
-  verdict: "validated" | "refuted";
+  from: readonly FindingStatus[];
+  to: "validated" | "refuted" | "dismissed" | "superseded";
   ruling: string;
   ruledBy: string;
 }) {
   const updated = await db
     .update(platinaFindings)
     .set({
-      status: input.verdict,
+      status: input.to,
       humanRuling: input.ruling,
       ruledBy: input.ruledBy,
       ruledAt: new Date(),
@@ -851,11 +871,39 @@ export async function ruleFinding(input: {
       and(
         eq(platinaFindings.workspaceId, input.workspaceId),
         eq(platinaFindings.id, input.findingId),
-        eq(platinaFindings.status, "needs_decision"),
+        inArray(platinaFindings.status, input.from),
       ),
     )
     .returning({ id: platinaFindings.id });
   return updated[0]?.id ?? null;
+}
+
+/** Recent debate transcripts for the objection-rate window (R5.1). */
+export function debateTranscriptsQuery(workspaceId: string, limit = 20) {
+  return db
+    .select()
+    .from(platinaDebateTranscripts)
+    .where(eq(platinaDebateTranscripts.workspaceId, workspaceId))
+    .orderBy(desc(platinaDebateTranscripts.createdAt))
+    .limit(limit);
+}
+
+export async function listDebateTranscripts(workspaceId: string, limit = 20) {
+  return debateTranscriptsQuery(workspaceId, limit);
+}
+
+/** Open operational findings — the objection-rate alarm dedupes on these. */
+export async function listOpenOperationalFindings(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.useCase, "operational"),
+        inArray(platinaFindings.status, ["new", "needs_decision"]),
+      ),
+    );
 }
 
 /** First-party outcomes only — synthetic demo rows are never evidence (A4). */
@@ -870,6 +918,22 @@ export function firstPartyOutcomesQuery(workspaceId: string) {
       ),
     )
     .orderBy(desc(platinaOutcomes.recordedAt));
+}
+
+/**
+ * Eval-harness hygiene (R5.2): remove only the harness's own seeded rows,
+ * identified by the eval:// source prefix, in the given workspace. Nothing
+ * else is deletable through this path.
+ */
+export async function deleteEvalBrandChunks(workspaceId: string) {
+  await db
+    .delete(platinaBrandChunks)
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        sql`${platinaBrandChunks.sourceUrl} LIKE 'eval://%'`,
+      ),
+    );
 }
 
 export { sql };

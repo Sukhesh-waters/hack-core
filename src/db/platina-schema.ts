@@ -100,6 +100,8 @@ export const platinaFindingStatus = pgEnum("platina_finding_status", [
   "needs_decision",
   "validated",
   "refuted",
+  "dismissed",
+  "superseded",
 ]);
 
 /** The router's current embedding model — bump only with an explicit

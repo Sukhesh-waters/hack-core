@@ -7,6 +7,7 @@ import { requireCapability } from "@/db/queries/memberships";
 import {
   approveScanSpec,
   createAuditRun,
+  getFinding,
   getScanSpec,
   getWorkspaceConfig,
   insertBrandChunk,
@@ -15,7 +16,7 @@ import {
   insertReceipt,
   insertScanSpec,
   recordReceiptOutcome,
-  ruleFinding,
+  transitionFinding,
   upsertWorkspaceConfig,
   upsertWorkspaceProfile,
 } from "@/db/queries/platina";
@@ -27,7 +28,14 @@ import {
   manualIdempotencyKey,
   snapshotRunConfig,
 } from "@/lib/platina/orchestrator";
-import { isRulingVerdict } from "@/lib/platina/findings";
+import { embedText } from "@/lib/platina/embed";
+import {
+  canTransitionFinding,
+  FINDING_TRANSITIONS,
+  FINDING_VERDICT_LABEL,
+  isFindingVerdict,
+  type FindingStatus,
+} from "@/lib/platina/findings";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 async function actor(ws: string, gate: keyof typeof GATE_CAPABILITY) {
@@ -49,7 +57,14 @@ export async function declareBrandAction(formData: FormData): Promise<void> {
   const content = String(formData.get("content") ?? "").trim();
   const user = await actor(ws, "declare");
   if (!content) refuse(ws, "brand", "Brand standard is required.");
-  const id = await insertBrandChunk({ workspaceId: ws, content });
+  // Embed at write time so semantic retrieval can anchor to this standard.
+  // A router outage stores the chunk without a vector — never a fake one.
+  const embedding = await embedText(content);
+  const id = await insertBrandChunk({
+    workspaceId: ws,
+    content,
+    embedding: embedding ?? undefined,
+  });
   const event = {
     workspaceId: ws,
     gate: "declare" as const,
@@ -279,32 +294,43 @@ export async function saveProfileAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Human ruling on a contested finding. Guarded in SQL: only a finding
- * awaiting a decision can be ruled, and a ruling is final — the second
- * attempt is a no-op that returns null.
+ * Human review of a finding: validate, rule out, dismiss, or supersede.
+ * Guarded in SQL by the transition table — illegal and repeat transitions
+ * return null and come back as a visible refusal. A note is always required:
+ * the note is the audit trail.
  */
-export async function ruleFindingAction(formData: FormData): Promise<void> {
+export async function reviewFindingAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const findingId = String(formData.get("findingId"));
   const verdict = String(formData.get("verdict") ?? "");
   const ruling = String(formData.get("ruling") ?? "").trim();
   const user = await requireUser();
   await requireCapability(ws, user.id, "gate.approve");
-  if (!isRulingVerdict(verdict)) {
-    refuse(ws, "findings", "Pick a valid ruling.");
+  if (!isFindingVerdict(verdict)) {
+    refuse(ws, "findings", "Pick a valid review action.");
   }
   if (!ruling) {
-    refuse(ws, "findings", "A ruling note is required — it is the audit trail.");
+    refuse(ws, "findings", "A review note is required — it is the audit trail.");
   }
-  const ruled = await ruleFinding({
+  const finding = await getFinding(ws, findingId);
+  if (!finding) refuse(ws, "findings", "Finding not found.");
+  if (!canTransitionFinding(finding.status as FindingStatus, verdict)) {
+    refuse(
+      ws,
+      "findings",
+      `Cannot ${FINDING_VERDICT_LABEL[verdict].toLowerCase()} a finding in state "${finding.status}".`,
+    );
+  }
+  const transitioned = await transitionFinding({
     workspaceId: ws,
     findingId,
-    verdict,
+    from: FINDING_TRANSITIONS[finding.status as FindingStatus],
+    to: verdict,
     ruling,
     ruledBy: user.id,
   });
-  if (!ruled) {
-    refuse(ws, "findings", "This finding is not awaiting a decision.");
+  if (!transitioned) {
+    refuse(ws, "findings", "This finding changed state — refresh and retry.");
   }
   await broadcastPlatinaSignal(ws, "findings", findingId);
   revalidatePath(`/p/${ws}/findings`);

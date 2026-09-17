@@ -1,6 +1,14 @@
 import { routeAI } from "@/lib/ai/router";
 import { nextRoundAllowed, resolve, type Attack, type Claim } from "./contradiction";
 
+/**
+ * The challenger may honestly find nothing. An empty or "NONE" objection
+ * maps to this marker with zero confounder strength — recorded as such, so
+ * the objection rate (R5.1) can distinguish a real attack from a model that
+ * objects because it was told to.
+ */
+export const NO_MATERIAL_OBJECTION = "no material objection";
+
 export async function runContradictionRound(rawSignal: string) {
   if (nextRoundAllowed()) {
     throw new Error("unreachable: a second contradiction round is forbidden");
@@ -42,14 +50,20 @@ function parseClaim(raw: string): Claim {
   }
 }
 
-function parseAttack(raw: string): Attack {
+/** Exported for tests; the round runner above is the only production caller. */
+export function parseAttack(raw: string): Attack {
   try {
     const parsed = JSON.parse(raw) as Attack;
+    const objection = String(parsed.strongestObjection ?? "").trim();
+    const noObjection =
+      objection === "" || /^none\.?$/i.test(objection) || /^no material objection/i.test(objection);
     return {
       text: String(parsed.text ?? raw),
       confounders: Array.isArray(parsed.confounders) ? parsed.confounders : [],
-      strongestObjection: String(parsed.strongestObjection ?? ""),
-      confounderStrength: Number(parsed.confounderStrength ?? 0.5),
+      strongestObjection: noObjection ? NO_MATERIAL_OBJECTION : objection,
+      confounderStrength: noObjection
+        ? 0
+        : Number(parsed.confounderStrength ?? 0.5),
     };
   } catch {
     return {
