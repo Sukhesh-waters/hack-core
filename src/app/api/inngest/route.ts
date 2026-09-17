@@ -23,6 +23,7 @@ import { platinaOutcomeIngest } from "@/inngest/functions/platina/outcome-ingest
 import { platinaAlertSweep } from "@/inngest/functions/platina/alert-sweep";
 import { platinaEventWindow } from "@/inngest/functions/platina/event-window";
 import { platinaDivergenceScan } from "@/inngest/functions/platina/divergence-scan";
+import { platinaBrandRefresh } from "@/inngest/functions/platina/brand-refresh";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
@@ -50,6 +51,7 @@ export const { GET, POST, PUT } = serve({
     platinaAlertSweep,
     platinaEventWindow,
     platinaDivergenceScan,
+    platinaBrandRefresh,
   ],
 });
 

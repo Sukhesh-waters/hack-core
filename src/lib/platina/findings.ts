@@ -47,7 +47,9 @@ export const FINDING_TRANSITIONS: Record<
   FindingStatus,
   readonly FindingStatus[]
 > = {
-  new: ["validated", "dismissed"],
+  // new → superseded exists for exactly one path: a clean re-audit closing
+  // a drift finding (Slice 8).
+  new: ["validated", "dismissed", "superseded"],
   needs_decision: ["validated", "refuted", "dismissed"],
   validated: ["superseded"],
   refuted: [],

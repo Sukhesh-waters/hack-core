@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsGate } from "./claims-gate";
+import { claimsDnaFromRules, claimsGate, DEFAULT_CLAIMS_DNA } from "./claims-gate";
 
 describe("claimsGate", () => {
   it("passes clean copy", () => {
@@ -40,5 +40,34 @@ describe("claimsGate", () => {
       hasException: false,
     });
     expect(result.blocksApproval).toBe(true);
+  });
+});
+
+describe("claimsDnaFromRules", () => {
+  it("falls back to the documented defaults when no workspace rules exist", () => {
+    const { dna, source } = claimsDnaFromRules([]);
+    expect(source).toBe("default");
+    expect(dna).toEqual(DEFAULT_CLAIMS_DNA);
+  });
+
+  it("workspace rules replace the defaults entirely", () => {
+    const { dna, source } = claimsDnaFromRules([
+      { kind: "banned_term", term: "revolutionary" },
+      { kind: "regulated_claim", term: "ISO certified" },
+    ]);
+    expect(source).toBe("workspace");
+    expect(dna.bannedTerms).toEqual(["revolutionary"]);
+    expect(dna.regulatedClaims).toEqual(["ISO certified"]);
+    // The default list is NOT merged in — the workspace owns its rules.
+    expect(dna.bannedTerms).not.toContain("cure");
+  });
+
+  it("changing the rules changes what the next audit flags", () => {
+    const before = claimsDnaFromRules([]).dna;
+    const after = claimsDnaFromRules([
+      { kind: "banned_term", term: "seamless" },
+    ]).dna;
+    expect(before.bannedTerms).not.toContain("seamless");
+    expect(after.bannedTerms).toContain("seamless");
   });
 });

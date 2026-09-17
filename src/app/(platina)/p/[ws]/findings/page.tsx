@@ -16,7 +16,7 @@ import {
   OBJECTION_RATE_CEILING,
   objectionRate,
 } from "@/lib/platina/objection-rate";
-import { reviewFindingAction } from "../actions";
+import { reviewFindingAction, reauditDriftAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina findings" };
@@ -256,6 +256,32 @@ export default async function FindingsPage({
                       Draft a solution from this finding →
                     </Link>
                   </div>
+                )}
+
+                {f.useCase === "brand_drift" && f.status === "new" && (
+                  <form
+                    action={reauditDriftAction}
+                    className="mt-3 space-y-2 rounded-md bg-secondary p-3"
+                  >
+                    <input type="hidden" name="workspaceId" value={params.ws} />
+                    <input type="hidden" name="findingId" value={f.id} />
+                    <label className="text-xs font-medium">
+                      Re-audit remediated copy
+                      <textarea
+                        name="copy"
+                        required
+                        rows={3}
+                        placeholder="Paste the corrected copy — a clean re-audit closes this finding"
+                        className="mt-1 w-full rounded-md border border-input bg-background p-2 text-sm"
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      className="rounded-md border border-border px-3 py-1.5 text-xs"
+                    >
+                      Re-audit and close if clean
+                    </button>
+                  </form>
                 )}
 
                 <details className="mt-2">

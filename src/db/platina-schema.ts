@@ -118,6 +118,16 @@ export const platinaEventPhase = pgEnum("platina_event_phase", [
   "post",
 ]);
 
+export const platinaBrandSourceStatus = pgEnum("platina_brand_source_status", [
+  "draft",
+  "approved",
+]);
+
+export const platinaClaimsRuleKind = pgEnum("platina_claims_rule_kind", [
+  "banned_term",
+  "regulated_claim",
+]);
+
 /** The router's current embedding model — bump only with an explicit
  *  re-embed backfill (R4.1). Mixed versions in one index are meaningless. */
 export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
@@ -170,6 +180,9 @@ export const platinaBrandChunks = pgTable(
     embeddingModelVersion: text("embedding_model_version")
       .notNull()
       .default(PLATINA_EMBEDDING_MODEL_VERSION),
+    // A re-fetched brand source supersedes its old chunks; retrieval and
+    // display filter on this being null.
+    supersededAt: timestamp("superseded_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
@@ -672,6 +685,62 @@ export const platinaSolutionTasks = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Brand sources — declared, approved, freshness-tracked standard origins
+// (Slice 8). URL sources fetch through the Waters adapter as consented
+// first-party content (Plane A); pasted text needs no fetch.
+// ---------------------------------------------------------------------------
+
+export const platinaBrandSources = pgTable(
+  "platina_brand_sources",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    url: text("url"),
+    title: text("title").notNull(),
+    status: platinaBrandSourceStatus("status").notNull().default("draft"),
+    contentHash: text("content_hash"),
+    lastFetchedAt: timestamp("last_fetched_at", { mode: "date" }),
+    lastChangedAt: timestamp("last_changed_at", { mode: "date" }),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_brand_sources_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Claims rules — workspace-owned banned/regulated lists (Slice 8). An empty
+// active set falls back to the documented defaults with honest copy.
+// ---------------------------------------------------------------------------
+
+export const platinaClaimsRules = pgTable(
+  "platina_claims_rules",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    kind: platinaClaimsRuleKind("kind").notNull(),
+    term: text("term").notNull(),
+    note: text("note"),
+    active: boolean("active").notNull().default(true),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_claims_rules_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -689,4 +758,6 @@ export const platinaWorkspaceScopedTables = {
   platinaAuditRunEvents,
   platinaFindings,
   platinaSolutionTasks,
+  platinaBrandSources,
+  platinaClaimsRules,
 } as const;

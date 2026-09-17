@@ -39,11 +39,12 @@ describe("findingPathFor", () => {
 });
 
 describe("finding review transitions", () => {
-  it("new → validated | dismissed", () => {
+  it("new → validated | dismissed | superseded (re-audit closure)", () => {
     expect(canTransitionFinding("new", "validated")).toBe(true);
     expect(canTransitionFinding("new", "dismissed")).toBe(true);
+    // Slice 8: a clean re-audit supersedes an open drift finding.
+    expect(canTransitionFinding("new", "superseded")).toBe(true);
     expect(canTransitionFinding("new", "refuted")).toBe(false);
-    expect(canTransitionFinding("new", "superseded")).toBe(false);
   });
 
   it("needs_decision → validated | refuted | dismissed", () => {

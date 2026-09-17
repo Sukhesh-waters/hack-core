@@ -7,10 +7,11 @@ import {
   getCampaign,
   getReceipt,
   hasClaimsException,
+  listActiveClaimsRules,
   listGateEventsForSubject,
   listSolutionTasks,
 } from "@/db/queries/platina";
-import { claimsGate } from "@/lib/platina/claims-gate";
+import { claimsDnaFromRules, claimsGate } from "@/lib/platina/claims-gate";
 import { readinessFor } from "@/lib/platina/readiness";
 import {
   BOARD_COLUMN_LABEL,
@@ -56,7 +57,7 @@ export default async function SolutionDetailPage({
   const campaign = await getCampaign(ws, campaignId);
   if (!campaign) notFound();
 
-  const [receipt, tasks, members, claimsException, gateEvents] =
+  const [receipt, tasks, members, claimsException, gateEvents, rules] =
     await Promise.all([
       campaign.receiptId
         ? getReceipt(ws, campaign.receiptId)
@@ -65,6 +66,7 @@ export default async function SolutionDetailPage({
       listWorkspaceMembers(ws),
       hasClaimsException(ws, campaignId),
       listGateEventsForSubject(ws, campaignId),
+      listActiveClaimsRules(ws),
     ]);
   const receiptEvents = receipt
     ? await listGateEventsForSubject(ws, receipt.id)
@@ -77,6 +79,7 @@ export default async function SolutionDetailPage({
     contentPlan: campaign.contentPlan,
     taskTitles: tasks.map((t) => t.title),
     hasException: claimsException,
+    dna: claimsDnaFromRules(rules).dna,
   });
   const blockers = blockersFor(tasks);
   const readiness = readinessFor(
@@ -453,9 +456,11 @@ export default async function SolutionDetailPage({
                 : "Flagged by deterministic claims screening"}
             </p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Default rule lists (workspace-configured rules arrive with the
-              brand and claims pack). A deterministic failure stays a failure
-              regardless of any model opinion.
+              {claimsDnaFromRules(rules).source === "workspace"
+                ? "Screened against this workspace's approved rules."
+                : "Default rule lists are in effect — approve workspace rules in Admin to replace them."}{" "}
+              A deterministic failure stays a failure regardless of any model
+              opinion.
             </p>
             {claims.violations.length > 0 && (
               <ul className="mt-3 space-y-1 text-sm">

@@ -449,6 +449,13 @@
       "when": 1789639451022,
       "tag": "0063_platina_solution_tasks",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789644167588,
+      "tag": "0064_platina_brand_claims",
+      "breakpoints": true
     }
   ]
 }

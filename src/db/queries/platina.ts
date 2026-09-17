@@ -1,4 +1,4 @@
-import { and, cosineDistance, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, inArray, isNull, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   platinaAlertRules,
@@ -6,7 +6,9 @@ import {
   platinaAuditRuns,
   platinaBrandChunks,
   platinaBrainChunks,
+  platinaBrandSources,
   platinaCampaigns,
+  platinaClaimsRules,
   platinaDebateTranscripts,
   platinaFindings,
   platinaGateEvents,
@@ -43,6 +45,7 @@ export function similarBrandChunksQuery(
     .where(
       and(
         eq(platinaBrandChunks.workspaceId, workspaceId),
+        isNull(platinaBrandChunks.supersededAt),
         // R4.1: only the active embedding generation is retrievable. A model
         // change requires an explicit backfill, never silent coexistence.
         eq(
@@ -88,7 +91,12 @@ export function brandChunksQuery(workspaceId: string) {
   return db
     .select()
     .from(platinaBrandChunks)
-    .where(eq(platinaBrandChunks.workspaceId, workspaceId))
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        isNull(platinaBrandChunks.supersededAt),
+      ),
+    )
     .orderBy(desc(platinaBrandChunks.createdAt));
 }
 
@@ -1032,6 +1040,7 @@ export function lexicalBrandChunksQuery(
     .where(
       and(
         eq(platinaBrandChunks.workspaceId, workspaceId),
+        isNull(platinaBrandChunks.supersededAt),
         eq(
           platinaBrandChunks.embeddingModelVersion,
           PLATINA_EMBEDDING_MODEL_VERSION,
@@ -1335,3 +1344,167 @@ export async function listSyntheticOutcomeIds(
 }
 
 export { sql };
+
+// ---------------------------------------------------------------------------
+// Slice 8 — brand sources and workspace claims rules
+// ---------------------------------------------------------------------------
+
+export function brandSourcesQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaBrandSources)
+    .where(eq(platinaBrandSources.workspaceId, workspaceId))
+    .orderBy(desc(platinaBrandSources.createdAt));
+}
+
+export async function listBrandSources(workspaceId: string) {
+  return brandSourcesQuery(workspaceId);
+}
+
+export async function listApprovedBrandSources(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaBrandSources)
+    .where(
+      and(
+        eq(platinaBrandSources.workspaceId, workspaceId),
+        eq(platinaBrandSources.status, "approved"),
+      ),
+    );
+}
+
+export async function getBrandSource(workspaceId: string, sourceId: string) {
+  const rows = await db
+    .select()
+    .from(platinaBrandSources)
+    .where(
+      and(
+        eq(platinaBrandSources.workspaceId, workspaceId),
+        eq(platinaBrandSources.id, sourceId),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function insertBrandSource(input: {
+  workspaceId: string;
+  title: string;
+  url?: string | null;
+  createdById: string;
+}) {
+  const [row] = await db
+    .insert(platinaBrandSources)
+    .values(input)
+    .returning({ id: platinaBrandSources.id });
+  return row.id;
+}
+
+export async function approveBrandSource(workspaceId: string, sourceId: string) {
+  await db
+    .update(platinaBrandSources)
+    .set({ status: "approved", updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaBrandSources.workspaceId, workspaceId),
+        eq(platinaBrandSources.id, sourceId),
+      ),
+    );
+}
+
+/** Freshness bookkeeping. `changed` rotates the content hash and stamps
+ *  last_changed_at; every fetch stamps last_fetched_at. */
+export async function recordBrandSourceFetch(
+  workspaceId: string,
+  sourceId: string,
+  outcome: { contentHash: string; changed: boolean },
+) {
+  const now = new Date();
+  await db
+    .update(platinaBrandSources)
+    .set({
+      lastFetchedAt: now,
+      ...(outcome.changed
+        ? { contentHash: outcome.contentHash, lastChangedAt: now }
+        : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(platinaBrandSources.workspaceId, workspaceId),
+        eq(platinaBrandSources.id, sourceId),
+      ),
+    );
+}
+
+/** Supersede all current chunks from a source — called with the ids of the
+ *  freshly inserted replacement chunks excluded, so a refresh can never
+ *  supersede what it just wrote. */
+export async function supersedeBrandChunksForSource(
+  workspaceId: string,
+  sourceUrl: string,
+  excludeIds: string[] = [],
+) {
+  await db
+    .update(platinaBrandChunks)
+    .set({ supersededAt: new Date() })
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        eq(platinaBrandChunks.sourceUrl, sourceUrl),
+        isNull(platinaBrandChunks.supersededAt),
+        ...(excludeIds.length > 0
+          ? [notInArray(platinaBrandChunks.id, excludeIds)]
+          : []),
+      ),
+    );
+}
+
+export function claimsRulesQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaClaimsRules)
+    .where(eq(platinaClaimsRules.workspaceId, workspaceId))
+    .orderBy(desc(platinaClaimsRules.createdAt));
+}
+
+export async function listActiveClaimsRules(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaClaimsRules)
+    .where(
+      and(
+        eq(platinaClaimsRules.workspaceId, workspaceId),
+        eq(platinaClaimsRules.active, true),
+      ),
+    );
+}
+
+export async function insertClaimsRule(input: {
+  workspaceId: string;
+  kind: "banned_term" | "regulated_claim";
+  term: string;
+  note?: string | null;
+  createdById: string;
+}) {
+  const [row] = await db
+    .insert(platinaClaimsRules)
+    .values(input)
+    .returning({ id: platinaClaimsRules.id });
+  return row.id;
+}
+
+/** Rules are archived, never deleted — the audit trail keeps the reason. */
+export async function archiveClaimsRule(workspaceId: string, ruleId: string) {
+  const updated = await db
+    .update(platinaClaimsRules)
+    .set({ active: false })
+    .where(
+      and(
+        eq(platinaClaimsRules.workspaceId, workspaceId),
+        eq(platinaClaimsRules.id, ruleId),
+      ),
+    )
+    .returning({ id: platinaClaimsRules.id });
+  return updated[0]?.id ?? null;
+}

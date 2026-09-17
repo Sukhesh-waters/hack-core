@@ -5,21 +5,29 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/auth";
 import { requireCapability } from "@/db/queries/memberships";
 import {
+  approveBrandSource,
   approveScanSpec,
+  archiveClaimsRule,
   closeDraftCampaign,
   createAuditRun,
   findInvalidCitationIds,
+  getBrandSource,
   getCampaign,
   getFinding,
   getScanSpec,
   getWorkspaceConfig,
   hasClaimsException,
   insertBrandChunk,
+  insertBrandSource,
   insertCampaign,
+  insertClaimsRule,
+  insertFinding,
   insertGateEvent,
   insertReceipt,
   insertScanSpec,
   insertSolutionTask,
+  listActiveClaimsRules,
+  listBrandChunks,
   listSolutionTasks,
   listTemplateTaskTitles,
   markCampaignPlanned,
@@ -40,8 +48,10 @@ import {
 } from "@/lib/platina/orchestrator";
 import { embedText } from "@/lib/platina/embed";
 import { chunkProse } from "@/lib/platina/chunking";
-import { claimsGate } from "@/lib/platina/claims-gate";
+import { claimsGate, claimsDnaFromRules } from "@/lib/platina/claims-gate";
 import { getConferencePreset } from "@/lib/platina/presets";
+import { auditCopyAgainstStandard } from "@/lib/platina/drift";
+import { runBrandExtraction } from "@/lib/platina/brand-extract";
 import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
 import {
   canTransitionFinding,
@@ -370,6 +380,7 @@ export async function publishCampaignAction(formData: FormData): Promise<void> {
     contentPlan: campaign.contentPlan,
     taskTitles: tasks.map((t) => t.title),
     hasException: await hasClaimsException(ws, campaignId),
+    dna: claimsDnaFromRules(await listActiveClaimsRules(ws)).dna,
   });
   if (gate.blocksApproval) {
     refuse(
@@ -666,4 +677,262 @@ export async function claimsExceptionAction(
   await insertGateEvent(event);
   await broadcastPlatinaSignal(ws, "solutions", campaignId);
   revalidatePath(`/p/${ws}/solutions/${campaignId}`);
+}
+
+// ---------------------------------------------------------------------------
+// Slice 8 — brand sources, workspace claims rules, copy audit
+// ---------------------------------------------------------------------------
+
+export async function addBrandSourceAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const user = await actor(ws, "declare");
+  const title = String(formData.get("title") ?? "").trim();
+  const url = String(formData.get("url") ?? "").trim();
+  const pasted = String(formData.get("pasted") ?? "").trim();
+  if (!title) refuse(ws, "admin/brand", "A source title is required.");
+  if (!url && !pasted) {
+    refuse(ws, "admin/brand", "Provide a public URL or paste the standard text.");
+  }
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error();
+      }
+    } catch {
+      refuse(ws, "admin/brand", "The source URL must be a valid http(s) URL.");
+    }
+  }
+  const sourceId = await insertBrandSource({
+    workspaceId: ws,
+    title,
+    url: url || null,
+    createdById: user.id,
+  });
+  // Pasted text is already the content — a draft source with pasted content
+  // stores it on the URL field's absence; the content arrives at confirm time
+  // via the same form. For pasted sources we extract immediately on confirm.
+  revalidatePath(`/p/${ws}/admin/brand`);
+  void sourceId;
+}
+
+/**
+ * Confirm a brand source (gate: declare), then extract. URL sources fetch
+ * through the Waters adapter as consented first-party content; pasted text
+ * arrives with the form. Unchanged content produces no new chunks.
+ */
+export async function confirmBrandSourceAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const sourceId = String(formData.get("sourceId"));
+  const user = await actor(ws, "declare");
+  const source = await getBrandSource(ws, sourceId);
+  if (!source) refuse(ws, "admin/brand", "Source not found.");
+
+  const pasted = String(formData.get("pasted") ?? "").trim();
+  let content = pasted;
+  if (!content && source.url) {
+    const { fetchViaWaters } = await import("@/lib/platina/fetch/waters");
+    const outcome = await fetchViaWaters({
+      id: source.id,
+      workspaceId: ws,
+      status: "approved",
+      targets: [{ kind: "competitor_site", value: source.url }],
+    });
+    content = outcome.docs.map((d) => d.body).join("\n\n");
+  }
+  if (!content) {
+    refuse(
+      ws,
+      "admin/brand",
+      "No content — paste the standard text or set a fetchable URL.",
+    );
+  }
+
+  await approveBrandSource(ws, sourceId);
+  const event = {
+    workspaceId: ws,
+    gate: "declare" as const,
+    decision: "approved" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({ sourceId }),
+    subjectType: "brand_source",
+    subjectId: sourceId,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
+  await runBrandExtraction(source, content);
+  revalidatePath(`/p/${ws}/admin/brand`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/** Manual re-fetch of an approved URL source. Unchanged content produces no
+ *  new chunks — only the freshness timestamp moves. */
+export async function refreshBrandSourceAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const sourceId = String(formData.get("sourceId"));
+  await actor(ws, "declare");
+  const source = await getBrandSource(ws, sourceId);
+  if (!source || source.status !== "approved") {
+    refuse(ws, "admin/brand", "Only an approved source can be refreshed.");
+  }
+  if (!source.url) {
+    refuse(ws, "admin/brand", "A pasted source is refreshed by confirming new text.");
+  }
+  const { fetchViaWaters } = await import("@/lib/platina/fetch/waters");
+  const outcome = await fetchViaWaters({
+    id: source.id,
+    workspaceId: ws,
+    status: "approved",
+    targets: [{ kind: "competitor_site", value: source.url }],
+  });
+  const content = outcome.docs.map((d) => d.body).join("\n\n");
+  if (!content) {
+    refuse(ws, "admin/brand", "The fetch returned no content — try again later.");
+  }
+  await runBrandExtraction(source, content);
+  revalidatePath(`/p/${ws}/admin/brand`);
+}
+
+export async function addClaimsRuleAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const user = await actor(ws, "approve");
+  const kind = String(formData.get("kind") ?? "");
+  const term = String(formData.get("term") ?? "").trim();
+  if (kind !== "banned_term" && kind !== "regulated_claim") {
+    refuse(ws, "admin/claims", "Pick a valid rule type.");
+  }
+  if (!term) refuse(ws, "admin/claims", "A rule term is required.");
+  const id = await insertClaimsRule({
+    workspaceId: ws,
+    kind,
+    term,
+    note: String(formData.get("note") ?? "").trim() || null,
+    createdById: user.id,
+  });
+  const event = {
+    workspaceId: ws,
+    gate: "declare" as const,
+    decision: "approved" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({ id, kind, term }),
+    subjectType: "claims_rule",
+    subjectId: id,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
+  revalidatePath(`/p/${ws}/admin/claims`);
+}
+
+export async function archiveClaimsRuleAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const ruleId = String(formData.get("ruleId"));
+  const user = await actor(ws, "approve");
+  const archived = await archiveClaimsRule(ws, ruleId);
+  if (!archived) refuse(ws, "admin/claims", "Rule not found.");
+  const event = {
+    workspaceId: ws,
+    gate: "declare" as const,
+    decision: "rejected" as const,
+    approverId: user.id,
+    payloadHash: hashGatePayload({ ruleId }),
+    subjectType: "claims_rule",
+    subjectId: ruleId,
+    reason: String(formData.get("reason") ?? "").trim() || undefined,
+  };
+  assertCompleteGateEvent(event);
+  await insertGateEvent(event);
+  revalidatePath(`/p/${ws}/admin/claims`);
+}
+
+/**
+ * Record a drift finding from an audit. The audit re-runs server-side — the
+ * finding records what the server computed, never client-posted conclusions.
+ */
+export async function recordDriftFindingAction(
+  formData: FormData,
+): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  await actor(ws, "approve");
+  const copy = String(formData.get("copy") ?? "").trim();
+  if (!copy) refuse(ws, "admin/claims", "Paste the copy to record.");
+
+  const [rules, standard] = await Promise.all([
+    listActiveClaimsRules(ws),
+    listBrandChunks(ws),
+  ]);
+  const { dna } = claimsDnaFromRules(rules);
+  const audit = await auditCopyAgainstStandard({
+    copy,
+    standardChunks: standard.map((c) => c.content),
+    dna,
+  });
+  if (audit.drift.state !== "drifted") {
+    refuse(
+      ws,
+      "admin/claims",
+      "The audit shows no drift — there is nothing to record.",
+    );
+  }
+  await insertFinding({
+    workspaceId: ws,
+    useCase: "brand_drift",
+    title: `Copy drift: ${copy.slice(0, 60)}${copy.length > 60 ? "…" : ""}`,
+    summary: audit.drift.mismatches.map((m) => m.why).join("; "),
+    strongestObjection: audit.drift.mismatches[0]?.why ?? null,
+    status: "new",
+  });
+  await broadcastPlatinaSignal(ws, "findings");
+  revalidatePath(`/p/${ws}/findings`);
+  revalidatePath(`/p/${ws}/admin/claims`);
+}
+
+/**
+ * Re-audit remediated copy against a drift finding. The audit re-runs
+ * server-side; only a clean claims pass AND a clean drift pass closes the
+ * finding (superseded — remediation verified by re-audit).
+ */
+export async function reauditDriftAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const findingId = String(formData.get("findingId") ?? "").trim();
+  const copy = String(formData.get("copy") ?? "").trim();
+  const user = await actor(ws, "approve");
+  if (!copy) refuse(ws, "findings", "Paste the remediated copy to re-audit.");
+
+  const finding = await getFinding(ws, findingId);
+  if (!finding || finding.status !== "new") {
+    refuse(ws, "findings", "Only an open drift finding can be re-audited.");
+  }
+  const [rules, standard] = await Promise.all([
+    listActiveClaimsRules(ws),
+    listBrandChunks(ws),
+  ]);
+  const { dna } = claimsDnaFromRules(rules);
+  const audit = await auditCopyAgainstStandard({
+    copy,
+    standardChunks: standard.map((c) => c.content),
+    dna,
+  });
+  if (audit.claims.verdict !== "passed" || audit.drift.state !== "clean") {
+    refuse(
+      ws,
+      "findings",
+      "The re-audit still flags this copy — the finding stays open.",
+    );
+  }
+  await transitionFinding({
+    workspaceId: ws,
+    findingId,
+    from: ["new"],
+    to: "superseded",
+    ruling: "Remediation verified by re-audit.",
+    ruledBy: user.id,
+  });
+  await broadcastPlatinaSignal(ws, "findings", findingId);
+  revalidatePath(`/p/${ws}/findings`);
 }

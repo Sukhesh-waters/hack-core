@@ -12,6 +12,30 @@ export const DEFAULT_CLAIMS_DNA: ClaimsDna = {
   regulatedClaims: ["clinically proven", "FDA approved"],
 };
 
+/**
+ * Workspace rules win when they exist; an empty active set falls back to the
+ * documented defaults (the UI says so plainly). Archived rules are filtered
+ * before this is called.
+ */
+export function claimsDnaFromRules(
+  rules: { kind: "banned_term" | "regulated_claim"; term: string }[],
+): { dna: ClaimsDna; source: "workspace" | "default" } {
+  if (rules.length === 0) {
+    return { dna: DEFAULT_CLAIMS_DNA, source: "default" };
+  }
+  return {
+    dna: {
+      bannedTerms: rules
+        .filter((r) => r.kind === "banned_term")
+        .map((r) => r.term),
+      regulatedClaims: rules
+        .filter((r) => r.kind === "regulated_claim")
+        .map((r) => r.term),
+    },
+    source: "workspace",
+  };
+}
+
 export type ClaimsGateResult = {
   verdict: "passed" | "flagged";
   violations: ClaimViolation[];
