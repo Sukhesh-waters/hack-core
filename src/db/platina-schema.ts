@@ -302,6 +302,10 @@ export const platinaBrainChunks = pgTable(
       .default([]),
     generation: integer("generation").notNull().default(0),
     transcriptId: text("transcript_id"),
+    // R5.3 refutation memory: a measured outcome that contradicted this
+    // hypothesis. The record is retained, floored, and excluded from
+    // retrieval — never deleted.
+    demotedByReceiptId: text("demoted_by_receipt_id"),
     lastRetrievedAt: timestamp("last_retrieved_at", { mode: "date" }),
     status: platinaBrainStatus("status").notNull().default("active"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
@@ -741,6 +745,34 @@ export const platinaClaimsRules = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Outcome imports — consented first-party results with provenance (Slice 9)
+// ---------------------------------------------------------------------------
+
+export const platinaOutcomeImports = pgTable(
+  "platina_outcome_imports",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    source: text("source").notNull().default("csv-paste"),
+    fileHash: text("file_hash").notNull(),
+    status: text("status").notNull().default("completed"),
+    rowCount: integer("row_count").notNull().default(0),
+    insertedCount: integer("inserted_count").notNull().default(0),
+    skippedCount: integer("skipped_count").notNull().default(0),
+    errors: jsonb("errors").$type<string[]>().notNull().default([]),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_outcome_imports_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
   platinaBrandChunks,
   platinaOutcomes,
@@ -760,4 +792,5 @@ export const platinaWorkspaceScopedTables = {
   platinaSolutionTasks,
   platinaBrandSources,
   platinaClaimsRules,
+  platinaOutcomeImports,
 } as const;

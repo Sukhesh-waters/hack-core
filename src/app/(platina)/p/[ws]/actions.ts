@@ -10,10 +10,12 @@ import {
   archiveClaimsRule,
   closeDraftCampaign,
   createAuditRun,
+  demoteBrainChunk,
   findInvalidCitationIds,
   getBrandSource,
   getCampaign,
   getFinding,
+  getReceipt,
   getScanSpec,
   getWorkspaceConfig,
   hasClaimsException,
@@ -23,11 +25,14 @@ import {
   insertClaimsRule,
   insertFinding,
   insertGateEvent,
+  insertOutcome,
+  insertOutcomeImport,
   insertReceipt,
   insertScanSpec,
   insertSolutionTask,
   listActiveClaimsRules,
   listBrandChunks,
+  listOutcomeDedupeRows,
   listSolutionTasks,
   listTemplateTaskTitles,
   markCampaignPlanned,
@@ -53,6 +58,16 @@ import { getConferencePreset } from "@/lib/platina/presets";
 import { auditCopyAgainstStandard } from "@/lib/platina/drift";
 import { runBrandExtraction } from "@/lib/platina/brand-extract";
 import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
+import {
+  leadQualityScore,
+  outcomeRowHash,
+  parseOutcomeCsv,
+} from "@/lib/platina/outcomes";
+import {
+  DEMOTED_CONFIDENCE_FLOOR,
+  gradingWriteback,
+} from "@/lib/platina/writeback";
+import { contentHash } from "@/lib/platina/fetch/canonical";
 import {
   canTransitionFinding,
   FINDING_TRANSITIONS,
@@ -420,9 +435,107 @@ export async function gradeReceiptAction(formData: FormData): Promise<void> {
   const receiptId = String(formData.get("receiptId"));
   const submitted = String(formData.get("outcome"));
   const outcome = RECEIPT_OUTCOMES.find((o) => o === submitted);
-  if (!outcome) refuse(ws, "receipts", "Pick a valid outcome.");
-  await recordReceiptOutcome({ workspaceId: ws, receiptId, outcome });
+  if (!outcome) refuse(ws, "outcomes", "Pick a valid outcome.");
+  const outcomeNote = String(formData.get("outcomeNote") ?? "").trim() || undefined;
+
+  // Guarded pending → graded: the write-back below runs exactly once.
+  const graded = await recordReceiptOutcome({
+    workspaceId: ws,
+    receiptId,
+    outcome,
+    outcomeNote,
+  });
+  if (!graded) {
+    refuse(ws, "outcomes", "This receipt is already graded — verdicts are final.");
+  }
+
+  // Write the measured result back into first-party evidence (Plane A), and
+  // demote contradicted hypotheses (R5.3) — retained, floored, excluded from
+  // retrieval, linked to the receipt that contradicted them.
+  const receipt = await getReceipt(ws, receiptId);
+  if (receipt) {
+    const plan = gradingWriteback(receipt, outcome, outcomeNote);
+    const embedding = await embedText(plan.evidenceContent);
+    await insertBrandChunk({
+      workspaceId: ws,
+      content: plan.evidenceContent,
+      sourceUrl: `outcome://${receiptId}`,
+      title: `Measured outcome — ${receipt.title}`,
+      embedding: embedding ?? undefined,
+    });
+    for (const chunkId of plan.demoteBrainChunkIds) {
+      await demoteBrainChunk(ws, chunkId, receiptId, DEMOTED_CONFIDENCE_FLOOR);
+    }
+  }
+
+  await broadcastPlatinaSignal(ws, "outcomes", receiptId);
   revalidatePath(`/p/${ws}/receipts`);
+  revalidatePath(`/p/${ws}/outcomes`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/**
+ * Consented outcome import (pasted CSV). Validates the schema strictly,
+ * dedupes by row content hash against existing rows, records provenance on
+ * the import row, and never marks any of it synthetic — this is consented
+ * first-party data. Members cannot import authoritative outcomes.
+ */
+export async function importOutcomesAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const user = await requireUser();
+  await requireCapability(ws, user.id, "gate.approve");
+  const csv = String(formData.get("csv") ?? "").trim();
+  if (!csv) refuse(ws, "outcomes", "Paste the outcome CSV to import.");
+
+  const parsed = parseOutcomeCsv(csv);
+  const existing = new Set(
+    (await listOutcomeDedupeRows(ws)).map((r) =>
+      outcomeRowHash({
+        ...r,
+        campaignId: r.campaignId ?? undefined,
+        receiptId: r.receiptId ?? undefined,
+        recordedAt: r.recordedAt,
+        conversionRate: r.conversionRate ?? undefined,
+        pipelineContribution: r.pipelineContribution ?? undefined,
+      }),
+    ),
+  );
+
+  let inserted = 0;
+  let skipped = 0;
+  const errors = [...parsed.errors];
+  for (const row of parsed.rows) {
+    if (existing.has(outcomeRowHash(row))) {
+      skipped += 1;
+      continue;
+    }
+    await insertOutcome({
+      workspaceId: ws,
+      campaignId: row.campaignId,
+      receiptId: row.receiptId,
+      leads: row.leads,
+      qualifiedLeads: row.qualifiedLeads,
+      conversionRate: row.conversionRate,
+      pipelineContribution: row.pipelineContribution,
+      qualityScore: row.qualityScore ?? leadQualityScore(row),
+      recordedAt: row.recordedAt,
+      source: "csv-paste",
+    });
+    inserted += 1;
+  }
+
+  await insertOutcomeImport({
+    workspaceId: ws,
+    source: "csv-paste",
+    fileHash: contentHash("outcome-import", csv),
+    status: "completed",
+    rowCount: parsed.rows.length,
+    insertedCount: inserted,
+    skippedCount: skipped,
+    errors,
+    createdById: user.id,
+  });
+  await broadcastPlatinaSignal(ws, "outcomes");
   revalidatePath(`/p/${ws}/outcomes`);
   revalidatePath(`/p/${ws}`);
 }

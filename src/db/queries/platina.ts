@@ -12,6 +12,7 @@ import {
   platinaDebateTranscripts,
   platinaFindings,
   platinaGateEvents,
+  platinaOutcomeImports,
   platinaOutcomes,
   platinaReceipts,
   platinaScanSpecs,
@@ -557,6 +558,7 @@ export async function insertOutcome(input: {
   pipelineContribution?: number;
   qualityScore?: number;
   recordedAt?: Date;
+  source?: string;
 }) {
   const [row] = await db
     .insert(platinaOutcomes)
@@ -565,10 +567,21 @@ export async function insertOutcome(input: {
   return row.id;
 }
 
-export async function demoteBrainChunk(workspaceId: string, chunkId: string) {
+export async function demoteBrainChunk(
+  workspaceId: string,
+  chunkId: string,
+  demotedByReceiptId?: string,
+  confidenceFloor?: number,
+) {
   await db
     .update(platinaBrainChunks)
-    .set({ status: "demoted" })
+    .set({
+      status: "demoted",
+      ...(demotedByReceiptId ? { demotedByReceiptId } : {}),
+      ...(confidenceFloor !== undefined
+        ? { confidence: sql`LEAST(${platinaBrainChunks.confidence}, ${confidenceFloor})` }
+        : {}),
+    })
     .where(
       and(
         eq(platinaBrainChunks.workspaceId, workspaceId),
@@ -1341,6 +1354,59 @@ export async function listSyntheticOutcomeIds(
       ),
     );
   return rows.map((r) => r.id);
+}
+
+// ---------------------------------------------------------------------------
+// Slice 9 — outcome imports
+// ---------------------------------------------------------------------------
+
+export async function insertOutcomeImport(input: {
+  workspaceId: string;
+  source: string;
+  fileHash: string;
+  status: "completed" | "failed";
+  rowCount: number;
+  insertedCount: number;
+  skippedCount: number;
+  errors: string[];
+  createdById: string;
+}) {
+  const [row] = await db
+    .insert(platinaOutcomeImports)
+    .values(input)
+    .returning({ id: platinaOutcomeImports.id });
+  return row.id;
+}
+
+export function outcomeImportsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaOutcomeImports)
+    .where(eq(platinaOutcomeImports.workspaceId, workspaceId))
+    .orderBy(desc(platinaOutcomeImports.createdAt));
+}
+
+export async function listOutcomeImports(workspaceId: string) {
+  return outcomeImportsQuery(workspaceId);
+}
+
+/**
+ * Existing outcome rows in the shape the row-hash dedupe consumes. Hashing
+ * is computed in JS from the same normalized fields — no hash column needed.
+ */
+export async function listOutcomeDedupeRows(workspaceId: string) {
+  return db
+    .select({
+      leads: platinaOutcomes.leads,
+      qualifiedLeads: platinaOutcomes.qualifiedLeads,
+      conversionRate: platinaOutcomes.conversionRate,
+      pipelineContribution: platinaOutcomes.pipelineContribution,
+      campaignId: platinaOutcomes.campaignId,
+      receiptId: platinaOutcomes.receiptId,
+      recordedAt: platinaOutcomes.recordedAt,
+    })
+    .from(platinaOutcomes)
+    .where(eq(platinaOutcomes.workspaceId, workspaceId));
 }
 
 export { sql };
