@@ -1,3 +1,4 @@
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listBrainChunks } from "@/db/queries/platina";
 
@@ -12,6 +13,11 @@ export default async function BrainPage({
 
   return (
     <PlatinaPage eyebrow="S6–S7 · plane C" title="Brain">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="findings"
+        label="Findings"
+      />
       <p className="mb-4 text-sm text-muted-foreground">
         Derived insights that survived contradiction. Citable as hypothesis only.
         Gen-0 sources are never rewritten.

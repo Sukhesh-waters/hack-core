@@ -1,4 +1,5 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listScanSpecs } from "@/db/queries/platina";
 import { confirmScanAction, createScanSpecAction } from "../actions";
@@ -16,6 +17,7 @@ export default async function ScansPage({
 
   return (
     <PlatinaPage eyebrow="S3–S5 · gate 2" title="Scan specs">
+      <PlatinaMovedNotice workspaceId={params.ws} to="audits" label="Audits" />
       <PlatinaFormError message={searchParams.error} />
       <form action={createScanSpecAction} className="mb-8 flex flex-col gap-2">
         <input type="hidden" name="workspaceId" value={params.ws} />

@@ -1,4 +1,5 @@
 import { requireUser } from "@/auth";
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { requireCapability } from "@/db/queries/memberships";
 import { getWorkspaceConfig, upsertWorkspaceConfig } from "@/db/queries/platina";
@@ -26,6 +27,7 @@ export default async function ConfigPage({
 
   return (
     <PlatinaPage eyebrow="SOP harness" title="Workspace config">
+      <PlatinaMovedNotice workspaceId={params.ws} to="admin" label="Admin" />
       <p className="mb-4 text-sm text-muted-foreground">
         Thresholds are per-workspace. Plane separation, one-round contradiction,
         and gate existence are not configurable.

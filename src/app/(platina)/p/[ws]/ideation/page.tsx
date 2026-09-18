@@ -1,4 +1,5 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listBrandChunks, listBrainChunks } from "@/db/queries/platina";
 import { draftProposals } from "@/lib/platina/ideation";
@@ -38,6 +39,11 @@ export default async function IdeationPage({
 
   return (
     <PlatinaPage eyebrow="S8–S10 · gate 3" title="Ideation">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="solutions/new"
+        label="New solution"
+      />
       <PlatinaFormError message={searchParams.error} />
       {gate.status === "insufficient_baseline" && (
         <p className="mb-4 rounded-md border border-border p-3 text-sm">

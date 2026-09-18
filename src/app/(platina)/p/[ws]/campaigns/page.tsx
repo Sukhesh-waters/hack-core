@@ -1,3 +1,4 @@
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listCampaigns } from "@/db/queries/platina";
 import { publishCampaignAction } from "../actions";
@@ -13,6 +14,11 @@ export default async function CampaignsPage({
 
   return (
     <PlatinaPage eyebrow="S10–S11 · gate 4" title="Campaigns">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="solutions"
+        label="Solutions"
+      />
       <ul className="space-y-3">
         {campaigns.map((c) => (
           <li key={c.id} className="rounded-md border border-border p-3 text-sm">

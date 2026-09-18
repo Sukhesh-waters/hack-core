@@ -1,4 +1,5 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listReceipts } from "@/db/queries/platina";
 import { gradeReceiptAction } from "../actions";
@@ -16,6 +17,11 @@ export default async function ReceiptsPage({
 
   return (
     <PlatinaPage eyebrow="S9 · S12" title="Decision receipts">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="outcomes"
+        label="Outcomes"
+      />
       <PlatinaFormError message={searchParams.error} />
       <ul className="space-y-3">
         {receipts.map((r) => (

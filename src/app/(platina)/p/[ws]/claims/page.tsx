@@ -1,9 +1,11 @@
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { enforceClaims } from "@/lib/platina/claims";
 
 export const dynamic = "force-dynamic";
 
 export default function ClaimsPage({
+  params,
   searchParams,
 }: {
   params: { ws: string };
@@ -19,6 +21,11 @@ export default function ClaimsPage({
 
   return (
     <PlatinaPage eyebrow="claims screen" title="Claims and terminology">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="admin/claims"
+        label="Claims (Admin)"
+      />
       <form className="mb-6 space-y-2">
         <textarea
           name="copy"

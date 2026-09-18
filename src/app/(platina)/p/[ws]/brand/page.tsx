@@ -1,4 +1,5 @@
 import { PlatinaFormError } from "@/components/platina/form-error";
+import { PlatinaMovedNotice } from "@/components/platina/moved-notice";
 import { PlatinaPage } from "@/components/platina/page";
 import { listBrandChunks, listGateEvents } from "@/db/queries/platina";
 import { declareBrandAction } from "../actions";
@@ -20,6 +21,11 @@ export default async function BrandPage({
 
   return (
     <PlatinaPage eyebrow="S1 · gate 1" title="Brand Gene">
+      <PlatinaMovedNotice
+        workspaceId={params.ws}
+        to="admin/brand"
+        label="Brand (Admin)"
+      />
       <PlatinaFormError message={searchParams.error} />
       <form action={declareBrandAction} className="mb-8 space-y-3">
         <input type="hidden" name="workspaceId" value={params.ws} />
