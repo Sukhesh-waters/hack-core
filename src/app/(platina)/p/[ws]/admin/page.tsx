@@ -18,13 +18,6 @@ import {
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina admin" };
 
-const ANALYSIS_STEPS = [
-  { value: "competitor_scan", label: "Competitor scan" },
-  { value: "brand_divergence", label: "Brand divergence" },
-  { value: "ideation", label: "Ideation" },
-  { value: "claims_screen", label: "Claims screen" },
-] as const;
-
 export default async function AdminPage({
   params,
   searchParams,
@@ -42,7 +35,6 @@ export default async function AdminPage({
   const configHistory = gates.filter(
     (g) => g.subjectType === "workspace_config",
   );
-  const enabledSteps = new Set(config?.analysisSequence ?? []);
 
   return (
     <PlatinaPage
@@ -179,23 +171,13 @@ export default async function AdminPage({
             />
           </label>
           <fieldset className="text-xs font-medium">
-            <legend className="mb-1">Analysis sequence (order preserved)</legend>
-            <div className="grid grid-cols-2 gap-1">
-              {ANALYSIS_STEPS.map((step) => (
-                <label
-                  key={step.value}
-                  className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
-                >
-                  <input
-                    type="checkbox"
-                    name="analysisStep"
-                    value={step.value}
-                    defaultChecked={enabledSteps.has(step.value)}
-                  />
-                  {step.label}
-                </label>
-              ))}
-            </div>
+            <legend className="mb-1">Analysis pipeline</legend>
+            <p className="rounded-md border border-border bg-secondary px-3 py-2 text-xs text-secondary-foreground">
+              Today every audit run executes the competitor scan stage (fetch
+              → validate). Brand divergence, ideation, and claims screening
+              are their own surfaces (Admin → Brand / Claims, Solutions) — they
+              are not run stages, and no setting here pretends otherwise.
+            </p>
           </fieldset>
           <button
             type="submit"
@@ -225,15 +207,20 @@ export default async function AdminPage({
             className="min-w-40 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
           />
           <select
-            name="field"
+            name="source"
             className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
           >
-            <option value="leads">Leads</option>
-            <option value="qualifiedLeads">Qualified leads</option>
-            <option value="conversionRate">Conversion rate</option>
-            <option value="pipelineContribution">Pipeline</option>
-            <option value="qualityScore">Quality score</option>
+            <option value="outcome">Outcome metrics</option>
+            <option value="finding">Findings awaiting decision</option>
+            <option value="approval">Pending approvals</option>
+            <option value="run">Failed runs (24h)</option>
           </select>
+          <input
+            name="field"
+            required
+            placeholder="metric (e.g. leads, openDecisions, failedRuns)"
+            className="min-w-48 flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs"
+          />
           <select
             name="op"
             className="rounded-md border border-input bg-background px-2 py-1.5 text-xs"
@@ -277,6 +264,7 @@ export default async function AdminPage({
                 <span>
                   {r.name}
                   <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                    {r.source} ·{" "}
                     {r.conditions
                       .map((c) => `${c.field} ${c.op} ${c.value}`)
                       .join(" · ")}{" "}

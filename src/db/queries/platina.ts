@@ -687,6 +687,7 @@ export async function listAlertRules(workspaceId: string) {
 export async function insertAlertRule(input: {
   workspaceId: string;
   name: string;
+  source?: "outcome" | "finding" | "approval" | "run";
   conditions: { field: string; op: "gt" | "lt" | "eq" | "gte" | "lte"; value: number | string }[];
   severity: "info" | "warning" | "critical";
 }) {
@@ -741,6 +742,47 @@ export function alertDeliveriesQuery(workspaceId: string) {
 
 export async function listAlertDeliveries(workspaceId: string) {
   return alertDeliveriesQuery(workspaceId);
+}
+
+/** Queue counts for operational alert sources (Slice 14). */
+export async function countFindingsNeedingDecision(workspaceId: string) {
+  const rows = await db
+    .select({ id: platinaFindings.id })
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.status, "needs_decision"),
+      ),
+    );
+  return rows.length;
+}
+
+export async function countPendingReceipts(workspaceId: string) {
+  const rows = await db
+    .select({ id: platinaReceipts.id })
+    .from(platinaReceipts)
+    .where(
+      and(
+        eq(platinaReceipts.workspaceId, workspaceId),
+        eq(platinaReceipts.outcome, "pending"),
+      ),
+    );
+  return rows.length;
+}
+
+export async function countFailedRunsSince(workspaceId: string, since: Date) {
+  const rows = await db
+    .select({ id: platinaAuditRuns.id })
+    .from(platinaAuditRuns)
+    .where(
+      and(
+        eq(platinaAuditRuns.workspaceId, workspaceId),
+        inArray(platinaAuditRuns.status, ["failed", "degraded"]),
+        sql`${platinaAuditRuns.queuedAt} >= ${since}`,
+      ),
+    );
+  return rows.length;
 }
 
 /** Stamps the rule's last delivery — the 24h suppression window reads it. */

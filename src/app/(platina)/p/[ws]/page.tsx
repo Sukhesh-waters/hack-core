@@ -83,7 +83,7 @@ export default async function PlatinaCockpit({
     { label: "Findings", value: findings.length, href: `${base}/findings` },
     { label: "Solutions", value: campaigns.length, href: `${base}/solutions` },
     { label: "Decision receipts", value: receipts.length, href: `${base}/outcomes` },
-    { label: "Approvals recorded", value: gates.length, href: `${base}/outcomes` },
+    { label: "Approvals recorded", value: gates.length, href: `${base}/admin` },
   ];
 
   // Source health from real probe/run timestamps — no invented telemetry.

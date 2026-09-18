@@ -62,6 +62,10 @@ import { auditCopyAgainstStandard } from "@/lib/platina/drift";
 import { runBrandExtraction } from "@/lib/platina/brand-extract";
 import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
 import {
+  ALERT_SOURCE_FIELDS,
+  isAlertSource,
+} from "@/lib/platina/alerts";
+import {
   leadQualityScore,
   outcomeRowHash,
   parseOutcomeCsv,
@@ -551,30 +555,18 @@ export async function importOutcomesAction(formData: FormData): Promise<void> {
   revalidatePath(`/p/${ws}`);
 }
 
-const ANALYSIS_STEPS = [
-  "competitor_scan",
-  "brand_divergence",
-  "ideation",
-  "claims_screen",
-] as const;
-
 export async function saveConfigAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   const user = await requireUser();
   await requireCapability(ws, user.id, "platina.config.manage");
   // The analysis sequence is the stored order filtered to the steps the
   // operator left enabled — order is preserved, not re-invented.
-  const existing = await getWorkspaceConfig(ws);
-  const enabled = new Set(formData.getAll("analysisStep"));
-  const analysisSequence = (existing?.analysisSequence ?? [...ANALYSIS_STEPS])
-    .filter((step) => enabled.has(step));
   const promptVersion = Number(formData.get("promptVersion") ?? 1);
   await upsertWorkspaceConfig(ws, {
     minBaselineN: Number(formData.get("minBaselineN") ?? 20),
     contestedFloor: Number(formData.get("contestedFloor") ?? 0.4),
     qualifiedFloor: Number(formData.get("qualifiedFloor") ?? 0.7),
     similarityFloor: Number(formData.get("similarityFloor") ?? 0.35),
-    ...(analysisSequence.length > 0 ? { analysisSequence } : {}),
     ...(promptVersion >= 1
       ? { promptVersion: Math.floor(promptVersion) }
       : {}),
@@ -1100,25 +1092,32 @@ export async function reauditDriftAction(formData: FormData): Promise<void> {
 // Slice 10 — alert rules
 // ---------------------------------------------------------------------------
 
-const ALERT_FIELDS = [
-  "leads",
-  "qualifiedLeads",
-  "conversionRate",
-  "pipelineContribution",
-  "qualityScore",
-] as const;
+const ALERT_FIELDS: Record<string, string[]> = {
+  outcome: [
+    "leads",
+    "qualifiedLeads",
+    "conversionRate",
+    "pipelineContribution",
+    "qualityScore",
+  ],
+  finding: ["openDecisions"],
+  approval: ["pendingReceipts", "draftSolutions"],
+  run: ["failedRuns"],
+};
 
 export async function addAlertRuleAction(formData: FormData): Promise<void> {
   const ws = String(formData.get("workspaceId"));
   await operator(ws, "platina.config.manage");
   const name = String(formData.get("name") ?? "").trim();
+  const source = String(formData.get("source") ?? "outcome");
   const field = String(formData.get("field") ?? "");
   const op = String(formData.get("op") ?? "");
   const value = Number(formData.get("value"));
   const severity = String(formData.get("severity") ?? "warning");
   if (!name) refuse(ws, "admin", "Rule name is required.");
-  if (!ALERT_FIELDS.includes(field as (typeof ALERT_FIELDS)[number])) {
-    refuse(ws, "admin", "Pick a valid metric.");
+  if (!isAlertSource(source)) refuse(ws, "admin", "Pick a valid alert source.");
+  if (!ALERT_FIELDS[source]?.includes(field)) {
+    refuse(ws, "admin", `Pick a metric the ${source} source actually has.`);
   }
   if (!["gt", "lt", "eq", "gte", "lte"].includes(op)) {
     refuse(ws, "admin", "Pick a valid comparison.");
@@ -1130,6 +1129,7 @@ export async function addAlertRuleAction(formData: FormData): Promise<void> {
   await insertAlertRule({
     workspaceId: ws,
     name,
+    source: source as "outcome" | "finding" | "approval" | "run",
     conditions: [{ field, op: op as "gt" | "lt" | "eq" | "gte" | "lte", value }],
     severity: severity as "info" | "warning" | "critical",
   });

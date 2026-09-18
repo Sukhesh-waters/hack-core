@@ -355,7 +355,6 @@ export const platinaScanSpecs = pgTable(
     workspaceId: workspaceFk(),
     name: text("name").notNull(),
     targets: jsonb("targets").$type<PlatinaScanTarget[]>().notNull().default([]),
-    cadence: text("cadence").notNull().default("weekly"),
     cadenceMinutes: integer("cadence_minutes").notNull().default(5),
     enabled: boolean("enabled").notNull().default(true),
     status: platinaScanStatus("status").notNull().default("draft"),
@@ -510,6 +509,9 @@ export const platinaAlertRules = pgTable(
     id: id(),
     workspaceId: workspaceFk(),
     name: text("name").notNull(),
+    // What the rule evaluates: latest outcome metrics, open findings awaiting
+    // a decision, pending approvals, or failed runs in the last 24 h.
+    source: text("source").notNull().default("outcome"),
     conditions: jsonb("conditions")
       .$type<PlatinaAlertCondition[]>()
       .notNull()

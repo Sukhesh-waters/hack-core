@@ -1,21 +1,28 @@
 import { inngest } from "@/inngest/client";
 import {
+  countFailedRunsSince,
+  countFindingsNeedingDecision,
+  countPendingReceipts,
   getWorkspaceConfig,
   insertAlertDelivery,
   listActiveAlertRules,
   listOutcomes,
   markAlertRuleDelivered,
 } from "@/db/queries/platina";
-import { deliveryDecision, evaluateAlert } from "@/lib/platina/alerts";
+import {
+  deliveryDecision,
+  evaluateAlert,
+  isAlertSource,
+  type AlertSource,
+} from "@/lib/platina/alerts";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 /**
- * Alert sweep (Slice 10). Evaluates each enabled rule against the workspace's
- * latest first-party outcome, with the workspace's stored minimum-N (not a
- * hardcoded floor). Every evaluation outcome is recorded in the delivery
- * ledger: sent, suppressed (repeat inside the window), or failed — with the
- * reason. V1 delivers in-app only: a delivery writes the ledger row and
- * broadcasts the alerts scope; nothing emails or posts anywhere.
+ * Alert sweep (Slice 14). Each rule evaluates against its source's record:
+ * the latest first-party outcome's metrics (min-N gated), open findings
+ * awaiting a decision, pending approvals, or failed/degraded runs in the
+ * last 24 h. Every match writes the delivery ledger — sent, or suppressed
+ * with the reason inside the 24 h window. V1 delivers in-app only.
  */
 export const platinaAlertSweep = inngest.createFunction(
   {
@@ -27,34 +34,71 @@ export const platinaAlertSweep = inngest.createFunction(
     let sent = 0;
     let suppressed = 0;
     for (const rule of rules) {
-      const outcomes = await step.run(`outcomes-${rule.id}`, () =>
-        listOutcomes(rule.workspaceId),
-      );
-      const latest = outcomes[0];
-      if (!latest) continue;
-      const config = await step.run(`config-${rule.id}`, () =>
-        getWorkspaceConfig(rule.workspaceId),
-      );
-      const result = await step.run(`evaluate-${rule.id}`, async () =>
-        evaluateAlert({
-          record: {
-            conversionRate: latest.conversionRate ?? 0,
-            leads: latest.leads,
-            qualifiedLeads: latest.qualifiedLeads,
-            pipelineContribution: latest.pipelineContribution ?? 0,
-            qualityScore: latest.qualityScore ?? 0,
-          },
+      const source: AlertSource = isAlertSource(rule.source)
+        ? (rule.source as AlertSource)
+        : "outcome";
+
+      const evaluated = await step.run(`evaluate-${rule.id}`, async () => {
+        if (source === "outcome") {
+          const outcomes = await listOutcomes(rule.workspaceId);
+          const latest = outcomes[0];
+          if (!latest) return null;
+          const config = await getWorkspaceConfig(rule.workspaceId);
+          return evaluateAlert({
+            record: {
+              leads: latest.leads,
+              qualifiedLeads: latest.qualifiedLeads,
+              conversionRate: latest.conversionRate ?? 0,
+              pipelineContribution: latest.pipelineContribution ?? 0,
+              qualityScore: latest.qualityScore ?? 0,
+            },
+            conditions: rule.conditions,
+            severity: rule.severity,
+            actions: rule.actions,
+            sampleSize: outcomes.length,
+            minN: config?.minBaselineN ?? 20,
+          });
+        }
+        // Operational sources: live queue counts, no min-N — these are
+        // operational facts, not samples.
+        if (source === "finding") {
+          const open = await countFindingsNeedingDecision(rule.workspaceId);
+          return evaluateAlert({
+            record: { openDecisions: open },
+            conditions: rule.conditions,
+            severity: rule.severity,
+            actions: rule.actions,
+            sampleSize: 1,
+            minN: 1,
+          });
+        }
+        if (source === "approval") {
+          const pending = await countPendingReceipts(rule.workspaceId);
+          return evaluateAlert({
+            record: { pendingReceipts: pending },
+            conditions: rule.conditions,
+            severity: rule.severity,
+            actions: rule.actions,
+            sampleSize: 1,
+            minN: 1,
+          });
+        }
+        const failed = await countFailedRunsSince(
+          rule.workspaceId,
+          new Date(Date.now() - 24 * 60 * 60 * 1000),
+        );
+        return evaluateAlert({
+          record: { failedRuns: failed },
           conditions: rule.conditions,
           severity: rule.severity,
           actions: rule.actions,
-          sampleSize: outcomes.length,
-          minN: config?.minBaselineN ?? 20,
-        }),
-      );
-      if (!result.matched) continue;
+          sampleSize: 1,
+          minN: 1,
+        });
+      });
+      if (!evaluated?.matched) continue;
 
-      const decision = deliveryDecision(rule.lastRunAt);
-      const repeat = decision === "suppress";
+      const repeat = deliveryDecision(rule.lastRunAt) === "suppress";
       await step.run(`deliver-${rule.id}`, async () => {
         await insertAlertDelivery({
           workspaceId: rule.workspaceId,

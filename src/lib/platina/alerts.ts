@@ -43,6 +43,31 @@ export function evaluateAlert(input: {
   return { matched: true, severity: input.severity, actions: input.actions };
 }
 
+/**
+ * The record each alert source evaluates (Slice 14). Outcome rules read the
+ * latest first-party outcome; the operational sources read live queue counts.
+ * Min-N applies to outcome metrics only — queue counts are operational
+ * facts, not samples.
+ */
+export type AlertSource = "outcome" | "finding" | "approval" | "run";
+
+export const ALERT_SOURCE_FIELDS: Record<AlertSource, string[]> = {
+  outcome: [
+    "leads",
+    "qualifiedLeads",
+    "conversionRate",
+    "pipelineContribution",
+    "qualityScore",
+  ],
+  finding: ["openDecisions"],
+  approval: ["pendingReceipts", "draftSolutions"],
+  run: ["failedRuns"],
+};
+
+export function isAlertSource(value: string): value is AlertSource {
+  return value in ALERT_SOURCE_FIELDS;
+}
+
 /** One delivery per rule per 24 h — a repeat inside the window is recorded
  *  as suppressed with the reason, never silently dropped. */
 export const DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000;
