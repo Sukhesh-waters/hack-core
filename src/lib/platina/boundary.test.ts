@@ -251,4 +251,29 @@ describe("platina/instamedia dependency boundary", () => {
     }
     expect(offenders).toEqual([]);
   });
+
+  it("no external call targets except the Apify platform API", () => {
+    // The constitution: Platina writes to no Waters system, ever. This scans
+    // for host literals in network-call positions — fetch() targets and
+    // endpoint constants — not data. Operator-chosen source URLs (audit
+    // targets, conference presets) are data fetched THROUGH Apify, never
+    // called directly. RFC 2606 example domains are documentation
+    // placeholders.
+    const HOST_LITERAL = /https:\/\/([a-z0-9.-]+)/i;
+    const CALL_SITE = /fetch\(|\b[A-Z][A-Z0-9_]*(?:_BASE|_URL)\s*=/;
+    const ALLOWED_HOSTS = new Set(["api.apify.com"]);
+    const offenders: string[] = [];
+    for (const file of sourceFiles) {
+      const rel = relSrc(file);
+      if (rel === "lib/platina/boundary.test.ts") continue;
+      for (const line of readFileSync(file, "utf-8").split("\n")) {
+        if (!CALL_SITE.test(line)) continue;
+        const match = line.match(HOST_LITERAL);
+        if (match && !ALLOWED_HOSTS.has(match[1].toLowerCase())) {
+          offenders.push(`${rel} -> ${match[1]}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
 });

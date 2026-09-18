@@ -63,6 +63,15 @@ test("unknown workspace renders the soft 404", async ({ page }) => {
   await expect(page.getByText(NOT_FOUND_TEXT)).toBeVisible({ timeout: 60_000 });
 });
 
+test("the header reports the real transport state", async ({ page }) => {
+  // No PLATINA_REALTIME_SECRET in the test environment — the pill must read
+  // Polling, never a fake Live badge.
+  await page.goto(platinaPath(""), { waitUntil: "domcontentloaded" });
+  await expect(
+    page.getByText(/^(Live|Reconnecting|Polling)$/).first(),
+  ).toBeVisible({ timeout: 60_000 });
+});
+
 test.describe("unauthenticated", () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 

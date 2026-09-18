@@ -363,6 +363,7 @@ export default async function SolutionDetailPage({
                                 />
                                 <button
                                   type="submit"
+                                  aria-label={`Move "${t.title}" to ${BOARD_COLUMN_LABEL[target]}`}
                                   className="rounded border border-border px-1 font-mono text-[9px] text-muted-foreground hover:bg-accent"
                                   title={`Move to ${BOARD_COLUMN_LABEL[target]}`}
                                 >
