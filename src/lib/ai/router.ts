@@ -9,9 +9,16 @@ import { bedrockConfigured } from "@/lib/flags";
  */
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// llama-3.3-70b-versatile and llama-3.1-8b-instant both 404
+// ("does not exist or you do not have access to it") on this account as of
+// 2026-09-18, live-verified during Platina Slice 14 — the configured key has
+// no Llama entitlement. openai/gpt-oss-120b is confirmed reachable with the
+// same key and is Groq's comparable general-purpose production model.
+const GROQ_MODEL = "openai/gpt-oss-120b";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_CHAT_MODEL = "gemini-2.0-flash";
+// gemini-2.0-flash was retired (404 as of 2026-09, live-verified during
+// Platina Slice 14 — Google's error names gemini-3.6-flash as the successor).
+const GEMINI_CHAT_MODEL = "gemini-3.6-flash";
 // text-embedding-004 was retired by Google (404 as of 2026-07); its
 // successor defaults to 3072 dims, so every request pins 768 to match
 // the pgvector columns. Ranking uses cosine distance, which is scale-
@@ -20,8 +27,11 @@ const GEMINI_EMBED_MODEL = "gemini-embedding-001";
 // Bedrock model ids carry the anthropic. prefix
 const bedrockModel = () =>
   process.env.BEDROCK_MODEL_ID ?? "anthropic.claude-opus-4-8";
+// gemini-2.5-pro was retired ("no longer available to new users", 404 as of
+// 2026-09, live-verified during Slice 14 — Google's error names
+// gemini-3.1-pro-preview as the successor).
 const geminiQualityModel = () =>
-  process.env.GEMINI_QUALITY_MODEL ?? "gemini-2.5-pro";
+  process.env.GEMINI_QUALITY_MODEL ?? "gemini-3.1-pro-preview";
 
 export const EMBEDDING_DIMENSIONS = 768;
 
@@ -105,11 +115,16 @@ async function fastChat(task: ChatTask): Promise<ChatOutcome> {
   try {
     return await groqChat(task);
   } catch (error) {
-    // Degradation ladder: provider throttled or down → swap provider.
+    // Degradation ladder: provider throttled, down, or unable to serve the
+    // configured model (404 — e.g. a retired/inaccessible model id, the
+    // same failure mode that broke this call entirely until GROQ_MODEL was
+    // corrected) → swap provider rather than fail the whole request.
     const swappable =
       error instanceof AIRouterError &&
       error.provider === "groq" &&
-      (error.status === 429 || (error.status ?? 0) >= 500);
+      (error.status === 404 ||
+        error.status === 429 ||
+        (error.status ?? 0) >= 500);
     if (swappable) return geminiChat(task);
     throw error;
   }

@@ -59,6 +59,30 @@ describe("routeAI chat", () => {
     );
   });
 
+  it("falls back to Gemini when Groq can't serve the configured model (404)", async () => {
+    // Live-verified failure mode (Slice 14): a retired or inaccessible
+    // model id 404s exactly like a throttle from the caller's perspective
+    // — it should degrade the same way, not fail the whole request.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse({ error: "model not found" }, 404),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          candidates: [{ content: { parts: [{ text: "gemini says hi" }] } }],
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(routeAI({ kind: "chat", prompt: "hello" })).resolves.toBe(
+      "gemini says hi",
+    );
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "generativelanguage.googleapis.com",
+    );
+  });
+
   it("does not fall back on non-throttle client errors", async () => {
     const fetchMock = vi
       .fn()
@@ -112,7 +136,9 @@ describe("routeAI quality tier (degradation ladder)", () => {
       routeAI({ kind: "chat", tier: "quality", prompt: "x" }),
     ).resolves.toBe("pro answer");
     expect(bedrockCreate).not.toHaveBeenCalled();
-    expect(String(fetchMock.mock.calls[0][0])).toContain("gemini-2.5-pro");
+    expect(String(fetchMock.mock.calls[0][0])).toContain(
+      "gemini-3.1-pro-preview",
+    );
   });
 
   it("falls through to Groq when the Gemini quality model fails", async () => {
