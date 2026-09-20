@@ -32,16 +32,19 @@ export function PlatinaSidebar({
           {workspaceName}
         </p>
         <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          {scope ?? "Campaign planning"}
+          {scope ?? "Waters executive surface"}
         </p>
       </div>
       <nav className="flex flex-1 flex-col gap-0.5 px-3 py-4">
         {PLATINA_NAV.map((section) => {
-          const href = `${base}/${section.slug}`;
-          const active = pathname.startsWith(href);
+          const href = section.slug ? `${base}/${section.slug}` : base;
+          const active =
+            section.slug === ""
+              ? pathname === base
+              : pathname.startsWith(href);
           return (
             <Link
-              key={section.slug}
+              key={section.slug || "cockpit"}
               href={href}
               className={cn(
                 "rounded-md border-l-2 px-3 py-2 text-sm",
@@ -57,7 +60,7 @@ export function PlatinaSidebar({
       </nav>
       <div className="border-t border-border px-5 py-4">
         <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          Plans learn from the results you record
+          Read-only for Waters systems
         </p>
       </div>
     </aside>

@@ -13,16 +13,8 @@ export const authConfig = {
     verifyRequest: "/login?sent=1",
   },
   callbacks: {
-    authorized({ auth, request }) {
-      if (!auth?.user) return false;
-      // The InstaMedia workspace surface is hidden, not deleted (owner
-      // decision 2026-09-20): its routes send people back to the hub, whose
-      // workspace links lead into Platina. Remove this branch to restore it.
-      const { pathname } = request.nextUrl;
-      if (pathname === "/w" || pathname.startsWith("/w/")) {
-        return Response.redirect(new URL("/hub", request.nextUrl));
-      }
-      return true;
+    authorized({ auth }) {
+      return Boolean(auth?.user);
     },
     jwt({ token, user }) {
       if (user?.id) token.sub = user.id;

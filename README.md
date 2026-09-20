@@ -1,13 +1,12 @@
 # Platina AI OS
 
-Campaign planning from a two-line brief. A planner turns the brief into a
-phased roadmap shown on a timeline, then learns from the results you record so
-the next plan starts from what worked. Built on an isolated org → workspace
-tenancy model. See `CLAUDE.md` for the build constitution (stack lock,
-isolation rules, scope) and `backend-rev.md` for the backend architecture.
-
-> The earlier InstaMedia surface (`/w/*`) is hidden, not deleted, pending the
-> owner-signed transition matrix. Its code and data are intact.
+Agency operating system for social content: each client gets an isolated
+workspace with a baseline-driven content engine (ingestion -> KB -> Brand DNA ->
+ideation -> studio/compliance -> calendar -> learning loop), plus Platina
+(audits, findings, solutions, outcomes) and a campaign planner that turns a
+two-line brief into a roadmap and learns from the results you record. See
+`CLAUDE.md` for the build constitution (stack lock, isolation rules, scope) and
+`backend-rev.md` for the backend architecture.
 
 ## Stack
 

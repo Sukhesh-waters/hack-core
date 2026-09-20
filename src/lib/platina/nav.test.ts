@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { PLATINA_NAV } from "./nav";
 
 describe("platina nav", () => {
-  it("registers campaign planning as the only destination", () => {
-    expect(PLATINA_NAV.map((s) => s.label)).toEqual(["Plan"]);
-    expect(PLATINA_NAV.map((s) => s.slug)).toEqual(["plan"]);
+  it("registers the outcome-oriented destinations plus the campaign planner", () => {
+    expect(PLATINA_NAV.map((s) => s.label)).toEqual([
+      "Cockpit",
+      "Plan",
+      "Audits",
+      "Findings",
+      "Solutions",
+      "Outcomes",
+      "Admin",
+    ]);
   });
 
   it("has unique slugs", () => {
@@ -12,14 +19,8 @@ describe("platina nav", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  it("keeps every other surface out of primary navigation (hidden, not deleted)", () => {
-    const hidden = [
-      "",
-      "audits",
-      "findings",
-      "solutions",
-      "outcomes",
-      "admin",
+  it("keeps legacy routes out of primary navigation", () => {
+    const legacy = [
       "brand",
       "scans",
       "brain",
@@ -29,7 +30,7 @@ describe("platina nav", () => {
       "receipts",
       "config",
     ];
-    for (const slug of hidden) {
+    for (const slug of legacy) {
       expect(PLATINA_NAV.some((s) => s.slug === slug)).toBe(false);
     }
   });

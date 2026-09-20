@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s · Platina AI OS",
   },
   description:
-    "Campaign planning from a two-line brief — a planner that learns from your results, shown as a visual roadmap.",
+    "The agency operating system for social content — baseline-driven ideation, studio, calendar, and campaign planning for every client workspace.",
 };
 
 // Sets `.dark` on <html> before first paint so there is no flash of the

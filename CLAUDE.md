@@ -1,17 +1,15 @@
 # Platina AI OS — Build Constitution
 
-> **Owner decision 2026-09-20 (product direction):** the product is now
-> **Platina AI OS**, and its single supported feature is **campaign planning**:
-> a two-line brief -> a planner that learns from recorded results (a feedback
-> loop over stored plans and outcomes, not retrieval) -> a visual roadmap on a
-> timeline. All user-visible naming is "Platina AI OS". The InstaMedia surface
-> (`/w/*`) and Platina's other pages are **hidden, not deleted**: code, tables,
-> and data stay intact and reversible. Deletion (code or tables) still requires
-> the owner-signed Slice 12 transition matrix and an explicit backup/approval;
-> nothing in this decision authorises dropping data. Where this note conflicts
-> with the older InstaMedia-era text below, this note wins; the Platina/InstaMedia
-> module boundary (`src/lib/platina/boundary.test.ts`) still applies until the
-> InstaMedia code is actually removed.
+> **Owner decision 2026-09-20 (rebrand):** the product is named **Platina AI OS**
+> and all user-visible naming uses it. **Every feature is kept**: the InstaMedia
+> workspace surface (`/w/*`) and all Platina pages remain live and reachable.
+> Only UI and content were revised (naming, landing page, InstaMedia-specific
+> user docs). A **campaign planner** was added as a Platina feature at
+> `/p/[ws]/plan`: two-line brief -> planner that learns from recorded results (a
+> feedback loop over the workspace's own plans, not retrieval, not RL) -> visual
+> roadmap. Deletion of any code or tables still requires the owner-signed Slice
+> 12 transition matrix and an explicit backup/approval. The Platina/InstaMedia
+> module boundary (`src/lib/platina/boundary.test.ts`) still applies.
 
 ## Stack (locked, do not deviate without updating this file)
 - Single Next.js 14 App Router TypeScript monolith. No separate Python/FastAPI service.
@@ -25,9 +23,9 @@
   touches the first-party baseline engine.
 - Platina AI OS lives at `/p/[ws]`, schema in `src/db/platina-schema.ts`,
   lib in `src/lib/platina/*`. It shares auth, workspace membership, the model router, and
-  the neutral orchestrator/context types (`src/lib/orchestrator/run.ts`,
-  `src/lib/ai/context/types.ts`) only. InstaMedia routes and tables stay untouched
-  (hidden from users, not removed). Platina ingestion is a pluggable
+  the neutral infra (`src/lib/orchestrator/run.ts`, `src/lib/ai/context/types.ts`,
+  `src/lib/ai/usage-context.ts`, `src/lib/action-errors.ts`) only. InstaMedia routes
+  and tables stay untouched. Platina ingestion is a pluggable
   source-adapter registry (`src/lib/platina/fetch/registry.ts`); adapter 1 is Apify.
   An own-code web adapter may land later without a schema change. Until that adapter
   ships, public fetches still go through Apify. A header-only change probe
