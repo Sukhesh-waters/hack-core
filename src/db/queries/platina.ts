@@ -15,6 +15,8 @@ import {
   platinaAlertDeliveries,
   platinaOutcomeImports,
   platinaOutcomes,
+  platinaPlanFeedback,
+  platinaPlans,
   platinaReceipts,
   platinaScanSpecs,
   platinaSignalDocuments,
@@ -22,6 +24,8 @@ import {
   platinaWorkspaceConfig,
   platinaWorkspaceProfiles,
   PLATINA_EMBEDDING_MODEL_VERSION,
+  type PlanDoc,
+  type PlanVerdict,
   type PlatinaRunConfigSnapshot,
   type PlatinaScanTarget,
 } from "@/db/platina-schema";
@@ -1711,4 +1715,152 @@ export async function archiveClaimsRule(workspaceId: string, ruleId: string) {
     )
     .returning({ id: platinaClaimsRules.id });
   return updated[0]?.id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Campaign planner. Every query filters workspace_id (constitution); the
+// feedback join filters it on BOTH tables so a forged planId can't cross
+// tenants.
+// ---------------------------------------------------------------------------
+
+export function plansWithVerdictQuery(workspaceId: string, limit = 30) {
+  return db
+    .select({
+      id: platinaPlans.id,
+      title: platinaPlans.title,
+      brief: platinaPlans.brief,
+      lessonsUsed: platinaPlans.lessonsUsed,
+      createdAt: platinaPlans.createdAt,
+      verdict: platinaPlanFeedback.verdict,
+    })
+    .from(platinaPlans)
+    .leftJoin(
+      platinaPlanFeedback,
+      and(
+        eq(platinaPlanFeedback.planId, platinaPlans.id),
+        eq(platinaPlanFeedback.workspaceId, workspaceId),
+      ),
+    )
+    .where(eq(platinaPlans.workspaceId, workspaceId))
+    .orderBy(desc(platinaPlans.createdAt))
+    .limit(limit);
+}
+
+export async function listPlansWithVerdict(workspaceId: string, limit = 30) {
+  return plansWithVerdictQuery(workspaceId, limit);
+}
+
+export function planByIdQuery(workspaceId: string, planId: string) {
+  return db
+    .select()
+    .from(platinaPlans)
+    .where(
+      and(eq(platinaPlans.workspaceId, workspaceId), eq(platinaPlans.id, planId)),
+    )
+    .limit(1);
+}
+
+export async function getPlan(workspaceId: string, planId: string) {
+  const rows = await planByIdQuery(workspaceId, planId);
+  return rows[0] ?? null;
+}
+
+export function planFeedbackQuery(workspaceId: string, planId: string) {
+  return db
+    .select()
+    .from(platinaPlanFeedback)
+    .where(
+      and(
+        eq(platinaPlanFeedback.workspaceId, workspaceId),
+        eq(platinaPlanFeedback.planId, planId),
+      ),
+    )
+    .limit(1);
+}
+
+export async function getPlanFeedback(workspaceId: string, planId: string) {
+  const rows = await planFeedbackQuery(workspaceId, planId);
+  return rows[0] ?? null;
+}
+
+export async function insertPlan(input: {
+  workspaceId: string;
+  title: string;
+  brief: string;
+  plan: PlanDoc;
+  critique: string[];
+  lessonsUsed: number;
+  createdById: string | null;
+}): Promise<string> {
+  const [row] = await db
+    .insert(platinaPlans)
+    .values(input)
+    .returning({ id: platinaPlans.id });
+  return row.id;
+}
+
+/**
+ * Record what happened. Verifies the plan belongs to the workspace first, so
+ * a forged planId from another tenant is rejected rather than written.
+ */
+export async function upsertPlanFeedback(input: {
+  workspaceId: string;
+  planId: string;
+  verdict: PlanVerdict;
+  note: string | null;
+  createdById: string | null;
+}) {
+  const plan = await getPlan(input.workspaceId, input.planId);
+  if (!plan) throw new Error("Plan not found");
+  await db
+    .insert(platinaPlanFeedback)
+    .values(input)
+    .onConflictDoUpdate({
+      target: platinaPlanFeedback.planId,
+      set: {
+        verdict: input.verdict,
+        note: input.note,
+        createdById: input.createdById,
+        createdAt: new Date(),
+      },
+    });
+}
+
+/** Lessons for the planner: plans in this workspace with a given verdict. */
+export function planLessonsQuery(
+  workspaceId: string,
+  verdict: PlanVerdict,
+  limit: number,
+) {
+  return db
+    .select({
+      title: platinaPlans.title,
+      brief: platinaPlans.brief,
+      plan: platinaPlans.plan,
+      note: platinaPlanFeedback.note,
+    })
+    .from(platinaPlanFeedback)
+    .innerJoin(
+      platinaPlans,
+      and(
+        eq(platinaPlans.id, platinaPlanFeedback.planId),
+        eq(platinaPlans.workspaceId, workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(platinaPlanFeedback.workspaceId, workspaceId),
+        eq(platinaPlanFeedback.verdict, verdict),
+      ),
+    )
+    .orderBy(desc(platinaPlanFeedback.createdAt))
+    .limit(limit);
+}
+
+export async function listPlanLessons(
+  workspaceId: string,
+  verdict: PlanVerdict,
+  limit = 3,
+) {
+  return planLessonsQuery(workspaceId, verdict, limit);
 }

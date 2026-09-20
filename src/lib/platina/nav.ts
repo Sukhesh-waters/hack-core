@@ -1,16 +1,11 @@
 /**
- * Platina primary navigation — the six outcome-oriented destinations.
- * Legacy routes (/brand, /scans, /brain, /ideation, /campaigns, /claims,
- * /receipts, /config) stay reachable by URL for owner comparison until their
- * transition slices; they are deliberately absent here.
+ * Platina primary navigation. Owner decision 2026-09-20: campaign planning is
+ * the only supported feature, so it is the only destination. Every other
+ * Platina route (cockpit, audits, findings, solutions, outcomes, admin and the
+ * legacy /brand, /scans, /brain, /ideation, /campaigns, /claims, /receipts,
+ * /config) is hidden from navigation but still reachable by URL: hidden, not
+ * deleted, until the owner-signed transition matrix says otherwise.
  */
-export const PLATINA_NAV = [
-  { slug: "", label: "Cockpit" },
-  { slug: "audits", label: "Audits" },
-  { slug: "findings", label: "Findings" },
-  { slug: "solutions", label: "Solutions" },
-  { slug: "outcomes", label: "Outcomes" },
-  { slug: "admin", label: "Admin" },
-] as const;
+export const PLATINA_NAV = [{ slug: "plan", label: "Plan" }] as const;
 
 export type PlatinaNavSection = (typeof PLATINA_NAV)[number];

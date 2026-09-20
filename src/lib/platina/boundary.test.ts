@@ -72,7 +72,14 @@ const ALLOWED_EXACT = new Set([
   "@/db/queries/memberships",
   "@/db/queries/workspaces", // identity enumeration for cron fan-out
   "@/lib/permissions",
-  "@/lib/ai/router", // the only @/lib/ai/* module Platina may import
+  "@/lib/ai/router", // the router, plus the neutral infra listed below
+  // Neutral infrastructure (owner decision 2026-09-20): the orchestrator
+  // sequencer, its context-result types, AI cost tracking, and the safe
+  // action-error mapper. None of them carries InstaMedia business logic.
+  "@/lib/orchestrator/run",
+  "@/lib/ai/context/types",
+  "@/lib/ai/usage-context",
+  "@/lib/action-errors",
   "@/lib/utils",
   "@/inngest/client",
 ]);
@@ -114,7 +121,7 @@ const FORBIDDEN_EXACT = new Set([
 ]);
 
 /** Catch-all prefixes, each with its carve-out (if any). */
-const FORBIDDEN_PREFIXES: { prefix: string; allowed?: string }[] = [
+const FORBIDDEN_PREFIXES: { prefix: string; allowed?: string[] }[] = [
   { prefix: "@/app/(app)" },
   { prefix: "@/lib/connectors" },
   { prefix: "@/lib/sop" },
@@ -123,8 +130,15 @@ const FORBIDDEN_PREFIXES: { prefix: string; allowed?: string }[] = [
   { prefix: "@/lib/pipeline" },
   { prefix: "@/lib/workflow" },
   { prefix: "@/lib/events" },
-  { prefix: "@/lib/ai/", allowed: "@/lib/ai/router" },
-  { prefix: "@/inngest/functions/", allowed: "@/inngest/functions/platina" },
+  {
+    prefix: "@/lib/ai/",
+    allowed: [
+      "@/lib/ai/router",
+      "@/lib/ai/context/types",
+      "@/lib/ai/usage-context",
+    ],
+  },
+  { prefix: "@/inngest/functions/", allowed: ["@/inngest/functions/platina"] },
 ];
 
 /**
@@ -139,7 +153,7 @@ function isForbidden(specifier: string): boolean {
   if (FORBIDDEN_EXACT.has(specifier)) return true;
   return FORBIDDEN_PREFIXES.some(
     ({ prefix, allowed }) =>
-      specifier.startsWith(prefix) && specifier !== allowed,
+      specifier.startsWith(prefix) && !(allowed ?? []).includes(specifier),
   );
 }
 

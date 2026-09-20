@@ -20,14 +20,18 @@ export default async function PlatinaWorkspaceLayout({
   } catch {
     notFound();
   }
-  const workspace = await getWorkspaceById(params.ws);
+  // Independent lookups: run them together instead of paying two sequential
+  // round trips on every Platina page transition.
+  const [workspace, profile] = await Promise.all([
+    getWorkspaceById(params.ws),
+    getWorkspaceProfile(params.ws),
+  ]);
   if (!workspace) notFound();
 
   // Membership is checked above, so this is the safe place to mint the
   // opaque Realtime topic token. Null when the secret is absent — the
   // client visibly degrades to polling.
   const topicToken = platinaTopicToken(params.ws);
-  const profile = await getWorkspaceProfile(params.ws);
   const scope =
     profile?.division || profile?.region
       ? [profile.division, profile.region].filter(Boolean).join(" · ")

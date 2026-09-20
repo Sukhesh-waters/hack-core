@@ -802,7 +802,78 @@ export const platinaAlertDeliveries = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Campaign planner (owner decision 2026-09-20): brief -> phased plan -> logged
+// result -> lessons that shape the next plan. Plain SQL rows, no embeddings.
+// ---------------------------------------------------------------------------
+
+export type PlanPhase = {
+  id: string;
+  name: string;
+  startDay: number;
+  endDay: number;
+  channel: string;
+  message: string;
+};
+
+export type PlanDoc = {
+  summary: string;
+  totalDays: number;
+  phases: PlanPhase[];
+};
+
+export const PLAN_VERDICTS = ["worked", "mixed", "failed"] as const;
+export type PlanVerdict = (typeof PLAN_VERDICTS)[number];
+
+export const platinaPlans = pgTable(
+  "platina_plans",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    title: text("title").notNull(),
+    brief: text("brief").notNull(),
+    plan: jsonb("plan").$type<PlanDoc>().notNull(),
+    // Independent Critic findings shown beside the roadmap; empty = passed.
+    critique: jsonb("critique").$type<string[]>().notNull().default([]),
+    // How many logged results informed this plan (0 = cold start).
+    lessonsUsed: integer("lessons_used").notNull().default(0),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_plans_workspace_id_idx").on(table.workspaceId),
+  }),
+);
+
+// One verdict per plan (upserted): the latest thing you learned about it.
+export const platinaPlanFeedback = pgTable(
+  "platina_plan_feedback",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    planId: text("plan_id")
+      .notNull()
+      .references(() => platinaPlans.id, { onDelete: "cascade" }),
+    verdict: text("verdict").$type<PlanVerdict>().notNull(),
+    note: text("note"),
+    createdById: text("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_plan_feedback_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    planIdx: uniqueIndex("platina_plan_feedback_plan_id_idx").on(table.planId),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
+  platinaPlans,
+  platinaPlanFeedback,
   platinaBrandChunks,
   platinaOutcomes,
   platinaSignalDocuments,
