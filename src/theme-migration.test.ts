@@ -18,7 +18,7 @@ const ROOTS = [join(__dirname, "app"), join(__dirname, "components"), join(__dir
 
 // Files where a literal white surface is intentional and must not react to
 // the app's light/dark toggle — not a migration gap.
-const ALLOWLIST = new Set(["app/(marketing)/page.tsx"]);
+const ALLOWLIST = new Set<string>();
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {

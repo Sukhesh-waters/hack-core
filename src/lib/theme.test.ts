@@ -26,6 +26,6 @@ describe("resolveTheme", () => {
 
 describe("THEME_STORAGE_KEY", () => {
   it("is a stable, namespaced key", () => {
-    expect(THEME_STORAGE_KEY).toBe("instamedia-theme");
+    expect(THEME_STORAGE_KEY).toBe("platina-theme");
   });
 });

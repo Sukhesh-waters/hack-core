@@ -3,7 +3,7 @@ import { listMyWork } from "@/db/queries/my-work";
 import { PageShell } from "@/components/page-shell";
 import { MyWorkClient } from "./my-work-client";
 
-export const metadata = { title: "My Work | InstaMedia AI" };
+export const metadata = { title: "My Work | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
 export default async function MyWorkPage({

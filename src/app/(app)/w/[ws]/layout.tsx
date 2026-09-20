@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireUser } from "@/auth";
-import { AskInstamediaLazy } from "@/components/ask-instamedia-lazy";
+import { AskPlatinaLazy } from "@/components/ask-platina-lazy";
 import { NotificationBell } from "@/components/notification-bell";
 import { DirectChatDrawer } from "@/components/direct-chat-drawer";
 import { ShellSpendTicker } from "@/components/shell-spend-ticker";
@@ -41,7 +41,7 @@ export default async function WorkspaceLayout({
         userId={user.id}
         members={members}
       />
-      <AskInstamediaLazy workspaceId={params.ws} />
+      <AskPlatinaLazy workspaceId={params.ws} />
     </>
   );
 }

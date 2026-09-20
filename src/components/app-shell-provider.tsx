@@ -13,7 +13,7 @@ type AppShellContextType = {
 
 const AppShellContext = createContext<AppShellContextType | undefined>(undefined);
 
-const STORAGE_KEY = "instamedia_sidebar_collapsed";
+const STORAGE_KEY = "platina_sidebar_collapsed";
 
 export function AppShellProvider({ children }: { children: React.ReactNode }) {
   const [isCollapsed, setIsCollapsedState] = useState<boolean>(false);

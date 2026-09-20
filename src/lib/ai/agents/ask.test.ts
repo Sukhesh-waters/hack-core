@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   ASK_MAX_ITEMS,
-  askInstamedia,
+  askPlatina,
   buildAskPrompt,
   buildAskSystem,
   type AskGrounding,
@@ -71,10 +71,10 @@ describe("buildAskPrompt", () => {
   });
 });
 
-describe("askInstamedia", () => {
+describe("askPlatina", () => {
   it("routes a fast chat with the role-scoped system prompt and returns the answer", async () => {
     routeAIMock.mockResolvedValue("One post is scheduled for July 14.");
-    const answer = await askInstamedia(GROUNDING, "What's next?");
+    const answer = await askPlatina(GROUNDING, "What's next?");
     expect(answer).toBe("One post is scheduled for July 14.");
     const task = routeAIMock.mock.calls[0][0];
     expect(task.kind).toBe("chat");

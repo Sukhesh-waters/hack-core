@@ -21,7 +21,7 @@ export const DEV_BYPASS_EMAIL = "dev@localhost.test";
 const providers: NextAuthConfig["providers"] = [
   Google,
   Resend({
-    from: process.env.EMAIL_FROM ?? "InstaMedia AI <login@example.com>",
+    from: process.env.EMAIL_FROM ?? "Platina AI OS <login@example.com>",
   }),
 ];
 

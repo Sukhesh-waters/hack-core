@@ -105,7 +105,7 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
     await markAllNotificationsReadAction(workspaceId);
   }
 
-  // Stacked ABOVE the Ask InstaMedia launcher rather than beside it. That
+  // Stacked ABOVE the Ask Platina launcher rather than beside it. That
   // button is 132px wide at z-50, so any side-by-side offset both guesses its
   // width and loses the stacking contest — the bell was unclickable.
   return (

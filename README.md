@@ -1,12 +1,13 @@
-# InstaMedia AI
+# Platina AI OS
 
-Agency operating system for social content: each client gets an isolated
-workspace with a baseline-driven content engine (ingestion → KB → Brand DNA →
-ideation → studio/compliance → calendar → learning loop).
+Campaign planning from a two-line brief. A planner turns the brief into a
+phased roadmap shown on a timeline, then learns from the results you record so
+the next plan starts from what worked. Built on an isolated org → workspace
+tenancy model. See `CLAUDE.md` for the build constitution (stack lock,
+isolation rules, scope) and `backend-rev.md` for the backend architecture.
 
-This repo currently contains **Slice 0 — Foundation**: design system, tenancy
-schema, auth, and the onboarding flow. See `CLAUDE.md` for the build
-constitution (stack lock, isolation rules, scope).
+> The earlier InstaMedia surface (`/w/*`) is hidden, not deleted, pending the
+> owner-signed transition matrix. Its code and data are intact.
 
 ## Stack
 
@@ -62,9 +63,3 @@ pages; DB-backed flows show a "setup required" notice.
 `workspace_id` (enforced by `src/db/schema.test.ts`); workspace-scoped query
 helpers in `src/db/queries/` take `workspaceId` as their first argument, and
 server actions verify membership before touching rows.
-
-## Roadmap (disabled in nav as "Coming soon")
-
-Ads Manager · Client Portal · Owner Cockpit · Drift Detection — plus Inngest
-background jobs, the model router (Groq / Gemini / Bedrock), and pgvector KB
-in upcoming slices.

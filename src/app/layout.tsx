@@ -6,11 +6,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "InstaMedia AI",
-    template: "%s · InstaMedia AI",
+    default: "Platina AI OS",
+    template: "%s · Platina AI OS",
   },
   description:
-    "The agency operating system for social content — baseline-driven ideation, studio, and calendar for every client workspace.",
+    "Campaign planning from a two-line brief — a planner that learns from your results, shown as a visual roadmap.",
 };
 
 // Sets `.dark` on <html> before first paint so there is no flash of the

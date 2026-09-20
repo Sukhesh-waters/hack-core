@@ -7,7 +7,7 @@ Organised by capability, not by build stage.
 - **Last substantive update:** 2026-08-17 — real-time collaboration roadmap. New Gap entries in §9.3, refusal narrowed in §15. See `docs/REALTIME-ARCHITECTURE-AUDIT-2026-08.md` and `docs/superpowers/specs/2026-08-17-realtime-collab-roadmap-design.md`.
 - **Supersedes:** the claude.ai Project Instructions panel (which still describes a dead FastAPI/Celery/CLIP/DALL-E stack), `instamedia_master_plan.html`, `instamedia_architecture.html`. Delete or archive those.
 - **Does not supersede:** `CLAUDE.md` (build constitution — rules), `PHASE-G-strategy-memory-delta.md` / `PHASE-G-implementation-plan.md` (spec and execution record for the now-shipped strategy-memory arc, §14). This document is the *what*; those remain the *how* and the historical record of *what shipped and how it was verified*.
-- **Companion:** `user-guide.md` is the human-readable version of the Live entries below. This document adds status, invariants, dependencies, and gaps.
+- **Note:** the InstaMedia user guide was removed in the Platina rebrand; this document is now the only description of the legacy InstaMedia use cases.
 
 ---
 

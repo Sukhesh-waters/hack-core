@@ -8,15 +8,15 @@ import { getMembership } from "@/db/queries/memberships";
 import { scheduledSlotsQuery } from "@/db/queries/schedule";
 import { getWorkspaceById } from "@/db/queries/workspaces";
 import { actionErrorMessage } from "@/lib/action-errors";
-import { askInstamedia, type AskGrounding } from "@/lib/ai/agents/content";
+import { askPlatina, type AskGrounding } from "@/lib/ai/agents/content";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { askSchema } from "@/lib/validation";
 
 export type AskResult = { answer: string } | { error: string };
 
-/** Ask InstaMedia — grounded on this workspace's first-party/operational
+/** Ask Platina — grounded on this workspace's first-party/operational
  *  rows only (never pattern-layer data). Role rides into the system prompt. */
-export async function askInstamediaAction(input: {
+export async function askPlatinaAction(input: {
   workspaceId: string;
   question: string;
 }): Promise<AskResult> {
@@ -63,8 +63,8 @@ export async function askInstamediaAction(input: {
     };
 
     const answer = await runWithAiCost(
-      { workspaceId, purpose: "ask-instamedia" },
-      () => askInstamedia(grounding, question),
+      { workspaceId, purpose: "ask-platina" },
+      () => askPlatina(grounding, question),
     );
     return { answer };
   } catch (error) {

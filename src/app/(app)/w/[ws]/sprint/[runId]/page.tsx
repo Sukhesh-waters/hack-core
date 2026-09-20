@@ -4,7 +4,7 @@ import { getSprintDeckQuery } from "@/db/queries/sprint";
 import { PageShell } from "@/components/page-shell";
 import { SprintCommandDeck } from "../sprint-command-deck";
 
-export const metadata = { title: "Campaign Sprint Command Deck | InstaMedia AI" };
+export const metadata = { title: "Campaign Sprint Command Deck | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
 export default async function SprintDeckPage({

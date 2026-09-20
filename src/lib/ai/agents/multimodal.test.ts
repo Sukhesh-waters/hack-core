@@ -6,7 +6,7 @@ const mockDraft: Draft = {
   caption: "Supercharge your agency operations with real-time AI workflows.",
   script: "Traditional marketing workflows stall on approvals. With instant real-time sync, your team moves as one.",
   hashtags: ["#aimarketing", "#workflow", "#agencylife"],
-  cta: "Try InstaMedia free today",
+  cta: "Try Platina free today",
 };
 
 const mockBrand: MergedBrandDna = {

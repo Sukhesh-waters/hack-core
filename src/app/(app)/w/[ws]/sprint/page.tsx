@@ -7,7 +7,7 @@ import { PageShell } from "@/components/page-shell";
 import { LaunchSprintDialog } from "./launch-sprint-dialog";
 import { Sparkles, Calendar, ChevronRight, Rocket } from "lucide-react";
 
-export const metadata = { title: "Campaign Sprints | InstaMedia AI" };
+export const metadata = { title: "Campaign Sprints | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
 export default async function SprintIndexPage({

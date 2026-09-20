@@ -214,7 +214,7 @@ export const ingestUrlSchema = z.object({
     ),
 });
 
-/** Ask InstaMedia floating assistant. */
+/** Ask Platina floating assistant. */
 export const askSchema = z.object({
   workspaceId: z.string().min(1, "Missing workspace"),
   question: z

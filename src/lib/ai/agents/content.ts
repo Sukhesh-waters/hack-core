@@ -363,7 +363,7 @@ export async function researchBrand(
 }
 
 // ---------------------------------------------------------------------------
-// Ask InstaMedia — the floating workspace assistant. Grounding is
+// Ask Platina — the floating workspace assistant. Grounding is
 // first-party/operational data ONLY (clients, schedule, tasks, approvals,
 // ideas). Pattern-layer rows never enter this context, so answers can never
 // cite public data as brand evidence (two-layer rule).
@@ -390,7 +390,7 @@ export const ASK_MAX_ITEMS = 10;
 
 export function buildAskSystem(role: AskGrounding["role"]): string {
   return [
-    "You are Ask InstaMedia, the in-app assistant for one agency workspace.",
+    "You are Ask Platina, the in-app assistant for one workspace.",
     `The user's role in this workspace is "${role}".`,
     "Answer ONLY from the workspace context provided. If the context doesn't cover the question, say you don't see it in this workspace — never invent clients, posts, metrics, or dates.",
     "Never reference other workspaces or public/scraped pattern data.",
@@ -436,7 +436,7 @@ export function buildAskPrompt(
   ].join("\n\n");
 }
 
-export async function askInstamedia(
+export async function askPlatina(
   grounding: AskGrounding,
   question: string,
 ): Promise<string> {

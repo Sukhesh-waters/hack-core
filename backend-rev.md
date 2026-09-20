@@ -1,4 +1,4 @@
-You are implementing the backend architecture for **InstaMedia AI**, an LLM-driven Marketing OS with multi-agent orchestration.
+You are implementing the backend architecture for **Platina AI OS**, an LLM-driven Marketing OS with multi-agent orchestration.
 
 The attached/defined architecture plan is the source of truth for architectural direction. Your task is to **inspect the existing codebase first, understand the current implementation and use cases, then incrementally refactor/build toward this architecture**.
 
@@ -538,7 +538,7 @@ Move all model calls behind the router.
 
 ### Phase 6 — First complete vertical workflow
 
-Select the most important existing InstaMedia AI use case.
+Select the most important existing Platina AI OS use case.
 
 Make the following work end to end:
 
@@ -622,7 +622,7 @@ At minimum, test:
 
 ### End-to-end
 
-At least one real InstaMedia AI use case must pass completely through:
+At least one real Platina AI OS use case must pass completely through:
 
 ```text
 Input
@@ -677,7 +677,7 @@ validate + execute + write
 APPLICATION STATE
 ```
 
-Build for the current InstaMedia AI use cases first.
+Build for the current Platina AI OS use cases first.
 
 Optimize for a **working prototype with clean boundaries**, not for theoretical enterprise scale.
 

@@ -7,7 +7,7 @@ const fullEnv = {
   AUTH_GOOGLE_ID: "google-client-id",
   AUTH_GOOGLE_SECRET: "google-client-secret",
   RESEND_API_KEY: "re_123",
-  EMAIL_FROM: "InstaMedia AI <noreply@instamedia.ai>",
+  EMAIL_FROM: "Platina AI OS <noreply@instamedia.ai>",
   GROQ_API_KEY: "groq_123",
   APIFY_TOKEN: "apify_123",
 };

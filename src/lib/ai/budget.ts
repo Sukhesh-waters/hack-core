@@ -60,7 +60,7 @@ export async function enforceAiBudget(now: Date = new Date()): Promise<void> {
         await resend.emails.send({
           from: process.env.EMAIL_FROM || "onboarding@resend.dev",
           to,
-          subject: "InstaMedia AI — daily AI budget reached",
+          subject: "Platina AI OS — daily AI budget reached",
           html: `<p>This workspace hit its daily AI spend cap of $${cap.toFixed(2)}. AI actions are paused until the day resets (UTC). Raise AI_DAILY_COST_CAP_USD if this cap is too tight.</p>`,
         });
       }

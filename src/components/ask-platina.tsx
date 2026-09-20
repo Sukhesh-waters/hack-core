@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { askInstamediaAction } from "@/app/(app)/w/[ws]/ask/actions";
+import { askPlatinaAction } from "@/app/(app)/w/[ws]/ask/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { GlassCard } from "@/components/glass-card";
@@ -14,7 +14,7 @@ type Exchange = {
 
 /** Floating workspace assistant. Transcript is session-local (client state);
  *  every answer comes from the guarded, workspace-grounded server action. */
-export function AskInstamedia({ workspaceId }: { workspaceId: string }) {
+export function AskPlatina({ workspaceId }: { workspaceId: string }) {
   const [open, setOpen] = useState(false);
   const [question, setQuestion] = useState("");
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
@@ -32,7 +32,7 @@ export function AskInstamedia({ workspaceId }: { workspaceId: string }) {
     setQuestion("");
     setExchanges((prev) => [...prev, { question: q }]);
     startTransition(async () => {
-      const result = await askInstamediaAction({ workspaceId, question: q });
+      const result = await askPlatinaAction({ workspaceId, question: q });
       setExchanges((prev) =>
         prev.map((ex, i) => (i === prev.length - 1 ? { ...ex, ...result } : ex)),
       );
@@ -44,7 +44,7 @@ export function AskInstamedia({ workspaceId }: { workspaceId: string }) {
       {open ? (
         <GlassCard className="flex h-[28rem] w-80 flex-col p-4">
           <div className="flex items-center justify-between">
-            <p className="label-mono text-muted-foreground/70">Ask InstaMedia</p>
+            <p className="label-mono text-muted-foreground/70">Ask Platina</p>
             <Button
               type="button"
               variant="ghost"
@@ -87,7 +87,7 @@ export function AskInstamedia({ workspaceId }: { workspaceId: string }) {
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="Ask a question…"
               maxLength={500}
-              aria-label="Ask InstaMedia a question"
+              aria-label="Ask Platina a question"
             />
             <Button type="submit" size="sm" disabled={pending}>
               {pending ? "…" : "Ask"}
@@ -96,7 +96,7 @@ export function AskInstamedia({ workspaceId }: { workspaceId: string }) {
         </GlassCard>
       ) : (
         <Button type="button" onClick={() => setOpen(true)}>
-          Ask InstaMedia
+          Ask Platina
         </Button>
       )}
     </div>

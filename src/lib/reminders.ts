@@ -50,7 +50,7 @@ export function buildHubReminderEmail(reminder: HubReminder): {
     html: [
       `<p>Hi ${reminder.ownerName ?? "there"},</p>`,
       `<p>Your reminder <strong>"${reminder.title}"</strong> is due at <strong>${when}</strong>.</p>`,
-      `<p>— InstaMedia AI Team Hub</p>`,
+      `<p>— Platina AI OS Team Hub</p>`,
     ].join("\n"),
   };
 }
@@ -76,7 +76,7 @@ export function buildReminderEmail(
     subject: `Publish reminder: “${slot.title}” — ${when}`,
     html: [
       `<p><strong>${slot.title}</strong> is scheduled for <strong>${when}</strong>.</p>`,
-      `<p>Open InstaMedia AI to grab the final caption, script, and hashtags.</p>`,
+      `<p>Open Platina AI OS to grab the final caption, script, and hashtags.</p>`,
       ...(unassigned
         ? [
             `<p><em>Nobody is assigned to this one yet, so the whole team got this. Assign an owner to stop that.</em></p>`,

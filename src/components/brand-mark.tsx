@@ -18,9 +18,9 @@ export function BrandMark({
           "font-display text-lg font-bold tracking-wider flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-br from-brand-purple/20 to-brand-teal/20 border border-brand-teal/30 text-brand-teal",
           className,
         )}
-        title="InstaMedia AI"
+        title="Platina AI OS"
       >
-        <span>IM</span>
+        <span>PA</span>
       </Link>
     );
   }
@@ -30,9 +30,9 @@ export function BrandMark({
       href={href}
       className={cn("font-display text-lg tracking-tight", className)}
     >
-      InstaMedia{" "}
+      Platina{" "}
       <span className="bg-gradient-to-r from-brand-teal via-brand-purple to-brand-amber bg-clip-text italic text-transparent">
-        AI
+        AI OS
       </span>
     </Link>
   );

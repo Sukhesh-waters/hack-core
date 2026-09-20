@@ -21,7 +21,7 @@ export default async function AppLayout({
           <div className="sticky top-0 z-30 flex items-center justify-between border-b border-border/50 bg-background/70 px-4 py-2.5 backdrop-blur-md md:hidden">
             <div className="flex items-center gap-3">
               <MobileNavTrigger />
-              <span className="font-display font-semibold text-sm">InstaMedia AI</span>
+              <span className="font-display font-semibold text-sm">Platina AI OS</span>
             </div>
           </div>
 

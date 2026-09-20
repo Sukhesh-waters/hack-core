@@ -26,7 +26,7 @@ export default async function LoginPage({
         <BrandMark className="text-2xl text-foreground" />
         <h1 className="mt-6 font-display text-3xl">Welcome back</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Sign in to your agency&apos;s workspaces.
+          Sign in to plan your campaigns.
         </p>
 
         {searchParams.sent ? (

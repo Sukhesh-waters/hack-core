@@ -3,7 +3,7 @@ export type ThemePreference = "light" | "dark";
 /** localStorage key. Namespaced so it never collides with another app's
  *  bare "theme" key if this ever runs alongside one (browser extensions,
  *  shared subdomains). */
-export const THEME_STORAGE_KEY = "instamedia-theme";
+export const THEME_STORAGE_KEY = "platina-theme";
 
 /**
  * `stored ?? system ?? "dark"`. An explicit user choice always wins; absent

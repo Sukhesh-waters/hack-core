@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
  * (UC-OPS-21). Mounted once in the workspace layout so "who's online" is
  * visible on all 25 sections, not just one (2026-08-17 audit finding).
  * Positioned bottom-20 LEFT deliberately — NotificationBell and
- * AskInstamediaLazy both stack on the right (see notification-bell.tsx's
+ * AskPlatinaLazy both stack on the right (see notification-bell.tsx's
  * own comment on that collision), this avoids it entirely.
  */
 export function WorkspacePresence({
