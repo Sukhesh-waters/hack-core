@@ -6,7 +6,7 @@ import { GlassCard } from "@/components/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { GeneratedSopTemplate } from "@/lib/ai/sop-template-agent";
+import type { GeneratedSopTemplate } from "@/lib/ai/agents/strategy";
 import { formatOffset } from "@/lib/sop/template";
 import {
   commitGeneratedTemplateAction,

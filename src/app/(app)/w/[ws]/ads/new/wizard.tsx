@@ -18,8 +18,8 @@ import {
   analyzeContentForAdsAction,
   generateCampaignStrategyAction,
 } from "../intelligence-actions";
-import type { AdSuitabilityResult } from "@/lib/ai/ad-suitability-agent";
-import type { CampaignStrategy } from "@/lib/ai/campaign-optimizer-agent";
+import type { AdSuitabilityResult } from "@/lib/ai/agents/critic";
+import type { CampaignStrategy } from "@/lib/ai/agents/strategy";
 
 const STEPS = [
   "AI Strategy",
@@ -120,6 +120,7 @@ export function CampaignWizard({
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [aiSuitability, setAiSuitability] = useState<AdSuitabilityResult[] | null>(null);
   const [aiStrategy, setAiStrategy] = useState<CampaignStrategy | null>(null);
+  const [aiCriticFeedback, setAiCriticFeedback] = useState<string[]>([]);
   const [aiError, setAiError] = useState<string | null>(null);
   const [selectedTopContentId, setSelectedTopContentId] = useState<string | null>(null);
 
@@ -153,7 +154,8 @@ export function CampaignWizard({
       
       setAiSuitability(suitabilityRes.rankings ?? null);
       setAiStrategy(strategyRes.strategy ?? null);
-      
+      setAiCriticFeedback(strategyRes.criticFeedback ?? []);
+
       if (suitabilityRes.rankings && suitabilityRes.rankings.length > 0) {
         setSelectedTopContentId(suitabilityRes.rankings[0].contentId);
       }
@@ -241,6 +243,7 @@ export function CampaignWizard({
                   patch({ clientId: e.target.value });
                   setAiSuitability(null);
                   setAiStrategy(null);
+                  setAiCriticFeedback([]);
                 }}
                 className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               >
@@ -300,6 +303,17 @@ export function CampaignWizard({
                     <p className="label-mono text-muted-foreground/70">Audience Targeting</p>
                     <p className="mt-1 text-sm text-foreground/90">{aiStrategy.audienceSuggestion}</p>
                   </div>
+
+                  {aiCriticFeedback.length > 0 && (
+                    <div className="rounded-md border border-brand-amber/40 bg-brand-amber/5 p-3">
+                      <p className="label-mono text-brand-amber">Independent review flagged</p>
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-foreground/80">
+                        {aiCriticFeedback.map((note, i) => (
+                          <li key={i}>{note}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   {aiSuitability && aiSuitability.length > 0 && (
                     <div>

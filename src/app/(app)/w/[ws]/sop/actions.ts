@@ -21,8 +21,12 @@ import {
   listWorkspaceMembers,
   requireCapability,
 } from "@/db/queries/memberships";
-import { generateTemplateDraft, type GeneratedSopTemplate } from "@/lib/ai/sop-template-agent";
-import { suggestNextAction, type StepSuggestion } from "@/lib/ai/sop-suggest-agent";
+import {
+  generateTemplateDraft,
+  type GeneratedSopTemplate,
+  suggestNextAction,
+  type StepSuggestion,
+} from "@/lib/ai/agents/strategy";
 
 
 import {

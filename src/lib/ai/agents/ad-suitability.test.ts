@@ -4,7 +4,7 @@ import {
   evaluateContentForAds,
   type OrganicContentItem,
   type MarketTrendContext,
-} from "./ad-suitability-agent";
+} from "./critic";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));
@@ -37,7 +37,7 @@ const sampleMarket: MarketTrendContext = {
   topAudiences: ["Women 25-45 skincare-interested"],
 };
 
-describe("ad-suitability-agent", () => {
+describe("ad-suitability (critic agent)", () => {
   it("returns empty array for empty content", async () => {
     const result = await evaluateContentForAds([], sampleMarket);
     expect(result).toEqual([]);

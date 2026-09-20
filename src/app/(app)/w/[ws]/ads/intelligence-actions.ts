@@ -5,25 +5,22 @@ import { requireMembership } from "@/db/queries/memberships";
 import {
   topAdEligibleContent,
   recentCompetitorAds,
-  clientBrandContext,
 } from "@/db/queries/ad-intelligence";
 import {
   evaluateContentForAds,
   type AdSuitabilityResult,
   type MarketTrendContext,
-} from "@/lib/ai/ad-suitability-agent";
-import {
   analyzeCompetitorAds,
   type PatternAdInput,
-} from "@/lib/ai/ads-insight-agent";
+} from "@/lib/ai/agents/critic";
 import {
-  generateCampaignStrategy,
   analyzeCampaignPerformance,
   type CampaignStrategy,
   type CampaignPostMortem,
   type CampaignContext,
   type MarketIntelligence,
-} from "@/lib/ai/campaign-optimizer-agent";
+} from "@/lib/ai/agents/strategy";
+import { runCampaignStrategy } from "@/lib/orchestrator/campaign-strategy";
 import { actionErrorMessage } from "@/lib/action-errors";
 
 // ---------------------------------------------------------------------------
@@ -57,7 +54,7 @@ export async function analyzeContentForAdsAction(
       topAudiences: [],
     };
 
-    // 3. If we have competitor ad data, run the ads-insight-agent first
+    // 3. If we have competitor ad data, run the ads-insight critic agent first
     if (competitorAds.length > 0) {
       const adInputs: PatternAdInput[] = competitorAds.map((ad) => ({
         id: ad.id,
@@ -103,6 +100,8 @@ export async function analyzeContentForAdsAction(
 
 export type CampaignStrategyState = {
   strategy?: CampaignStrategy;
+  /** Independent Critic findings; empty when the strategy passed review. */
+  criticFeedback?: string[];
   error?: string;
 };
 
@@ -115,50 +114,25 @@ export async function generateCampaignStrategyAction(
     const user = await requireUser();
     await requireMembership(workspaceId, user.id);
 
-    // 1. Build brand context
-    const clientInfo = await clientBrandContext(workspaceId, clientId);
-    const brandCtx = {
-      brandName: clientInfo?.name ?? "Brand",
-      positioning: clientInfo?.handle
-        ? `@${clientInfo.handle}`
-        : "Social media brand",
-    };
+    const result = await runCampaignStrategy({
+      workspaceId,
+      clientId,
+      selectedContentId,
+    });
 
-    // 2. Build market intelligence
-    const competitorAds = await recentCompetitorAds(workspaceId);
-    const market: MarketIntelligence = {
-      competitorHooks: competitorAds
-        .map((a) => a.adBody)
-        .filter((b): b is string => b !== null)
-        .slice(0, 5),
-      trendingFormats: competitorAds
-        .map((a) => a.adFormat)
-        .filter((f): f is string => f !== null)
-        .slice(0, 5),
-      audienceInsights: competitorAds
-        .map((a) => a.targetAudience)
-        .filter((a): a is string => a !== null)
-        .slice(0, 3),
-    };
-
-    // 3. Optionally include selected content
-    let selectedContent: { title: string; body: string | null } | undefined;
-    if (selectedContentId) {
-      const allContent = await topAdEligibleContent(workspaceId, clientId, 50);
-      const found = allContent.find((c) => c.id === selectedContentId);
-      if (found) {
-        selectedContent = { title: found.title, body: found.body };
-      }
+    switch (result.status) {
+      case "completed":
+        return {
+          strategy: result.output.strategy,
+          criticFeedback: result.output.criticFeedback,
+        };
+      case "invalid_proposal":
+        return {
+          error: `The AI proposed an unusable strategy (${result.reason}) — try again.`,
+        };
+      case "insufficient_context":
+        return { error: "Not enough context to build a strategy yet." };
     }
-
-    // 4. Generate strategy
-    const strategy = await generateCampaignStrategy(
-      brandCtx,
-      market,
-      selectedContent,
-    );
-
-    return { strategy };
   } catch (error) {
     return { error: actionErrorMessage(error) };
   }

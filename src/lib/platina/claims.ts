@@ -1,6 +1,6 @@
 /**
  * Claims and terminology screen. One violation shape:
- * { rule, excerpt, why } — the compliance-agent shape, not the live-meter fork.
+ * { rule, excerpt, why } — the critic agent's compliance shape, not the live-meter fork.
  * Deterministic check overrides any model verdict.
  */
 

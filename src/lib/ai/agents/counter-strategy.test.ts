@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import {
   buildCounterStrategyPrompt,
   generateCounterStrategy,
-} from "./counter-strategy-agent";
+} from "./strategy";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));
@@ -10,7 +10,7 @@ const routeAIMock = routeAI as unknown as Mock;
 
 beforeEach(() => routeAIMock.mockReset());
 
-describe("counter-strategy-agent", () => {
+describe("counter-strategy (strategy agent)", () => {
   it("returns empty array when competitor hook or brand context is empty", async () => {
     const res = await generateCounterStrategy({
       competitorHook: "",

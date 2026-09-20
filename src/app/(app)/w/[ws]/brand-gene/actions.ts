@@ -11,7 +11,7 @@ import { getClientById } from "@/db/queries/clients";
 import { requireMembership } from "@/db/queries/memberships";
 import { getKbStats, topMoversQuery } from "@/db/queries/posts";
 import { actionErrorMessage } from "@/lib/action-errors";
-import { researchBrand } from "@/lib/ai/brand-agent";
+import { researchBrand } from "@/lib/ai/agents/content";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { bedrockConfigured } from "@/lib/flags";
 import { brandContextSchema } from "@/lib/validation";

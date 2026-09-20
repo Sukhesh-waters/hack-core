@@ -10,8 +10,8 @@ import { requireCapability, requireMembership } from "@/db/queries/memberships";
 import { actionErrorMessage } from "@/lib/action-errors";
 import { launchCampaignSprint, type SprintLaunchResult } from "@/lib/pipeline/sprint-engine";
 import { getBrandProfile } from "@/db/queries/brand";
-import { parseDraftBody, formatDraftBody } from "@/lib/ai/generation-agent";
-import { checkCompliance, enforceCompliance } from "@/lib/ai/compliance-agent";
+import { parseDraftBody, formatDraftBody } from "@/lib/ai/agents/content";
+import { checkCompliance, enforceCompliance } from "@/lib/ai/agents/critic";
 import { routeAI } from "@/lib/ai/router";
 import { emitDomainEvent } from "@/lib/events/dispatch";
 

@@ -11,7 +11,7 @@ import {
   brandDnaFromProfile,
   NO_BRAND_CONTEXT_ERROR,
 } from "@/lib/ai/brand-merge";
-import { formatDraftBody, generateDraft } from "@/lib/ai/generation-agent";
+import { formatDraftBody, generateDraft } from "@/lib/ai/agents/content";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 
 type ContentType = (typeof contentType.enumValues)[number];

@@ -3,7 +3,7 @@ import {
   BrandResearchError,
   buildBrandPrompt,
   researchBrand,
-} from "./brand-agent";
+} from "./content";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));

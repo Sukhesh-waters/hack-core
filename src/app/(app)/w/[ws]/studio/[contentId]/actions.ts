@@ -25,8 +25,8 @@ import {
   normalizeHashtags,
   parseDraftBody,
   refineDraft,
-} from "@/lib/ai/generation-agent";
-import { enforceCompliance } from "@/lib/ai/compliance-agent";
+} from "@/lib/ai/agents/content";
+import { enforceCompliance } from "@/lib/ai/agents/critic";
 import {
   brandDnaFromProfile,
   NO_BRAND_CONTEXT_ERROR,

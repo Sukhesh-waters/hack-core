@@ -4,12 +4,12 @@ import {
   ComplianceError,
   enforceCompliance,
   findBannedWords,
-} from "./compliance-agent";
-import { refineDraft, type Draft } from "@/lib/ai/generation-agent";
+} from "./critic";
+import { refineDraft, type Draft } from "@/lib/ai/agents/content";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));
-vi.mock("@/lib/ai/generation-agent", async (importOriginal) => ({
+vi.mock("@/lib/ai/agents/content", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   refineDraft: vi.fn(),
 }));

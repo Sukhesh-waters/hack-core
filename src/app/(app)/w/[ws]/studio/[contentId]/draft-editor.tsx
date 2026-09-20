@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { GlassCard } from "@/components/glass-card";
 import { BrandComplianceMeter } from "@/components/studio/brand-compliance-meter";
-import type { Draft } from "@/lib/ai/generation-agent";
+import type { Draft } from "@/lib/ai/agents/content";
 import type { BrandContext } from "@/db/schema";
 import {
   autoFixComplianceAction,

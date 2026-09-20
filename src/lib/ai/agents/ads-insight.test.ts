@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { analyzeCompetitorAds, type PatternAdInput } from "./ads-insight-agent";
+import { analyzeCompetitorAds, type PatternAdInput } from "./critic";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));
@@ -18,7 +18,7 @@ const AD_FIXTURE: PatternAdInput[] = [
 
 beforeEach(() => routeAIMock.mockReset());
 
-describe("analyzeCompetitorAds", () => {
+describe("analyzeCompetitorAds (critic agent)", () => {
   it("returns fallback for empty ad input list without calling routeAI", async () => {
     const res = await analyzeCompetitorAds([]);
     expect(res.summary).toContain("No competitor ads");

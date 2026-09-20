@@ -5,7 +5,7 @@ import { Check, Copy, Film, Image as ImageIcon, Mic, Sparkles } from "lucide-rea
 import { GlassCard } from "@/components/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { MultimodalAssetPack } from "@/lib/ai/multimodal-agent";
+import type { MultimodalAssetPack } from "@/lib/ai/agents/content";
 
 export function MultimodalAssetDrawer({
   assets,

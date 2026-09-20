@@ -45,7 +45,7 @@ vi.mock("@/db/queries/memberships", () => ({
   listWorkspaceMembers: vi.fn().mockResolvedValue([{ userId: "u1", role: "admin" }]),
 }));
 
-vi.mock("@/lib/ai/ideation-agent", () => ({
+vi.mock("@/lib/ai/agents/strategy", () => ({
   generateIdeas: vi.fn().mockResolvedValue([
     {
       hook: "Stop doing cardio before weights",
@@ -62,7 +62,7 @@ vi.mock("@/lib/ai/ideation-agent", () => ({
   ]),
 }));
 
-vi.mock("@/lib/ai/generation-agent", () => ({
+vi.mock("@/lib/ai/agents/content", () => ({
   generateDraft: vi.fn().mockResolvedValue({
     caption: "Here is why cardio timing matters...",
     script: "Hook: Stop doing cardio first. Step 1: Warm up with dynamic stretches...",
@@ -75,7 +75,7 @@ vi.mock("@/lib/ai/generation-agent", () => ({
   parseDraftBody: vi.fn(),
 }));
 
-vi.mock("@/lib/ai/compliance-agent", () => ({
+vi.mock("@/lib/ai/agents/critic", () => ({
   checkCompliance: vi.fn().mockResolvedValue({
     verdict: "pass",
     violations: [],
@@ -88,7 +88,7 @@ vi.mock("@/lib/events/dispatch", () => ({
 }));
 
 import { launchCampaignSprint } from "./sprint-engine";
-import { checkCompliance } from "@/lib/ai/compliance-agent";
+import { checkCompliance } from "@/lib/ai/agents/critic";
 import { emitDomainEvent } from "@/lib/events/dispatch";
 import { loadSopTemplate, type LoadedSopTemplate } from "@/db/queries/sop";
 

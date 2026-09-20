@@ -23,7 +23,7 @@ export type IdeaView = {
   citedCaptions: string[];
   status: IdeaStatus;
   // G1 — computed server-side from whyReason === DECLARED_ONLY_REASON.
-  // NOT re-derived here: importing ideation-agent.ts (server-only AI router
+  // NOT re-derived here: importing agents/strategy.ts (server-only AI router
   // chain, node:async_hooks) from this "use client" file breaks the client
   // bundle. Copy only, no new logic.
   isDeclaredOnly: boolean;

@@ -106,7 +106,7 @@ const FORBIDDEN_EXACT = new Set([
   "@/db/queries/schedule",
   // Campaign
   "@/db/queries/campaigns",
-  "@/lib/ai/campaign-optimizer-agent",
+  "@/lib/ai/agents/strategy",
   // Notification
   "@/db/queries/notifications",
   "@/lib/reminders",

@@ -4,7 +4,7 @@ import * as routerModule from "@/lib/ai/router";
 import {
   buildSuggestPrompt,
   suggestNextAction,
-} from "./sop-suggest-agent";
+} from "./strategy";
 
 function makeRun(): SopRunRow {
   return {
@@ -43,7 +43,7 @@ function makeStep(overrides?: Partial<SopRunStepRow>): SopRunStepRow {
   };
 }
 
-describe("A3 — SOP Suggest Agent", () => {
+describe("A3 — SOP Suggest (strategy agent)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

@@ -5,7 +5,7 @@ import {
   buildAskPrompt,
   buildAskSystem,
   type AskGrounding,
-} from "./ask-agent";
+} from "./content";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));

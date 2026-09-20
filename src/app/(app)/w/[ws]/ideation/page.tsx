@@ -3,7 +3,7 @@ import { listActiveGoalsForClient } from "@/db/queries/client-goals";
 import { listIdeas } from "@/db/queries/ideas";
 import { getPostsByIds } from "@/db/queries/posts";
 import { GlassCard } from "@/components/glass-card";
-import { DECLARED_ONLY_REASON } from "@/lib/ai/ideation-agent";
+import { DECLARED_ONLY_REASON } from "@/lib/ai/agents/strategy";
 import { IdeaPool } from "./idea-pool";
 import type { IdeaView } from "./idea-card";
 import { TopicForm, type GoalOption } from "./topic-form";

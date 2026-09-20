@@ -7,7 +7,7 @@ import {
   parseDraftBody,
   refineDraft,
   type Draft,
-} from "./generation-agent";
+} from "./content";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));

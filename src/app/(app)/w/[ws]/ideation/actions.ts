@@ -16,7 +16,7 @@ import {
   brandDnaFromProfile,
   NO_BRAND_CONTEXT_ERROR,
 } from "@/lib/ai/brand-merge";
-import { combineIdeas, generateIdeas, markDeclaredOnly } from "@/lib/ai/ideation-agent";
+import { combineIdeas, generateIdeas, markDeclaredOnly } from "@/lib/ai/agents/strategy";
 import { retrieveDrivers } from "@/lib/ai/retrieval";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { MIN_BASELINE_N } from "@/lib/scoring";

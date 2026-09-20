@@ -4,7 +4,7 @@ import {
   generateTemplateDraft,
   SopTemplateAgentError,
   validateGeneratedGraph,
-} from "./sop-template-agent";
+} from "./strategy";
 
 type MockRouteAI = {
   mockResolvedValue: (val: string) => MockRouteAI;
@@ -16,7 +16,7 @@ function spyRouteAI(): MockRouteAI {
   return vi.spyOn(routerModule, "routeAI") as unknown as MockRouteAI;
 }
 
-describe("A1 — SOP Template Agent", () => {
+describe("A1 — SOP Template (strategy agent)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });

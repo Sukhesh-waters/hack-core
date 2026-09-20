@@ -8,7 +8,7 @@ import {
   markDeclaredOnly,
   validateCitations,
   type IdeaDraft,
-} from "./ideation-agent";
+} from "./strategy";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));

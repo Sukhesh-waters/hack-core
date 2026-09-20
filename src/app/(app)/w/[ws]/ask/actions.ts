@@ -8,7 +8,7 @@ import { getMembership } from "@/db/queries/memberships";
 import { scheduledSlotsQuery } from "@/db/queries/schedule";
 import { getWorkspaceById } from "@/db/queries/workspaces";
 import { actionErrorMessage } from "@/lib/action-errors";
-import { askInstamedia, type AskGrounding } from "@/lib/ai/ask-agent";
+import { askInstamedia, type AskGrounding } from "@/lib/ai/agents/content";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { askSchema } from "@/lib/validation";
 

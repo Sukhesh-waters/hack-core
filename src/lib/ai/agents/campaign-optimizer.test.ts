@@ -7,7 +7,7 @@ import {
   type MarketIntelligence,
   type BrandContext,
   type CampaignContext,
-} from "./campaign-optimizer-agent";
+} from "./strategy";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));
@@ -26,7 +26,7 @@ const market: MarketIntelligence = {
   audienceInsights: ["Coffee enthusiasts 25-45", "Health-conscious millennials"],
 };
 
-describe("campaign-optimizer-agent (strategy)", () => {
+describe("campaign strategy (strategy agent)", () => {
   it("builds strategy prompt with brand and market context", () => {
     const prompt = buildStrategyPrompt(brand, market);
     expect(prompt).toContain("FreshRoast Coffee");
@@ -74,7 +74,7 @@ describe("campaign-optimizer-agent (strategy)", () => {
   });
 });
 
-describe("campaign-optimizer-agent (post-mortem)", () => {
+describe("campaign post-mortem (strategy agent)", () => {
   const activeCampaign: CampaignContext = {
     name: "Summer Freshness Push",
     objective: "traffic",

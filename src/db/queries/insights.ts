@@ -49,7 +49,7 @@ export async function createInsights(input: {
       workspaceId: input.workspaceId,
       pattern: o.pattern,
       suggestion: o.suggestion,
-      // Already stripped by validateEvidence in pattern-insight-agent.ts.
+      // Already stripped by validateEvidence in src/lib/ai/agents/critic.ts.
       // Persist its output; do NOT add a second validation layer here.
       evidencePatternIds: o.evidence,
       patternRunId: input.patternRunId ?? null,

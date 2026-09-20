@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { generateMultimodalAssets } from "./multimodal-agent";
-import type { Draft } from "./generation-agent";
-import type { MergedBrandDna } from "./brand-merge";
+import { generateMultimodalAssets, type Draft } from "./content";
+import type { MergedBrandDna } from "@/lib/ai/brand-merge";
 
 const mockDraft: Draft = {
   caption: "Supercharge your agency operations with real-time AI workflows.",
@@ -24,7 +23,7 @@ const mockBrand: MergedBrandDna = {
   typography: "Display Serif",
 };
 
-describe("generateMultimodalAssets", () => {
+describe("generateMultimodalAssets (content agent)", () => {
   it("produces complete storyboard, image prompts, and voiceover scripts", () => {
     const pack = generateMultimodalAssets({ draft: mockDraft, brand: mockBrand });
 

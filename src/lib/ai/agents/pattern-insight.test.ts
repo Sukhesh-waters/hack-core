@@ -5,7 +5,7 @@ import {
   PatternInsightError,
   validateEvidence,
   type PatternPostInput,
-} from "./pattern-insight-agent";
+} from "./critic";
 import { routeAI } from "@/lib/ai/router";
 
 vi.mock("@/lib/ai/router", () => ({ routeAI: vi.fn() }));

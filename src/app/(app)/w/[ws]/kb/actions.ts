@@ -14,7 +14,7 @@ import { actionErrorMessage } from "@/lib/action-errors";
 import {
   generatePatternInsights,
   type PatternObservation,
-} from "@/lib/ai/pattern-insight-agent";
+} from "@/lib/ai/agents/critic";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { harnessRuleSchema } from "@/lib/validation";
 

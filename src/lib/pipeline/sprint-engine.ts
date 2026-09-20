@@ -12,9 +12,9 @@ import {
 } from "@/db/schema";
 import { getBrandProfile } from "@/db/queries/brand";
 import { ensureContentWorkflow, initialStateQuery } from "@/db/queries/workflow-seed";
-import { generateIdeas } from "@/lib/ai/ideation-agent";
-import { generateDraft, formatDraftBody } from "@/lib/ai/generation-agent";
-import { checkCompliance } from "@/lib/ai/compliance-agent";
+import { generateIdeas } from "@/lib/ai/agents/strategy";
+import { generateDraft, formatDraftBody } from "@/lib/ai/agents/content";
+import { checkCompliance } from "@/lib/ai/agents/critic";
 import { emitDomainEvent } from "@/lib/events/dispatch";
 import { addBusinessDays } from "@/lib/sop/cascade";
 import {
