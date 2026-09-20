@@ -21,9 +21,30 @@ describe("runOrchestration", () => {
     expect(result).toEqual({
       status: "insufficient_context",
       state: "insufficient_baseline",
+      sampleSize: 3,
     });
     expect(agent).not.toHaveBeenCalled();
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  it("carries the reason through when required context is missing", async () => {
+    const result = await runOrchestration({
+      taskType: "test_task",
+      contextParams: {},
+      assembleContext: async () => ({
+        state: "missing_context",
+        reason: "No brand context yet",
+      }),
+      agent: vi.fn(),
+      validate: () => ({ valid: true }),
+      apply: vi.fn(),
+    });
+
+    expect(result).toEqual({
+      status: "insufficient_context",
+      state: "missing_context",
+      reason: "No brand context yet",
+    });
   });
 
   it("short-circuits on an invalid proposal without calling critic or apply", async () => {

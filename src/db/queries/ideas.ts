@@ -23,6 +23,23 @@ export async function listIdeas(
     .limit(opts.limit ?? 30);
 }
 
+export type NewIdeaRow = {
+  workspaceId: string;
+  clientId: string;
+  topic: string;
+  hook: string;
+  angle: string | null;
+  format: string | null;
+  whyReason: string | null;
+  citations: string[];
+};
+
+/** Batch insert of proposed ideas. Every row carries its own workspaceId. */
+export async function createIdeas(rows: NewIdeaRow[]) {
+  if (rows.length === 0) return;
+  await db.insert(ideas).values(rows);
+}
+
 export async function getIdea(workspaceId: string, ideaId: string) {
   const rows = await db
     .select()

@@ -4,16 +4,24 @@
  * logic, not a reasoning agent — recipes never let an LLM choose what to
  * query. Every recipe's `assemble` call must be traceable (logContextAssembly)
  * so a developer can see exactly what an agent run saw.
+ *
+ * States: context_available; insufficient_baseline (below the min-N gate);
+ * insufficient_relevance (retrieval found nothing usable);
+ * missing_context (a required input, e.g. brand DNA, does not exist yet).
+ * retrieval.ts's DriverBrief predates this and keeps its own
+ * "ready"/"insufficient_baseline" union — do not rename it.
  */
 export type ContextState =
   | "context_available"
   | "insufficient_baseline"
-  | "insufficient_relevance";
+  | "insufficient_relevance"
+  | "missing_context";
 
 export type ContextResult<T> =
   | { state: "context_available"; context: T }
   | { state: "insufficient_baseline"; sampleSize: number }
-  | { state: "insufficient_relevance" };
+  | { state: "insufficient_relevance" }
+  | { state: "missing_context"; reason: string };
 
 export type ContextRecipe<TParams, TContext> = {
   taskType: string;

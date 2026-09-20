@@ -9,7 +9,14 @@ export type CriticVerdict =
   | { verdict: "flagged"; feedback: string[] };
 
 export type OrchestrationResult<TOutput> =
-  | { status: "insufficient_context"; state: ContextState }
+  | {
+      status: "insufficient_context";
+      state: ContextState;
+      /** Set when state is insufficient_baseline. */
+      sampleSize?: number;
+      /** Set when state is missing_context. */
+      reason?: string;
+    }
   | { status: "invalid_proposal"; reason: string }
   | { status: "completed"; output: TOutput; critic?: CriticVerdict };
 
@@ -35,7 +42,7 @@ export async function runOrchestration<TParams, TContext, TProposal, TOutput>(in
   contextParams: TParams;
   assembleContext: (params: TParams) => Promise<ContextResult<TContext>>;
   agent: (context: TContext) => Promise<TProposal>;
-  validate: (proposal: TProposal) => ValidationResult;
+  validate: (proposal: TProposal, context: TContext) => ValidationResult;
   /** Independent challenge pass. Omit only for tasks with no critic wired yet. */
   critic?: (proposal: TProposal, context: TContext) => Promise<CriticVerdict>;
   apply: (
@@ -46,12 +53,21 @@ export async function runOrchestration<TParams, TContext, TProposal, TOutput>(in
 }): Promise<OrchestrationResult<TOutput>> {
   const assembled = await input.assembleContext(input.contextParams);
   if (assembled.state !== "context_available") {
-    return { status: "insufficient_context", state: assembled.state };
+    return {
+      status: "insufficient_context",
+      state: assembled.state,
+      ...(assembled.state === "insufficient_baseline"
+        ? { sampleSize: assembled.sampleSize }
+        : {}),
+      ...(assembled.state === "missing_context"
+        ? { reason: assembled.reason }
+        : {}),
+    };
   }
 
   const proposal = await input.agent(assembled.context);
 
-  const validation = input.validate(proposal);
+  const validation = input.validate(proposal, assembled.context);
   if (!validation.valid) {
     return { status: "invalid_proposal", reason: validation.reason };
   }

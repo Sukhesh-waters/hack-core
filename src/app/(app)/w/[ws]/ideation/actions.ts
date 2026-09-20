@@ -7,7 +7,6 @@ import { requireUser } from "@/auth";
 import { db } from "@/db";
 import { ideas } from "@/db/schema";
 import { getBrandProfile } from "@/db/queries/brand";
-import { getClientGoalById } from "@/db/queries/client-goals";
 import { rejectIdea } from "@/db/queries/ideas";
 import { requireMembership } from "@/db/queries/memberships";
 import { actionErrorMessage } from "@/lib/action-errors";
@@ -16,9 +15,9 @@ import {
   brandDnaFromProfile,
   NO_BRAND_CONTEXT_ERROR,
 } from "@/lib/ai/brand-merge";
-import { combineIdeas, generateIdeas, markDeclaredOnly } from "@/lib/ai/agents/strategy";
-import { retrieveDrivers } from "@/lib/ai/retrieval";
+import { combineIdeas } from "@/lib/ai/agents/strategy";
 import { runWithAiCost } from "@/lib/ai/usage-context";
+import { runIdeationFlow } from "@/lib/orchestrator/ideation";
 import { MIN_BASELINE_N } from "@/lib/scoring";
 import { acceptIdea } from "@/lib/plan/accept-idea";
 
@@ -53,75 +52,25 @@ export async function runIdeation(
     const user = await requireUser();
     await requireMembership(workspaceId, user.id);
 
-    const profile = await getBrandProfile(workspaceId, clientId);
-    const dna = brandDnaFromProfile(profile);
-    if (!dna) return { error: NO_BRAND_CONTEXT_ERROR };
-
-    // G1 — never trust the goalId the form submitted as proof it belongs to
-    // this client/workspace; a forged id from another client silently
-    // resolves to null here rather than leaking cross-tenant goal text into
-    // the prompt.
-    const goalRow = goalId
-      ? await getClientGoalById(workspaceId, clientId, goalId)
-      : null;
-    const goal = goalRow
-      ? { title: goalRow.title, hypothesis: goalRow.hypothesis }
-      : null;
-
-    const outcome = await runWithAiCost(
+    const result = await runWithAiCost(
       { workspaceId, purpose: "ideation" },
-      async () => {
-        const retrieval = await retrieveDrivers({
-          workspaceId,
-          clientId,
-          topic,
-        });
-        if (retrieval.status === "insufficient_baseline") {
-          if (!profile?.declared) {
-            // Min-N gate: an honest refusal, not fabricated ideas
-            return {
-              error: `Insufficient baseline — ${retrieval.sampleSize} of ${MIN_BASELINE_N} scored posts. Import more history before ideating.`,
-            } as const;
-          }
-          // Declared-only mode: no baseline evidence yet, so ideas run on
-          // the human-declared context alone — whyReason says so,
-          // citations stay [].
-          const generated = await generateIdeas({
-            topic,
-            identity: dna,
-            brief:
-              "No first-party baseline yet. Ideate strictly from the declared brand context above — do not fabricate performance evidence.",
-            drivers: [],
-            goal,
-          });
-          return { drafts: markDeclaredOnly(generated) } as const;
-        }
+      () => runIdeationFlow({ workspaceId, clientId, topic, goalId }),
+    );
+
+    if (result.status === "insufficient_context") {
+      if (result.state === "insufficient_baseline") {
+        // Min-N gate: an honest refusal, not fabricated ideas
         return {
-          drafts: await generateIdeas({
-            topic,
-            identity: dna,
-            brief: retrieval.brief,
-            drivers: retrieval.drivers,
-            citedPostIds: retrieval.citedPostIds,
-            goal,
-          }),
-        } as const;
-      },
-    );
-    if ("error" in outcome) return { error: outcome.error };
-    const drafts = outcome.drafts;
-    await db.insert(ideas).values(
-      drafts.map((idea) => ({
-        workspaceId,
-        clientId,
-        topic,
-        hook: idea.hook,
-        angle: idea.angle,
-        format: idea.format,
-        whyReason: idea.why.reason,
-        citations: idea.why.citations,
-      })),
-    );
+          error: `Insufficient baseline — ${result.sampleSize ?? 0} of ${MIN_BASELINE_N} scored posts. Import more history before ideating.`,
+        };
+      }
+      return { error: result.reason ?? NO_BRAND_CONTEXT_ERROR };
+    }
+    if (result.status === "invalid_proposal") {
+      return {
+        error: `The AI proposed unusable ideas (${result.reason}) — try again.`,
+      };
+    }
   } catch (error) {
     return { error: actionErrorMessage(error) };
   }
