@@ -12,7 +12,7 @@ export function workspaceSpendQuery(workspaceId: string, since: Date) {
   return db
     .select({
       costUsd: sql<number>`coalesce(sum(${aiUsage.costUsd}), 0)::float`,
-      calls: sql<number>`count(*)::int`,
+      calls: sql<number>`count(*) filter (where ${aiUsage.status} = 'ok')::int`,
     })
     .from(aiUsage)
     .where(
@@ -33,7 +33,7 @@ export function spendByProviderQuery(workspaceId: string, since: Date) {
     .select({
       provider: aiUsage.provider,
       costUsd: sql<number>`coalesce(sum(${aiUsage.costUsd}), 0)::float`,
-      calls: sql<number>`count(*)::int`,
+      calls: sql<number>`count(*) filter (where ${aiUsage.status} = 'ok')::int`,
       tokensIn: sql<number>`coalesce(sum(${aiUsage.tokensIn}), 0)::int`,
       tokensOut: sql<number>`coalesce(sum(${aiUsage.tokensOut}), 0)::int`,
     })

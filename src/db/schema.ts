@@ -1339,7 +1339,7 @@ export const patternComments = pgTable(
 // Intelligence layer (Phase 3). brand_profiles caches the one-time Brand DNA
 // research per client; ideas carry the "why this idea" citations, which may
 // reference first-party baseline posts ONLY (guardrail:
-// src/lib/ai/ideation-agent.ts validateCitations).
+// src/lib/ai/agents/strategy.ts validateCitations).
 // ---------------------------------------------------------------------------
 
 export type BrandIdentity = {
@@ -2339,6 +2339,12 @@ export const aiUsage = pgTable(
     tokensOut: integer("tokens_out").notNull().default(0),
     costUsd: real("cost_usd").notNull().default(0),
     purpose: text("purpose"),
+    // Per-attempt observability. A failed provider attempt gets its own
+    // zero-cost row (status='failed', error set) so a fallback success is
+    // visible as failed row + ok row instead of hiding the first failure.
+    latencyMs: integer("latency_ms"),
+    status: text("status").notNull().default("ok"), // ok | failed
+    error: text("error"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({

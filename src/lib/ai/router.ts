@@ -65,7 +65,52 @@ type ChatOutcome = {
   model: string;
   tokensIn?: number;
   tokensOut?: number;
+  latencyMs?: number;
 };
+
+/** Never persist a key: Gemini authenticates via ?key= in the URL. */
+function safeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/key=[^&\s"']+/gi, "key=[redacted]").slice(0, 300);
+}
+
+/**
+ * Times one provider attempt. A failure is logged as its own zero-cost row
+ * before rethrowing, so a fallback success never hides that the primary
+ * provider failed (and a total failure still leaves a trace).
+ */
+async function attempt(
+  task: ChatTask,
+  provider: ChatOutcome["provider"],
+  model: string,
+  run: () => Promise<ChatOutcome>,
+): Promise<ChatOutcome> {
+  const start = Date.now();
+  try {
+    const outcome = await run();
+    return { ...outcome, latencyMs: Date.now() - start };
+  } catch (error) {
+    logAiUsage({
+      provider,
+      model,
+      kind: "chat",
+      tier: task.tier ?? "fast",
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: Date.now() - start,
+      status: "failed",
+      error: safeErrorMessage(error),
+    });
+    throw error;
+  }
+}
+
+const viaGroq = (task: ChatTask) =>
+  attempt(task, "groq", GROQ_MODEL, () => groqChat(task));
+const viaGemini = (task: ChatTask, model: string = GEMINI_CHAT_MODEL) =>
+  attempt(task, "gemini", model, () => geminiChat(task, model));
+const viaBedrock = (task: ChatTask) =>
+  attempt(task, "bedrock", bedrockModel(), () => bedrockChat(task));
 
 export async function routeAI(task: ChatTask): Promise<string>;
 export async function routeAI(task: EmbedTask): Promise<number[][]>;
@@ -76,13 +121,30 @@ export async function routeAI(
   await enforceAiBudget();
 
   if (task.kind === "embed") {
-    const vectors = await geminiEmbed(task.texts);
+    const start = Date.now();
+    let vectors: number[][];
+    try {
+      vectors = await geminiEmbed(task.texts);
+    } catch (error) {
+      logAiUsage({
+        provider: "gemini",
+        model: GEMINI_EMBED_MODEL,
+        kind: "embed",
+        tokensIn: 0,
+        tokensOut: 0,
+        latencyMs: Date.now() - start,
+        status: "failed",
+        error: safeErrorMessage(error),
+      });
+      throw error;
+    }
     logAiUsage({
       provider: "gemini",
       model: GEMINI_EMBED_MODEL,
       kind: "embed",
       tokensIn: task.texts.reduce((sum, t) => sum + estimateTokens(t), 0),
       tokensOut: 0,
+      latencyMs: Date.now() - start,
     });
     return vectors;
   }
@@ -101,19 +163,20 @@ export async function routeAI(
       outcome.tokensIn ??
       estimateTokens(`${task.system ?? ""}${task.prompt}`),
     tokensOut: outcome.tokensOut ?? estimateTokens(outcome.text),
+    latencyMs: outcome.latencyMs,
   });
   return outcome.text;
 }
 
 async function pinnedChat(task: ChatTask): Promise<ChatOutcome> {
-  if (task.pin === "groq") return groqChat(task);
-  if (task.pin === "gemini") return geminiChat(task);
-  return bedrockChat(task);
+  if (task.pin === "groq") return viaGroq(task);
+  if (task.pin === "gemini") return viaGemini(task);
+  return viaBedrock(task);
 }
 
 async function fastChat(task: ChatTask): Promise<ChatOutcome> {
   try {
-    return await groqChat(task);
+    return await viaGroq(task);
   } catch (error) {
     // Degradation ladder: provider throttled, down, or unable to serve the
     // configured model (404 — e.g. a retired/inaccessible model id, the
@@ -125,7 +188,7 @@ async function fastChat(task: ChatTask): Promise<ChatOutcome> {
       (error.status === 404 ||
         error.status === 429 ||
         (error.status ?? 0) >= 500);
-    if (swappable) return geminiChat(task);
+    if (swappable) return viaGemini(task);
     throw error;
   }
 }
@@ -138,15 +201,15 @@ async function fastChat(task: ChatTask): Promise<ChatOutcome> {
 async function qualityChat(task: ChatTask): Promise<ChatOutcome> {
   if (bedrockConfigured()) {
     try {
-      return await bedrockChat(task);
+      return await viaBedrock(task);
     } catch {
-      // fall through the ladder
+      // fall through the ladder — the failed attempt is already logged
     }
   }
   try {
-    return await geminiChat(task, geminiQualityModel());
+    return await viaGemini(task, geminiQualityModel());
   } catch {
-    return groqChat(task);
+    return viaGroq(task);
   }
 }
 

@@ -499,6 +499,20 @@ export default async function CockpitPage({
                     {row.purpose ?? row.kind} · {row.model}
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
+                    {row.status === "failed" ? (
+                      <Badge
+                        variant="outline"
+                        className="border-destructive/40 text-destructive"
+                        title={row.error ?? undefined}
+                      >
+                        failed
+                      </Badge>
+                    ) : null}
+                    {row.latencyMs !== null ? (
+                      <span className="font-mono text-xs text-muted-foreground/70">
+                        {row.latencyMs}ms
+                      </span>
+                    ) : null}
                     <Badge
                       variant="outline"
                       className="border-border text-muted-foreground/70"

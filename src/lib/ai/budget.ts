@@ -81,21 +81,31 @@ export type UsageEvent = {
   tier?: string;
   tokensIn: number;
   tokensOut: number;
+  latencyMs?: number;
+  /** Defaults to "ok". A failed attempt is logged with zero tokens and cost. */
+  status?: "ok" | "failed";
+  error?: string;
 };
 
 /** Fire-and-forget: a telemetry failure must never fail the AI call. */
 export function logAiUsage(event: UsageEvent): void {
   if (!isDbConfigured()) return;
   const ctx = currentAiCost();
+  const failed = event.status === "failed";
   void insertAiUsage({
     workspaceId: ctx?.workspaceId ?? null,
     provider: event.provider,
     model: event.model,
     kind: event.kind,
     tier: event.tier ?? null,
-    tokensIn: event.tokensIn,
-    tokensOut: event.tokensOut,
-    costUsd: estimateCostUsd(event.model, event.tokensIn, event.tokensOut),
+    tokensIn: failed ? 0 : event.tokensIn,
+    tokensOut: failed ? 0 : event.tokensOut,
+    costUsd: failed
+      ? 0
+      : estimateCostUsd(event.model, event.tokensIn, event.tokensOut),
     purpose: ctx?.purpose ?? null,
+    latencyMs: event.latencyMs ?? null,
+    status: failed ? "failed" : "ok",
+    error: failed ? (event.error ?? "unknown error") : null,
   }).catch((error) => console.error("AI usage log failed:", error));
 }
