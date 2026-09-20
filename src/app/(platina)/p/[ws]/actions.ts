@@ -61,10 +61,7 @@ import { getConferencePreset } from "@/lib/platina/presets";
 import { auditCopyAgainstStandard } from "@/lib/platina/drift";
 import { runBrandExtraction } from "@/lib/platina/brand-extract";
 import { blockersFor, eventTaskTemplate, isBoardStatus, templateDueDate } from "@/lib/platina/tasks";
-import {
-  ALERT_SOURCE_FIELDS,
-  isAlertSource,
-} from "@/lib/platina/alerts";
+import { isAlertSource } from "@/lib/platina/alerts";
 import {
   leadQualityScore,
   outcomeRowHash,
