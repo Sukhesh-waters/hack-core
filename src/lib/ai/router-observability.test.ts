@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { AIRouterError, routeAI } from "./router";
+import { AIRouterError, providerHealth, routeAI } from "./router";
+import { providerCapacity } from "./orchestration";
 import { logAiUsage } from "./budget";
 
 vi.mock("./budget", () => ({
@@ -27,6 +28,10 @@ const GEMINI_OK = {
 
 beforeEach(() => {
   logMock.mockClear();
+  // Cooldowns and capacity are process-wide; one test's failures must not
+  // reorder the next test's ladder.
+  providerHealth.reset();
+  providerCapacity.reset();
   vi.stubEnv("GROQ_API_KEY", "test-groq-key");
   vi.stubEnv("GEMINI_API_KEY", "test-gemini-key");
   vi.stubEnv("AWS_REGION", "");
@@ -89,6 +94,8 @@ describe("router observability", () => {
       "fetch",
       vi
         .fn()
+        // Gemini tries both of its candidate models before the ladder moves on.
+        .mockResolvedValueOnce(jsonResponse({ error: "down" }, 500))
         .mockResolvedValueOnce(jsonResponse({ error: "down" }, 500))
         .mockResolvedValueOnce(
           jsonResponse({ choices: [{ message: { content: "groq saves" } }] }),
@@ -99,6 +106,7 @@ describe("router observability", () => {
 
     const events = logMock.mock.calls.map((c) => c[0]);
     expect(events.map((e) => [e.provider, e.status ?? "ok"])).toEqual([
+      ["gemini", "failed"],
       ["gemini", "failed"],
       ["groq", "ok"],
     ]);
@@ -118,6 +126,7 @@ describe("router observability", () => {
 
     expect(logMock.mock.calls.map((c) => [c[0].provider, c[0].status])).toEqual([
       ["groq", "failed"],
+      ["gemini", "failed"],
       ["gemini", "failed"],
     ]);
   });

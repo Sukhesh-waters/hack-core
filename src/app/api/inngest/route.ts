@@ -27,6 +27,8 @@ import { platinaAlertSweep } from "@/inngest/functions/platina/alert-sweep";
 import { platinaEventWindow } from "@/inngest/functions/platina/event-window";
 import { platinaDivergenceScan } from "@/inngest/functions/platina/divergence-scan";
 import { platinaBrandRefresh } from "@/inngest/functions/platina/brand-refresh";
+import { platinaInterestExtract } from "@/inngest/functions/platina/interest-extract";
+import { platinaEventExtract } from "@/inngest/functions/platina/event-extract";
 
 const handler = serve({
   client: inngest,
@@ -57,6 +59,8 @@ const handler = serve({
     platinaEventWindow,
     platinaDivergenceScan,
     platinaBrandRefresh,
+    platinaInterestExtract,
+    platinaEventExtract,
   ],
 });
 

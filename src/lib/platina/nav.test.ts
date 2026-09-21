@@ -6,6 +6,7 @@ describe("platina nav", () => {
     expect(PLATINA_NAV.map((s) => s.label)).toEqual([
       "Cockpit",
       "Clients",
+      "Opportunities",
       "Plan",
       "Audits",
       "Findings",

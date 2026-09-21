@@ -50,6 +50,14 @@ export default async function StartPage({
           </label>
         </div>
         <label className="text-xs font-medium">
+          LinkedIn company page (optional)
+          <input
+            name="linkedin"
+            placeholder="linkedin.com/company/acme"
+            className={input}
+          />
+        </label>
+        <label className="text-xs font-medium">
           Region (optional)
           <input name="region" placeholder="North America" className={input} />
         </label>

@@ -70,6 +70,24 @@ export function normalizeHomepage(input: string): string | null {
   }
 }
 
+/** LinkedIn company collection: weekly, 10 posts (~$0.02 a run). */
+export const LINKEDIN_CADENCE_MINUTES = 7 * 24 * 60;
+export const LINKEDIN_POSTS_PER_RUN = 10;
+
+/**
+ * A LinkedIn company page from a slug ("waters"), "@waters", or its URL
+ * ("https://www.linkedin.com/company/waters/posts"). Null for anything else —
+ * including a person's /in/ profile, which is not collected.
+ */
+export function normalizeLinkedInCompany(input: string | undefined): string | null {
+  const raw = (input ?? "").trim();
+  if (!raw) return null;
+  const fromUrl = /linkedin\.com\/company\/([A-Za-z0-9._-]+)/i.exec(raw);
+  if (!fromUrl && /linkedin\.com|\//i.test(raw)) return null; // a person's /in/ page, or junk
+  const slug = fromUrl ? fromUrl[1] : raw.replace(/^@/, "");
+  return /^[A-Za-z0-9._-]{2,80}$/.test(slug) ? slug.toLowerCase() : null;
+}
+
 /** "@Acme", " acme " -> "acme". Empty and impossible handles -> null. */
 export function normalizeHandle(input: string | undefined): string | null {
   const handle = (input ?? "").trim().replace(/^@/, "");
@@ -154,6 +172,20 @@ export function deriveSources(input: {
     );
   }
 
+  const linkedin = normalizeLinkedInCompany(input.handles.linkedin);
+  if (linkedin) {
+    out.push({
+      id: `social_posts:linkedin:@${linkedin}`,
+      kind: "social_posts",
+      value: `linkedin:@${linkedin}`,
+      cadenceMinutes: LINKEDIN_CADENCE_MINUTES,
+      reason:
+        "LinkedIn company posts and how people engaged with them — the audience's interest, topic by topic.",
+      confidence: "certain",
+      maxPages: LINKEDIN_POSTS_PER_RUN,
+    });
+  }
+
   const ads = input.brandName ? adLibrarySearch(input.brandName) : null;
   if (ads) {
     out.push({
@@ -212,9 +244,11 @@ export function candidatesToSpecs(
 function labelFor(c: SourceCandidate): string {
   if (c.kind === "social_profile") return `${c.value.split(":")[0]} profile`;
   if (c.kind === "social_posts") return `${c.value.split(":")[0]} posts`;
+  // The ad-library URL's path is "/ads/library/" — a name nobody wants to read.
+  if (c.kind === "ad_library") return "ads";
   try {
     const path = new URL(c.value).pathname;
-    return path === "/" ? "website" : path.replace(/^\//, "");
+    return path === "/" ? "website" : path.replace(/^\/|\/$/g, "");
   } catch {
     return c.value;
   }

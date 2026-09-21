@@ -3,6 +3,8 @@ import {
   addFirstPassPages,
   getAuditRun,
   markTargetsRendered,
+  rememberPickedPages,
+  clearTargetBackfill,
   getBrand,
   getScanSpec,
   getWorkspaceConfig,
@@ -139,6 +141,50 @@ export const platinaAuditRun = inngest.createFunction(
                 outcome.escalated.map((e) => e.target),
               );
             }
+            // A one-time backfill that collected is not repeated next week.
+            if (spec.targets.some((t) => t.backfill)) {
+              const collected = new Set(outcome.docs.map((d) => d.sourceUrl));
+              await clearTargetBackfill(
+                ws,
+                spec.id,
+                spec.targets.filter((t) => t.backfill && collected.has(t.value)).map((t) => t.value),
+              );
+            }
+            // Pages the site picker chose are remembered for a week (C1).
+            if (outcome.picked && outcome.picked.length > 0) {
+              await rememberPickedPages(ws, spec.id, outcome.picked);
+            }
+            // New posts or ads for a client or a competitor: re-measure the
+            // client's interest signals (C3). Debounced per client.
+            if (
+              spec.brandId &&
+              inserted > 0 &&
+              outcome.docs.some((d) => d.sourceKind === "social_posts" || d.sourceKind === "ad_library")
+            ) {
+              try {
+                const owner = await getBrand(ws, spec.brandId);
+                const clientId = owner?.kind === "own_brand" ? owner.id : owner?.parentBrandId;
+                if (clientId) {
+                  await inngest.send({
+                    name: "platina/interest.extract.requested",
+                    data: { workspaceId: ws, brandId: clientId },
+                  });
+                }
+              } catch {
+                // The documents are stored; the daily sweep measures them.
+              }
+            }
+            // New conference pages or posts: read events (C4). Debounced per workspace.
+            if (
+              inserted > 0 &&
+              outcome.docs.some((d) => d.sourceKind === "conference" || d.sourceKind === "social_posts")
+            ) {
+              try {
+                await inngest.send({ name: "platina/events.extract.requested", data: { workspaceId: ws } });
+              } catch {
+                // The documents are stored; the daily sweep reads them.
+              }
+            }
             // A client's own pages feed its profile (not the competitor debate).
             if (spec.brandId && outcome.docs.length > 0) {
               try {
@@ -169,6 +215,9 @@ export const platinaAuditRun = inngest.createFunction(
                 // Firecrawl could not read it, Apify did: collected, so a note.
                 ...(outcome.fallbacks ?? []).map(
                   (f) => `${f.target}: read with Apify after Firecrawl failed (${f.reason})`,
+                ),
+                ...(outcome.skippedPages ?? []).map(
+                  (p) => `${p.url}: not read (${p.reason})`,
                 ),
               ],
             };

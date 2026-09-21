@@ -30,12 +30,14 @@ import {
   FIRECRAWL_MAX_AGE_MS,
   SIGNAL_PROMPT,
   SIGNAL_SCHEMA,
+  collectSiteWithFirecrawl,
   extractJsonEnabled,
   firecrawlPlan,
+  firecrawlSitePlan,
   mapFirecrawlPage,
   shouldFallBack,
 } from "./firecrawl-web";
-import { scrapeWithFirecrawl } from "@/lib/scrape/firecrawl";
+import { mapSite, scrapeWithFirecrawl } from "@/lib/scrape/firecrawl";
 import { shouldEscalate } from "./render";
 import {
   registerAdapter,
@@ -122,6 +124,51 @@ function mapPageItem(
   };
 }
 
+/** The `q` of an Ad Library search URL, or null for a page-id URL. */
+export function adSearchTerm(url: string): string | null {
+  try {
+    const q = new URL(url).searchParams.get("q");
+    return q && q.trim() ? q.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "Waters" matches "Waters Corporation", "Waters India"; not "Kauai Waters Tours". */
+export function advertiserMatches(pageName: string, searched: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const page = norm(pageName);
+  const term = norm(searched);
+  if (!page || !term) return false;
+  return page === term || page.startsWith(`${term} `);
+}
+
+/**
+ * The ad's words. Meta's snapshot carries the primary text as
+ * `body: { text }` (an object, not a string — the old mapper read a string
+ * and so stored every ad as "Ad <id> by <page>" with no text at all), plus
+ * headline, link description, CTA and carousel cards.
+ */
+export function adText(snapshot: Record<string, unknown>): string {
+  const text = (v: unknown): string =>
+    typeof v === "string"
+      ? v
+      : v && typeof v === "object" && typeof (v as { text?: unknown }).text === "string"
+        ? ((v as { text: string }).text)
+        : "";
+  const cards = Array.isArray(snapshot.cards) ? (snapshot.cards as Record<string, unknown>[]) : [];
+  const parts = [
+    text(snapshot.title),
+    text(snapshot.body),
+    text(snapshot.link_description),
+    ...cards.flatMap((c) => [text(c.title), text(c.body)]),
+    text(snapshot.cta_text) ? `Call to action: ${text(snapshot.cta_text)}` : "",
+  ]
+    .map((p) => p.replace(/\{\{product\.[a-z_]+\}\}/gi, "").trim())
+    .filter(Boolean);
+  return [...new Set(parts)].join("\n\n");
+}
+
 function mapAdItem(
   item: Record<string, unknown>,
   target: PlatinaScanTarget,
@@ -129,13 +176,15 @@ function mapAdItem(
   // The actor emits an { error } item on failure — never a document.
   if (typeof item.error === "string") return null;
   const pageName = typeof item.page_name === "string" ? item.page_name : "";
+  // A keyword search matches the word anywhere: q=Waters returned charter
+  // boats and cruises ("Kauaʻi's waters"), zero Waters ads (live 2026-09-21).
+  // Only an advertiser whose page name carries the searched name is kept.
+  const searched = adSearchTerm(target.value);
+  if (searched && !advertiserMatches(pageName, searched)) return null;
   const archiveId =
     typeof item.ad_archive_id === "string" ? item.ad_archive_id : "";
   const snapshot = (item.snapshot ?? {}) as Record<string, unknown>;
-  const bodyText =
-    (typeof snapshot.body === "string" && snapshot.body) ||
-    (typeof item.body === "string" && (item.body as string)) ||
-    "";
+  const bodyText = adText(snapshot) || (typeof item.body === "string" ? item.body : "");
   if (!archiveId && !bodyText.trim()) return null;
   const canonical = canonicalizeUrl(target.value);
   return {
@@ -160,6 +209,8 @@ export async function fetchViaWaters(
   const escalated: NonNullable<FetchOutcome["escalated"]> = [];
   // Targets Firecrawl could not read and Apify then collected.
   const fallbacks: NonNullable<FetchOutcome["fallbacks"]> = [];
+  const picked: NonNullable<FetchOutcome["picked"]> = [];
+  const skippedPages: NonNullable<FetchOutcome["skippedPages"]> = [];
   let remaining = spec.pageBudget;
   let pagesFetched = 0;
 
@@ -189,17 +240,32 @@ export async function fetchViaWaters(
     // page that is simply gone (404) is recorded once, without paying Apify
     // to hear the same answer.
     let firecrawlReason: string | null = null;
-    if (firecrawlPlan(target, pages)) {
+    const scrapeOptions = {
+      maxAgeMs: FIRECRAWL_MAX_AGE_MS,
+      ...(extractJsonEnabled() ? { jsonSchema: SIGNAL_SCHEMA, jsonPrompt: SIGNAL_PROMPT } : {}),
+    };
+    const single = firecrawlPlan(target, pages);
+    const site = !single && firecrawlSitePlan(target, pages);
+    if (single || site) {
       try {
-        const page = await scrapeWithFirecrawl(target.value, {
-          maxAgeMs: FIRECRAWL_MAX_AGE_MS,
-          ...(extractJsonEnabled()
-            ? { jsonSchema: SIGNAL_SCHEMA, jsonPrompt: SIGNAL_PROMPT }
-            : {}),
+        if (single) {
+          const page = await scrapeWithFirecrawl(target.value, scrapeOptions);
+          pagesFetched += 1;
+          if (remaining !== undefined) remaining = Math.max(0, remaining - 1);
+          docs.push(mapFirecrawlPage(page, target));
+          continue;
+        }
+        // Several pages of one site: read the start page, then the pages
+        // the shared picker chose (remembered on the target for a week).
+        const collected = await collectSiteWithFirecrawl(target, pages, {
+          scrape: (url) => scrapeWithFirecrawl(url, scrapeOptions),
+          map: (url) => mapSite(url),
         });
-        pagesFetched += 1;
-        if (remaining !== undefined) remaining = Math.max(0, remaining - 1);
-        docs.push(mapFirecrawlPage(page, target));
+        pagesFetched += collected.pages;
+        if (remaining !== undefined) remaining = Math.max(0, remaining - collected.pages);
+        docs.push(...collected.docs);
+        if (collected.picked) picked.push({ target: target.value, urls: collected.picked });
+        skippedPages.push(...collected.skipped);
         continue;
       } catch (thrown) {
         firecrawlReason = thrown instanceof Error ? thrown.message : "Firecrawl failed";
@@ -272,9 +338,12 @@ export async function fetchViaWaters(
       fallbacks.push({ target: target.value, reason: firecrawlReason });
     }
     if (mapped.length === 0) {
+      const searched = target.kind === "ad_library" ? adSearchTerm(target.value) : null;
       failures.push({
         target: target.value,
-        error: "actor returned no usable items",
+        error: searched
+          ? `no active ads by an advertiser named "${searched}" (other advertisers matching the word were ignored)`
+          : "actor returned no usable items",
       });
     }
     docs.push(...mapped);
@@ -285,7 +354,7 @@ export async function fetchViaWaters(
       `every target failed: ${failures.map((f) => `${f.target} (${f.error})`).join("; ")}`,
     );
   }
-  return { docs, failures, pages: pagesFetched, escalated, fallbacks };
+  return { docs, failures, pages: pagesFetched, escalated, fallbacks, picked, skippedPages };
 }
 
 export function registerWatersAdapter() {

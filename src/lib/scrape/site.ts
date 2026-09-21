@@ -16,7 +16,29 @@
  * Cost: 1 credit to map + 1 per page read (markdown only). Default 8 pages
  * plus the pasted one = ~10 credits a site.
  */
-import { MAX_CHUNK_CHARS, markdownToText } from "@/lib/knowledge-ingest";
+/**
+ * Shared infrastructure (owner decision 2026-09-21, CLAUDE.md): used by
+ * InstaMedia's paste-a-URL vault ingest AND Platina's first pass, so it imports
+ * neither product. Allowlisted for Platina in the boundary test.
+ */
+
+/** Section chunk size — the same 1,200 characters the vault chunker uses. */
+export const SECTION_CHUNK_CHARS = 1_200;
+
+/** Firecrawl markdown -> plain prose for chunking: keep paragraphs, drop link/image syntax. */
+export function markdownToText(markdown: string): string {
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/\\([|*_`#[\]()])/g, "$1")
+    .replace(/^\s*(?:[-*_]\s*){3,}$/gm, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 
 export const DEFAULT_SITE_PAGES = 8;
 /**
@@ -31,7 +53,7 @@ export const SITE_READ_CONCURRENCY = 2;
 
 const SKIP_EXTENSION = /\.(pdf|xml|jpe?g|png|gif|svg|webp|zip|docx?|xlsx?|pptx?|mp4|mp3|csv|json|txt)$/i;
 const SKIP_PATH =
-  /(sitemap|careers?|jobs|legal|privacy|cookie|terms|login|log-in|signin|sign-in|register|account|cart|checkout|search|\/tags?\/|\/shop\/|cdn-cgi|unsubscribe|disclaimer|accessibility|\/wp-json|\/feed\b)/i;
+  /(sitemap|careers?|jobs|legal|privacy|cookie|terms|login|log-in|signin|sign-in|register|account|cart|checkout|search|\/tags?\/|\/shop\/|cdn-cgi|unsubscribe|disclaimer|accessibility|\/wp-json|\/feed\b|contact|\/support\b|where-to-buy|distributors?)/i;
 
 /** Topic signals, strongest first. Matched against the URL path and title. */
 const TOPIC_SCORES: [RegExp, number][] = [
@@ -39,7 +61,7 @@ const TOPIC_SCORES: [RegExp, number][] = [
   [/products?\b|solutions?|services?|platform|offerings?|capabilit|what-we-do/i, 5],
   [/industr|markets?\b|customers?|case-stud|success-stor|(?<!library\/)applications?\b(?!-notes)/i, 4],
   [/sustainab|innovation|technolog|research|news|press|newsroom|blog|insights?/i, 3],
-  [/pricing|plans?\b|contact/i, 2],
+  [/pricing|plans?\b/i, 2],
 ];
 const DEEP_REFERENCE = /library|application-notes|primers?|education|kb_inst|knowledge-base|support\.|\/support\//i;
 
@@ -178,7 +200,7 @@ const fingerprint = (text: string) => text.toLowerCase().replace(/\s+/g, " ").tr
  * Retrieval matches a question against a chunk; a chunk that says which page
  * and section it came from matches "what does Waters sell for chromatography
  * data?" far better than an anonymous paragraph. Sections are packed up to
- * MAX_CHUNK_CHARS; an oversized paragraph is hard-split.
+ * SECTION_CHUNK_CHARS; an oversized paragraph is hard-split.
  *
  * `seen` is shared across the pages of one site ingest: a paragraph already
  * stored from another page (a repeated banner, a shared footer blurb) is not
@@ -189,7 +211,7 @@ export function chunkMarkdown(
   markdown: string,
   pageTitle: string | null,
   seen: Set<string> = new Set(),
-  maxChars: number = MAX_CHUNK_CHARS,
+  maxChars: number = SECTION_CHUNK_CHARS,
 ): string[] {
   const title = (pageTitle ?? "").split(/\s+[|–—:-]\s+/)[0].trim() || null;
   const headings: string[] = [];

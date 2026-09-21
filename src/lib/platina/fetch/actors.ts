@@ -24,7 +24,14 @@ export const DEFAULT_PAGES = 1;
 const CONTENT_CRAWLER = "apify~website-content-crawler";
 const AD_LIBRARY = "curious_coder~facebook-ads-library-scraper";
 
-export type SocialPlatform = "instagram" | "tiktok";
+export type SocialPlatform = "instagram" | "tiktok" | "linkedin";
+
+/**
+ * LinkedIn company posts (slice C2, live-verified 2026-09-21): no cookies,
+ * $0.002 a post, engagement = likes / comments / shares per post. Company
+ * pages only — a person's profile is not a market signal and is not collected.
+ */
+export const LINKEDIN_POSTS_ACTOR = "harvestapi~linkedin-company-posts";
 export type SocialRef = { platform: SocialPlatform; handle: string };
 
 export const isSocialKind = (kind: PlatinaScanTarget["kind"]) =>
@@ -41,10 +48,10 @@ export function clampPages(requested: number | undefined): number {
  * workspace still have today. Zero means "do not run this target".
  */
 export function effectivePages(
-  target: Pick<PlatinaScanTarget, "maxPages">,
+  target: Pick<PlatinaScanTarget, "maxPages" | "backfill">,
   remainingBudget: number | undefined,
 ): number {
-  const wanted = clampPages(target.maxPages);
+  const wanted = clampPages(target.backfill?.posts ?? target.maxPages);
   if (remainingBudget === undefined) return wanted;
   return Math.max(0, Math.min(wanted, remainingBudget));
 }
@@ -54,7 +61,7 @@ export function effectivePages(
  * Returns null for anything else — the caller records a failure, never guesses.
  */
 export function parseSocialRef(value: string): SocialRef | null {
-  const tagged = /^(instagram|tiktok):@?([A-Za-z0-9._]+)$/i.exec(value.trim());
+  const tagged = /^(instagram|tiktok|linkedin):@?([A-Za-z0-9._-]+)$/i.exec(value.trim());
   if (tagged) {
     return {
       platform: tagged[1].toLowerCase() as SocialPlatform,
@@ -68,6 +75,10 @@ export function parseSocialRef(value: string): SocialRef | null {
     if (!first) return null;
     if (host === "instagram.com") return { platform: "instagram", handle: first };
     if (host === "tiktok.com") return { platform: "tiktok", handle: first };
+    if (host === "linkedin.com" && first === "company") {
+      const slug = url.pathname.split("/").filter(Boolean)[1];
+      if (slug && /^[A-Za-z0-9._-]+$/.test(slug)) return { platform: "linkedin", handle: slug };
+    }
   } catch {
     // not a URL — fall through
   }
@@ -119,7 +130,7 @@ export function planTarget(target: PlatinaScanTarget, pages: number): ActorPlan 
           `social source must look like instagram:@handle or tiktok:@handle, got "${target.value}"`,
         );
       }
-      return socialPlan(target.kind, ref, pages);
+      return socialPlan(target.kind, ref, pages, target.backfill?.lookback);
     }
     default:
       throw new Error(
@@ -146,7 +157,25 @@ function socialPlan(
   kind: "social_profile" | "social_posts",
   ref: SocialRef,
   pages: number,
+  lookback?: "3months" | "6months" | "year",
 ): ActorPlan {
+  if (ref.platform === "linkedin") {
+    if (kind === "social_profile") {
+      throw new Error("LinkedIn is collected as company posts only — use a posts source");
+    }
+    return {
+      actor: LINKEDIN_POSTS_ACTOR,
+      input: {
+        targetUrls: [`https://www.linkedin.com/company/${ref.handle}/`],
+        // A budget across all inputs (live): one company per run keeps it exact.
+        maxPosts: pages,
+        // Weekly runs read the last month; a one-time backfill reaches further.
+        postedLimit: lookback ?? "month",
+        includeReposts: false,
+        includeQuotePosts: true,
+      },
+    };
+  }
   if (ref.platform === "instagram") {
     return kind === "social_profile"
       ? {
@@ -212,6 +241,8 @@ export function mapSocialItem(
   }
   const isProfile = target.kind === "social_profile" && ref.platform === "instagram";
 
+  if (ref.platform === "linkedin") return mapLinkedInPost(item, target, ref);
+
   const url =
     str(item.url) ?? str(item.webVideoUrl) ?? str(item.inputUrl) ?? target.value;
   const body = isProfile
@@ -256,6 +287,53 @@ export function mapSocialItem(
     sourceKind: target.kind,
     contentHash: contentHash(canonical, body),
     raw: item,
+    ...(metrics ? { metrics } : {}),
+  };
+}
+
+/**
+ * One LinkedIn company post. Engagement is the interest signal C3 reads:
+ * reactions ("likes" — the actor counts every reaction type there), comments
+ * and reposts ("shares"). A repost of someone else's content was excluded at
+ * the actor, so the words are the company's own.
+ */
+function mapLinkedInPost(
+  item: Record<string, unknown>,
+  target: PlatinaScanTarget,
+  ref: SocialRef,
+): RawSignalDoc | null {
+  const body = str(item.content) ?? "";
+  if (!body.trim()) return null;
+  const engagement = (item.engagement ?? {}) as Record<string, unknown>;
+  const posted = (item.postedAt ?? {}) as Record<string, unknown>;
+  const metrics = pickMetrics(
+    {
+      likes: engagement.likes,
+      comments: engagement.comments,
+      views: undefined,
+      shares: engagement.shares,
+      followers: undefined,
+    },
+    str(posted.date) ?? (typeof item.postedAt === "string" ? item.postedAt : undefined),
+  );
+  const url = str(item.linkedinUrl) ?? target.value;
+  const canonical = canonicalizeUrl(url);
+  const author = (item.author ?? {}) as Record<string, unknown>;
+  return {
+    sourceUrl: target.value,
+    canonicalUrl: canonical,
+    title: `linkedin ${str(author.name) ?? "@" + ref.handle}`,
+    body,
+    adapter: "apify",
+    sourceKind: target.kind,
+    contentHash: contentHash(canonical, body),
+    raw: {
+      id: item.id,
+      linkedinUrl: item.linkedinUrl,
+      postedAt: item.postedAt,
+      author: { name: author.name, linkedinUrl: author.linkedinUrl },
+      engagement: item.engagement,
+    },
     ...(metrics ? { metrics } : {}),
   };
 }

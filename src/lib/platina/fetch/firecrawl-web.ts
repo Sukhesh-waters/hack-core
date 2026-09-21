@@ -6,11 +6,11 @@
  * the same ladder idea as the model router, applied to scraping.
  *
  * Firecrawl gets:  competitor_site / press_release / trade_editorial /
- *                  conference targets that want exactly one page.
- * Apify keeps:     multi-page and sitemap crawls (Firecrawl /scrape is one
- *                  page; its crawl API is async and not wired), social
- *                  profiles/posts (Firecrawl refuses them: live 403), and
- *                  the Meta ad library (residential-proxy actor).
+ *                  conference targets — one page (single-page rung) or
+ *                  several picked pages of the same site (site rung, below).
+ * Apify keeps:     social profiles/posts (Firecrawl refuses them: live 403),
+ *                  the Meta ad library (residential-proxy actor), and every
+ *                  web target Firecrawl could not read (the fallback).
  *
  * Plane B like every Apify doc: public/raw, canonical URL + content hash,
  * never embedded, never citable. Firecrawl's metadata — and its JSON
@@ -23,6 +23,7 @@ import {
   isUnsupportedByFirecrawl,
   type ScrapedPage,
 } from "@/lib/scrape/firecrawl";
+import { mapConcurrent, pickSitePages } from "@/lib/scrape/site";
 import { isSocialKind } from "./actors";
 import { canonicalizeUrl, contentHash } from "./canonical";
 import type { RawSignalDoc } from "./registry";
@@ -110,4 +111,113 @@ export function mapFirecrawlPage(
       extracted: page.json ?? null,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// The site rung — several pages of one site (slice C1, 2026-09-21)
+// ---------------------------------------------------------------------------
+
+/**
+ * Live Waters onboarding: every source wanted 3–5 pages, so the single-page
+ * rung above never fired (45/45 documents via Apify), and Apify's crawl
+ * followed navigation links — 6 of 18 competitor pages were contact, sign-in
+ * or menu pages, and the real Waters newsroom (ir.waters.com) was never seen.
+ *
+ * The site rung instead: reads the start page, lists the site (Firecrawl map,
+ * 1 credit), PICKS the pages that describe the business (shared picker in
+ * lib/scrape/site.ts — same one the vault uses), and reads those. The picked
+ * list is remembered on the target for a week, so a re-collection costs one
+ * credit per page and nothing to re-list.
+ */
+export const PICKED_PAGES_TTL_DAYS = 7;
+/** Firecrawl's plan caps concurrent browsers; 4 pushed pages onto the fallback. */
+const SITE_CONCURRENCY = 2;
+
+/** Whether a multi-page target should take the site rung. Pure given config. */
+export function firecrawlSitePlan(
+  target: Pick<PlatinaScanTarget, "kind" | "value">,
+  pages: number,
+  configured: boolean = firecrawlConfigured(),
+): boolean {
+  if (!configured || pages < 2) return false;
+  if (!PAGE_KINDS.has(target.kind) || isSocialKind(target.kind)) return false;
+  return !isUnsupportedByFirecrawl(target.value);
+}
+
+/** The remembered picks, while still fresh. */
+export function cachedPicks(
+  target: Pick<PlatinaScanTarget, "pickedPages" | "pickedAt">,
+  now: Date = new Date(),
+): string[] | null {
+  if (!target.pickedPages?.length || !target.pickedAt) return null;
+  const age = now.getTime() - new Date(target.pickedAt).getTime();
+  if (!Number.isFinite(age) || age > PICKED_PAGES_TTL_DAYS * 86_400_000) return null;
+  return target.pickedPages;
+}
+
+export type SiteCollection = {
+  docs: RawSignalDoc[];
+  /** Pages read (what the page budget is charged). */
+  pages: number;
+  /** Set when the picks were chosen now (to be remembered on the target). */
+  picked?: string[];
+  /** Pages that could not be read — a note, never a failure. */
+  skipped: { url: string; reason: string }[];
+};
+
+export type SiteDeps = {
+  scrape: (url: string) => Promise<ScrapedPage>;
+  map: (url: string) => Promise<{ url: string; title?: string }[]>;
+  now?: Date;
+};
+
+/**
+ * Reads up to `pages` pages of the target's site. The start page is required:
+ * if it fails the error propagates so the caller can fall back to Apify. The
+ * other pages are best-effort.
+ */
+export async function collectSiteWithFirecrawl(
+  target: PlatinaScanTarget,
+  pages: number,
+  deps: SiteDeps,
+): Promise<SiteCollection> {
+  const skipped: SiteCollection["skipped"] = [];
+  const first = await deps.scrape(target.value);
+  const docs: RawSignalDoc[] = [mapFirecrawlPage(first, target)];
+
+  let urls = cachedPicks(target, deps.now);
+  let picked: string[] | undefined;
+  if (!urls) {
+    try {
+      const links = await deps.map(target.value);
+      urls = pickSitePages({
+        startUrl: target.value,
+        referenceUrl: first.url,
+        links,
+        max: pages - 1,
+      }).map((p) => p.url);
+      picked = urls;
+    } catch (error) {
+      skipped.push({
+        url: target.value,
+        reason: `could not list the site: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      urls = [];
+    }
+  }
+
+  const rest = await mapConcurrent(urls.slice(0, pages - 1), SITE_CONCURRENCY, async (url) => {
+    try {
+      return mapFirecrawlPage(await deps.scrape(url), { ...target, value: url });
+    } catch (error) {
+      skipped.push({ url, reason: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
+  });
+  for (const doc of rest) {
+    // Picked pages keep the SOURCE's url so they file under the same target,
+    // like an Apify multi-page crawl did.
+    if (doc) docs.push({ ...doc, sourceUrl: target.value });
+  }
+  return { docs, pages: docs.length, picked, skipped };
 }

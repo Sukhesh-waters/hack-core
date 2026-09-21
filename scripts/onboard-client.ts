@@ -9,7 +9,7 @@
  *
  *   npx tsx scripts/onboard-client.ts --ws <slug> --name Waters --url https://www.waters.com \
  *     [--region GCC] [--competitor "Thermo Fisher Scientific=https://www.thermofisher.com"]... \
- *     [--suggest] [--apply]
+ *     [--suggest] [--ads] [--apply]
  *
  * Without --apply it only PRINTS what the UI would show (sources, preselection,
  * competitor proposals) and writes nothing. With --apply it acts as the
@@ -91,10 +91,14 @@ async function main() {
   );
   const found = await enrichFromSitemap(probed, homepageUrl, fetchSitemapText);
   const sources = found.filter((c) => !c.discovery);
-  const picked = sources.filter(discover.preselected);
+  // --ads also ticks the ad-library source (the UI leaves it for the operator
+  // to tick: it bills a 10-result minimum through a residential proxy).
+  const picked = sources.filter(
+    (c) => discover.preselected(c) || (flag("ads") && c.kind === "ad_library"),
+  );
   console.log(`\nSources (${picked.length} preselected of ${sources.length})`);
   for (const c of sources) {
-    console.log(`  [${discover.preselected(c) ? "x" : " "}] ${c.kind.padEnd(16)} ${c.value}  (${c.maxPages}p, exists=${c.exists ?? "?"})`);
+    console.log(`  [${picked.includes(c) ? "x" : " "}] ${c.kind.padEnd(16)} ${c.value}  (${c.maxPages}p, exists=${c.exists ?? "?"})`);
   }
 
   const given = args("competitor").map((raw) => {

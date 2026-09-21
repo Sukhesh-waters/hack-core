@@ -8,6 +8,7 @@ import {
   listPlanLessons,
   listSignalIdsForBrands,
   listSignalProvenance,
+  listWorkspaceWideSignalIds,
   similarBrainChunksQuery,
 } from "@/db/queries/platina";
 import { logContextAssembly, type ContextResult } from "@/lib/ai/context/types";
@@ -121,11 +122,14 @@ export async function resolveScope(
   if (!brand) return null;
   const competitors =
     brand.kind === "own_brand" ? await listCompetitorsOf(workspaceId, brand.id) : [];
-  const ids = await listSignalIdsForBrands(workspaceId, [
-    brand.id,
-    ...competitors.map((c) => c.id),
+  const [ids, shared] = await Promise.all([
+    listSignalIdsForBrands(workspaceId, [brand.id, ...competitors.map((c) => c.id)]),
+    // Workspace-wide sources (event pages, trade press) are market context
+    // for every client here; without them a client-scoped plan never saw
+    // the events calendar (C5).
+    listWorkspaceWideSignalIds(workspaceId),
   ]);
-  return { label: brand.name, signalIds: new Set(ids), profile: brand.profile ?? null };
+  return { label: brand.name, signalIds: new Set([...ids, ...shared]), profile: brand.profile ?? null };
 }
 
 /**

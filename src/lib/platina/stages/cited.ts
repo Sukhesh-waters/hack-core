@@ -10,15 +10,32 @@ import type { PlatinaFindingEvidence } from "@/db/platina-schema";
 
 export type EvidenceRow = { id: string; content: string };
 
+/** Cut to `max` characters at the last word boundary, with an ellipsis. */
+export function fitWords(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, "")}…`;
+}
+
 const itemSchema = z.object({
-  title: z.string().trim().min(3).max(80),
-  summary: z.string().trim().min(10).max(400),
+  // Too long is trimmed at a word boundary, not rejected: live 2026-09-21 two
+  // Waters runs lost ALL their directions because one title ran past 80
+  // characters. Too short is still a real defect and still rejected.
+  title: z.string().trim().min(3).transform((s) => fitWords(s, 80)),
+  summary: z.string().trim().min(10).transform((s) => fitWords(s, 400)),
   severity: z.enum(["critical", "high", "medium", "low"]).default("medium"),
   brandChunkIds: z.array(z.string()).default([]),
   brainChunkIds: z.array(z.string()).default([]),
 });
 
-const responseSchema = z.object({ items: z.array(itemSchema).max(5) });
+/**
+ * The envelope only. Items are checked one by one below: live 2026-09-21 a
+ * Bruker run was degraded because the model answered `"items": null` (it had
+ * nothing to propose), and one malformed item used to discard its siblings.
+ */
+const MAX_ITEMS = 5;
+const responseSchema = z.object({ items: z.array(z.unknown()).nullable() });
 
 export type CitedItem = z.infer<typeof itemSchema>;
 
@@ -59,7 +76,13 @@ export function parseCited(
   }
   const items: CitedItem[] = [];
   let rejected = 0;
-  for (const item of parsed.items) {
+  for (const raw of (parsed.items ?? []).slice(0, MAX_ITEMS)) {
+    const checked = itemSchema.safeParse(raw);
+    if (!checked.success) {
+      rejected += 1;
+      continue;
+    }
+    const item = checked.data;
     const brandOk =
       item.brandChunkIds.every((id) => rule.brand.has(id)) &&
       (!rule.require.brand || item.brandChunkIds.length > 0);

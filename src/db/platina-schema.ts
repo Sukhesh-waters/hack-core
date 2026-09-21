@@ -5,6 +5,7 @@
  */
 import {
   boolean,
+  date,
   index,
   integer,
   jsonb,
@@ -79,6 +80,9 @@ export const platinaAlertSeverity = pgEnum("platina_alert_severity", [
 export const platinaBrainStatus = pgEnum("platina_brain_status", [
   "active",
   "demoted",
+  // A measured market insight replaced by a newer measurement (C5): kept for
+  // history, excluded from retrieval like a demoted chunk.
+  "superseded",
 ]);
 
 export const platinaRunTrigger = pgEnum("platina_run_trigger", [
@@ -153,6 +157,20 @@ export type PlatinaScanTarget = {
   renderJs?: boolean;
   /** Seed the crawl from the site sitemap instead of one start URL. */
   seedFromSitemap?: boolean;
+  /**
+   * The pages the site picker chose last time (jsonb — no migration), reused
+   * for PICKED_PAGES_TTL_DAYS so a re-collection does not pay to map the site
+   * again. Written by the audit run, never by a person.
+   */
+  pickedPages?: string[];
+  /** ISO time `pickedPages` was chosen. */
+  pickedAt?: string;
+  /**
+   * One-time wider collection for a social posts source (C5 backfill): the
+   * next run reaches back `lookback` for up to `posts` posts, under the
+   * normal page budgets. Cleared by the audit run once it has collected.
+   */
+  backfill?: { lookback: "3months" | "6months" | "year"; posts: number };
 };
 
 /** Per-platform engagement numbers. An absent key means "not measured" — never 0. */
@@ -380,11 +398,22 @@ export const platinaBrainChunks = pgTable(
     demotedByReceiptId: text("demoted_by_receipt_id"),
     lastRetrievedAt: timestamp("last_retrieved_at", { mode: "date" }),
     status: platinaBrainStatus("status").notNull().default("active"),
+    /**
+     * Set on measured market insights (interest, pressure, events — C5):
+     * "interest:<clientId>:<topic>", "event:<eventKey>". One ACTIVE chunk per
+     * key; a changed measurement supersedes the old one. Null for debate
+     * claims.
+     */
+    insightKey: text("insight_key"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
     workspaceIdx: index("platina_brain_chunks_workspace_id_idx").on(
       table.workspaceId,
+    ),
+    insightKeyIdx: index("platina_brain_chunks_ws_insight_key_idx").on(
+      table.workspaceId,
+      table.insightKey,
     ),
   }),
 );
@@ -1072,3 +1101,138 @@ export const platinaWorkspaceScopedTables = {
   platinaOutcomeImports,
   platinaAlertDeliveries,
 } as const;
+
+// ---------------------------------------------------------------------------
+// Interest signals (campaign intelligence C3) — numbers, not prose. Plane B.
+// ---------------------------------------------------------------------------
+
+/**
+ * One measured signal of audience interest (or competitor pressure) for a
+ * topic: "Thermo Fisher's post about GLP-1 QC got 687 reactions on
+ * 2026-09-03", "Agilent is running 12 LinkedIn ads about GC in AE". Every row
+ * carries its proof URL. Momentum and ranking are computed from these rows by
+ * pure functions (lib/platina/interest.ts) — a model maps text to a topic,
+ * never produces a number. Public data only (Plane B): never embedded, never
+ * mixed with the client's own results.
+ */
+export const platinaInterestSignals = pgTable(
+  "platina_interest_signals",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    /** Whose signal: the client or one of its competitors. */
+    brandId: text("brand_id"),
+    /** The document it was read from, when there is one. */
+    documentId: text("document_id"),
+    /** A topic from the client's own topic list (profile offers/keywords). */
+    topic: text("topic").notNull(),
+    /** ISO country, or "global" when the source does not say. */
+    region: text("region").notNull().default("global"),
+    /** linkedin | meta_ads | linkedin_ads | search | web | event */
+    channel: text("channel").notNull(),
+    /**
+     * engagement (reactions+comments+shares) | reactions | comments | shares |
+     * active_ads | ad_days_running | search_interest
+     */
+    metric: text("metric").notNull(),
+    /** "interest" (audience) or "pressure" (competitor spend/activity). */
+    signalKind: text("signal_kind").notNull(),
+    value: real("value").notNull(),
+    /** When the thing measured happened (post date, trend point). */
+    observedAt: timestamp("observed_at", { mode: "date" }).notNull(),
+    collectedAt: timestamp("collected_at", { mode: "date" }).notNull().defaultNow(),
+    sourceUrl: text("source_url").notNull(),
+    detail: jsonb("detail"),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_interest_signals_workspace_id_idx").on(table.workspaceId),
+    topicIdx: index("platina_interest_signals_ws_topic_observed_idx").on(
+      table.workspaceId,
+      table.topic,
+      table.observedAt,
+    ),
+    // Re-reading the same post re-measures it: one row per source/metric/day.
+    measurementUnique: uniqueIndex("platina_interest_signals_measurement_unique").on(
+      table.workspaceId,
+      table.sourceUrl,
+      table.metric,
+      table.topic,
+      table.observedAt,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Events (campaign intelligence C4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the market gathers: conferences, trade fairs, workshops, webinars,
+ * read from event pages and from companies' own posts. Dates are parsed from
+ * words that are on the page (lib/platina/events.ts), never produced by a
+ * model. Public data (Plane B): never embedded, never mixed with the
+ * client's own results.
+ */
+export const platinaEvents = pgTable(
+  "platina_events",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    /** "arablab-2026" — lib/platina/events.ts eventKey. */
+    eventKey: text("event_key").notNull(),
+    name: text("name").notNull(),
+    /** in_person | online */
+    format: text("format").notNull().default("in_person"),
+    startsOn: date("starts_on", { mode: "string" }),
+    endsOn: date("ends_on", { mode: "string" }),
+    /** The words the dates were read from, as written on the source. */
+    dateText: text("date_text"),
+    location: text("location"),
+    /** ISO country, when the location says. */
+    country: text("country"),
+    /** The page or post the event was read from — the proof. */
+    sourceUrl: text("source_url").notNull(),
+    documentId: text("document_id"),
+    firstSeenAt: timestamp("first_seen_at", { mode: "date" }).notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at", { mode: "date" }).notNull().defaultNow(),
+    detail: jsonb("detail"),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_events_workspace_id_idx").on(table.workspaceId),
+    startsIdx: index("platina_events_ws_starts_idx").on(table.workspaceId, table.startsOn),
+    keyUnique: uniqueIndex("platina_events_ws_key_unique").on(table.workspaceId, table.eventKey),
+  }),
+);
+
+/**
+ * "Is a competitor at this event?" — one row per proof: its name on the
+ * exhibitor list, on the event page, or its own post announcing it.
+ */
+export const platinaEventParticipants = pgTable(
+  "platina_event_participants",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    eventId: text("event_id")
+      .notNull()
+      .references(() => platinaEvents.id, { onDelete: "cascade" }),
+    brandId: text("brand_id").notNull(),
+    /** listed_exhibitor | mentioned_on_event_page | announced_in_post */
+    evidence: text("evidence").notNull(),
+    sourceUrl: text("source_url").notNull(),
+    /** The page or post the proof was read from (scopes insights to a client). */
+    documentId: text("document_id"),
+    excerpt: text("excerpt"),
+    observedAt: timestamp("observed_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_event_participants_workspace_id_idx").on(table.workspaceId),
+    eventIdx: index("platina_event_participants_event_idx").on(table.eventId),
+    proofUnique: uniqueIndex("platina_event_participants_proof_unique").on(
+      table.workspaceId,
+      table.eventId,
+      table.brandId,
+      table.sourceUrl,
+    ),
+  }),
+);

@@ -28,6 +28,7 @@ vi.mock("@/db/queries/platina", () => ({
   getBrand: vi.fn(),
   listCompetitorsOf: vi.fn(),
   listSignalIdsForBrands: vi.fn(),
+  listWorkspaceWideSignalIds: vi.fn().mockResolvedValue([]),
 }));
 // The rerank pass is its own unit; here it keeps the fused order.
 vi.mock("@/lib/platina/rerank", () => ({

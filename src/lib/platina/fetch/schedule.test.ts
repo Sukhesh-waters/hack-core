@@ -48,6 +48,23 @@ describe("cadence scheduling", () => {
     expect(isDue(spec, true, NOW)).toBe(true);
   });
 
+  it("a source approved a minute ago is NOT due — its first pass is already running", () => {
+    // Live 2026-09-21: 5 of 8 new Waters sources were collected twice within
+    // 50 seconds because a never-run source measured its cadence from 1970.
+    const approved = base({ updatedAt: new Date(NOW.getTime() - 60_000) });
+    expect(isDue(approved, true, NOW)).toBe(false);
+    expect(isDue(approved, false, NOW)).toBe(false);
+  });
+
+  it("a never-probed source is due one cadence after its last run started", () => {
+    const spec = base({
+      updatedAt: new Date(NOW.getTime() - 60 * 60_000),
+      lastRunAt: new Date(NOW.getTime() - 10 * 60_000),
+    });
+    expect(isDue(spec, true, NOW)).toBe(true);
+    expect(isDue({ ...spec, lastRunAt: new Date(NOW.getTime() - 60_000) }, true, NOW)).toBe(false);
+  });
+
   it("drafts and disabled sources are never due", () => {
     expect(isDue(base({ status: "draft" }), true, NOW)).toBe(false);
     expect(isDue(base({ enabled: false }), true, NOW)).toBe(false);
@@ -70,6 +87,23 @@ describe("cadence scheduling", () => {
     const diffMinutes = (due.getTime() - lastSuccess) / 60_000;
     expect(diffMinutes).toBeGreaterThanOrEqual(ADAPTIVE_START_MINUTES);
     expect(diffMinutes).toBeLessThan(ADAPTIVE_START_MINUTES + 5);
+  });
+
+  it("a weekly source that has never succeeded retries on the adaptive start, not a week later (D12)", () => {
+    const approved = new Date(NOW.getTime() - 60_000);
+    const weekly = base({ cadenceMinutes: 7 * 24 * 60, lastRunAt: approved, updatedAt: approved });
+    const wait = (nextDueAt(weekly, false).getTime() - approved.getTime()) / 60_000;
+    expect(wait).toBeGreaterThanOrEqual(ADAPTIVE_START_MINUTES);
+    expect(wait).toBeLessThan(ADAPTIVE_START_MINUTES + 5);
+    // Still not re-collected minutes after approval (the D2 guarantee).
+    expect(isDue(weekly, false, NOW)).toBe(false);
+  });
+
+  it("once it has succeeded, the weekly cadence is the floor again", () => {
+    const success = new Date(NOW.getTime() - 60_000);
+    const weekly = base({ cadenceMinutes: 7 * 24 * 60, lastSuccessAt: success });
+    const wait = (nextDueAt(weekly, false).getTime() - success.getTime()) / 60_000;
+    expect(wait).toBeGreaterThanOrEqual(7 * 24 * 60);
   });
 });
 

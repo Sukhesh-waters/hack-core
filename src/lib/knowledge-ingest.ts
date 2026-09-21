@@ -6,6 +6,7 @@ import {
   isUnsupportedByFirecrawl,
   scrapeWithFirecrawl,
 } from "@/lib/scrape/firecrawl";
+import { markdownToText } from "@/lib/scrape/site";
 
 /**
  * Pure text extraction + chunking for the Brand Gene Knowledge tab's
@@ -98,19 +99,9 @@ export async function fetchPage(
 // readPage — the one entry point: own fetch and Firecrawl, in either order
 // ---------------------------------------------------------------------------
 
-/** Firecrawl markdown -> plain prose for chunking: keep paragraphs, drop link/image syntax. */
-export function markdownToText(markdown: string): string {
-  return markdown
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/(\*\*|__)(.+?)\1/g, "$2")
-    .replace(/\\([|*_`#[\]()])/g, "$1")
-    .replace(/^\s*(?:[-*_]\s*){3,}$/gm, "")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+// markdownToText lives with the other page-reading helpers in the shared
+// scrape module (Platina uses it too); re-exported for existing callers.
+export { markdownToText } from "@/lib/scrape/site";
 
 export type ReadPageResult = {
   title: string | null;

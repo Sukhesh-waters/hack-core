@@ -41,6 +41,10 @@ export type FetchOutcome = {
   escalated?: { target: string; reason: string }[];
   /** Targets Firecrawl could not read that Apify then collected (a note, not a failure). */
   fallbacks?: { target: string; reason: string }[];
+  /** Pages the site picker chose this run, to remember on the target. */
+  picked?: { target: string; urls: string[] }[];
+  /** Picked pages that could not be read (a note, not a failure). */
+  skippedPages?: { url: string; reason: string }[];
   docs: RawSignalDoc[];
   failures: FetchFailure[];
 };

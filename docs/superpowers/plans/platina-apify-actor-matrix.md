@@ -154,3 +154,21 @@ motivation, confirmed by these measurements.
 ---
 
 *Owner approval of this matrix is part of the Slice 0 done-when gate.*
+
+## Campaign-intelligence actors — slice C0, live-verified 2026-09-21
+
+Fixtures (trimmed, session/query blocks removed): `src/lib/platina/fetch/fixtures/`
+`linkedin-posts-live-2026-09-21.json`, `linkedin-ads-live-2026-09-21.json`,
+`google-trends-live-2026-09-21.json`.
+
+| Need | Actor | Cost (this account) | Live result | Verdict |
+|---|---|---|---|---|
+| LinkedIn company posts + engagement | `harvestapi/linkedin-company-posts` (no cookies) | $0.002/post (+$0.001 per empty input) | 6 s; `engagement.{likes,comments,shares,reactions[]}`, `postedAt.date`, `content`, `author.linkedinUrl`. `maxPosts` is a budget across all inputs, not per input. Waters = `/company/waters/` (`/company/waters-corporation/` returns nothing). | **Adopt (C2).** Rich, cheap, public. Waters' own posts announce events it attends ("Join Waters at the SOFT/TIAFT Joint Meeting…") — a C4 input. |
+| LinkedIn Ad Library | `silva95gustavo/linkedin-ad-library-scraper` | $0.002/ad ($0.004 with details) | 9 s; `advertiserName, body, ctas, format, paidBy, adLibraryUrl`. **No impressions, no dates** in the list view. Without `countries=` the results were Taiwan-targeted ads. | **Adopt for competitor pressure (C3)**: count + message themes by country. Always pass `countries=`. Not an interest signal. |
+| Search interest by country | `apify/google-trends-scraper` | $0.003/item **plus compute**: 3 terms ran > 6 min and cost $0.09–0.13 before abort | Browser-based and slow: never call run-sync. "HPLC" in AE: 93 daily points, most `hasData:false`, averages 2.2 → 4.0 (0–100 scale); subregions usable (Abu Dhabi 100, Dubai 77). | **Adopt narrowly (C3)**: weekly async run, broader topics, and only points with `hasData:true` count toward the min-N gate. Niche B2B terms in small countries are near-zero — say "insufficient signal", never a score. |
+
+Meta Ad Library (already adopted): commercial ads carry no impressions
+(`impressions_index: -1`); keyword search must be filtered to the advertiser
+(see `advertiserMatches` in waters.ts).
+
+Spend for C0: ≈ $0.15. Account month-to-date after C0: ≈ $0.45 of $5.

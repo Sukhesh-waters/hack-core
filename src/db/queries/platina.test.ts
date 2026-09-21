@@ -38,10 +38,38 @@ import {
   similarBrandChunksQuery,
   brandStandardChunkCountQuery,
   previousSignalDocumentQuery,
+  eventParticipantsQuery,
+  eventSourceDocsQuery,
+  eventsQuery,
+  interestSignalsQuery,
+  interestSourceDocsQuery,
   unprocessedSignalsQuery,
 } from "./platina";
 
 describe("platina query isolation", () => {
+  it("interest queries filter workspace_id (documents AND the specs they came from)", () => {
+    const docs = interestSourceDocsQuery("ws_i", ["b1"], new Date(0)).toSQL();
+    expect(docs.sql).toContain('"platina_signal_documents"."workspace_id" =');
+    expect(docs.sql).toContain('"platina_scan_specs"."workspace_id" =');
+    expect(docs.params.filter((p) => p === "ws_i")).toHaveLength(2);
+    const signals = interestSignalsQuery("ws_i", ["b1"], new Date(0)).toSQL();
+    expect(signals.sql).toContain('"workspace_id" =');
+    expect(signals.params).toContain("ws_i");
+  });
+
+  it("event queries filter workspace_id (documents, the spec join, events, participants)", () => {
+    const docs = eventSourceDocsQuery("ws_e", new Date(0)).toSQL();
+    expect(docs.sql).toContain('"platina_signal_documents"."workspace_id" =');
+    expect(docs.sql).toContain('"platina_scan_specs"."workspace_id" =');
+    expect(docs.params.filter((p) => p === "ws_e")).toHaveLength(2);
+    const events = eventsQuery("ws_e").toSQL();
+    expect(events.sql).toContain('"workspace_id" =');
+    expect(events.params).toContain("ws_e");
+    const people = eventParticipantsQuery("ws_e", ["e1"]).toSQL();
+    expect(people.sql).toContain('"workspace_id" =');
+    expect(people.params).toContain("ws_e");
+  });
+
   it("brandChunksQuery filters workspace_id", () => {
     const { sql, params } = brandChunksQuery("ws_p").toSQL();
     expect(sql).toContain('"workspace_id" =');

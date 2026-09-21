@@ -101,6 +101,18 @@ describe("candidatesToSpecs", () => {
     expect(candidatesToSpecs("Acme", all, false).some((s) => s.targets[0].seedFromSitemap)).toBe(false);
   });
 
+  it("names sources so a person can read them (not 'Acme · ads/library/')", () => {
+    const names = candidatesToSpecs(
+      "Acme",
+      deriveSources({ homepageUrl: "acme.com", handles: {}, brandName: "Acme" }),
+      false,
+    ).map((s) => s.name);
+    expect(names).toContain("Acme · website");
+    expect(names).toContain("Acme · blog");
+    expect(names).toContain("Acme · ads");
+    expect(names.some((n) => n.includes("/"))).toBe(false);
+  });
+
   it("carries the per-source page budget", () => {
     const posts = candidatesToSpecs("Acme", all, false).find((s) => s.targets[0].kind === "social_posts");
     expect(posts?.targets[0].maxPages).toBe(10);

@@ -547,6 +547,34 @@
       "when": 1789967506243,
       "tag": "0077_watery_rhodey",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790002258791,
+      "tag": "0078_strong_joshua_kane",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1790004770931,
+      "tag": "0079_gigantic_whizzer",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1790007703215,
+      "tag": "0080_right_mockingbird",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1790007765395,
+      "tag": "0081_funny_selene",
+      "breakpoints": true
     }
   ]
 }

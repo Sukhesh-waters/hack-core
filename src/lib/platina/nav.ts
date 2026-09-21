@@ -8,6 +8,8 @@
 export const PLATINA_NAV = [
   { slug: "", label: "Cockpit" },
   { slug: "brands", label: "Clients" },
+  // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
+  { slug: "opportunities", label: "Opportunities" },
   { slug: "plan", label: "Plan" },
   { slug: "audits", label: "Audits" },
   { slug: "findings", label: "Findings" },

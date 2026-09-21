@@ -84,6 +84,8 @@ const ALLOWED_EXACT = new Set([
   // single public web page. Its one client is shared infra outside Platina;
   // social and ad-library content stays Apify-only.
   "@/lib/scrape/firecrawl",
+  "@/lib/scrape/site", // page picker + section chunker, same decision
+
   "@/lib/utils",
   "@/inngest/client",
 ]);

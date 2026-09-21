@@ -14,7 +14,7 @@ import { actionErrorMessage } from "@/lib/action-errors";
 import { routeAI } from "@/lib/ai/router";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { chunkText, MAX_SOURCE_CHARS, readPage } from "@/lib/knowledge-ingest";
-import { mapConcurrent, readSite, type SitePage } from "@/lib/knowledge-site";
+import { mapConcurrent, readSite, type SitePage } from "@/lib/scrape/site";
 import { firecrawlConfigured, mapSite, scrapeWithFirecrawl } from "@/lib/scrape/firecrawl";
 import { ingestUrlSchema } from "@/lib/validation";
 
@@ -33,7 +33,7 @@ const SITE_CACHE_MS = 60 * 60_000;
  * scope=site (the default when Firecrawl is configured) also reads the best
  * pages of the same site — about, products, solutions, news — each stored as
  * its own source so every chunk keeps its provenance and the refresh job keeps
- * each page current. See lib/knowledge-site.ts.
+ * each page current. See lib/scrape/site.ts.
  */
 export async function ingestKnowledgeUrl(
   _prev: IngestState,
