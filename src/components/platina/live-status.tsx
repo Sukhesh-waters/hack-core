@@ -31,7 +31,7 @@ export function PlatinaLiveStatus({ topicToken }: { topicToken: string | null })
           ? detail
             ? `Refreshing on a 20-second interval — live updates unavailable: ${detail}`
             : "Refreshing on a 20-second interval"
-          : "Realtime signal plus 20-second polling fallback"
+          : "Updates arrive as they happen; a safety refresh runs every 2 minutes. Background tabs pause and catch up when you return."
       }
     >
       <span

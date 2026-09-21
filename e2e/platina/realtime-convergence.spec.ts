@@ -9,10 +9,13 @@ import { platinaPath } from "../fixtures/platina";
  * Realtime broadcast the server fires after a committed write
  * (src/lib/platina/realtime-server.ts), gated on PLATINA_REALTIME_SECRET
  * being set for the dev server this config launches. Both tabs must reach
- * "Live" before the write, or this test would only prove the 20s polling
- * fallback (PLATINA_POLL_INTERVAL_MS), not Realtime itself — so it asserts
- * the transport state first, then requires convergence well inside a
- * window the poll fallback cannot satisfy on its own.
+ * "Live" before the write, or this test would only prove the polling
+ * fallback, not Realtime itself — so it asserts the transport state first,
+ * then requires convergence well inside a window polling cannot satisfy:
+ * while Realtime is live the safety poll runs every 120 s
+ * (lib/platina/realtime-state.ts POLL_WHILE_LIVE_MS), and the window is 25 s.
+ * Measured 2026-09-22 in dev: signal -> refresh request 0.8 s (coalescing),
+ * each dev-mode render of the audits page 3-5 s.
  */
 test("a run triggered in tab A appears in tab B without a manual refresh", async ({
   page: tabA,
@@ -41,8 +44,10 @@ test("a run triggered in tab A appears in tab B without a manual refresh", async
   await tabA.getByRole("button", { name: "Save as draft" }).click();
   await expect(tabA.getByText(sourceName)).toBeVisible({ timeout: 30_000 });
 
-  const runRows = 'section[aria-label="Run history"] tbody tr';
-  const runsBefore = await tabB.locator(runRows).count();
+  // The run history shows the latest 10 runs, so once the fixture holds 10
+  // or more a row count can never grow; look for THIS source's run instead.
+  const runHistory = tabB.locator('section[aria-label="Run history"]');
+  await expect(runHistory).not.toContainText(sourceName);
 
   // Fire the write from tab A: "Approve audit scope" kicks off the first
   // run and broadcasts `audits` (src/app/(platina)/p/[ws]/actions.ts,
@@ -50,8 +55,5 @@ test("a run triggered in tab A appears in tab B without a manual refresh", async
   const specRow = tabA.locator("tr", { hasText: sourceName });
   await specRow.getByRole("button", { name: "Approve audit scope" }).click();
 
-  await expect(async () => {
-    const runsAfter = await tabB.locator(runRows).count();
-    expect(runsAfter).toBeGreaterThan(runsBefore);
-  }).toPass({ timeout: 12_000 });
+  await expect(runHistory).toContainText(sourceName, { timeout: 25_000 });
 });

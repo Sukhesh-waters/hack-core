@@ -5,6 +5,7 @@ describe("platina nav", () => {
   it("registers the outcome-oriented destinations plus the campaign planner", () => {
     expect(PLATINA_NAV.map((s) => s.label)).toEqual([
       "Cockpit",
+      "Live flow",
       "Clients",
       "Opportunities",
       "Plan",

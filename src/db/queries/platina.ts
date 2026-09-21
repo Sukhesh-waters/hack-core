@@ -3122,3 +3122,126 @@ export function workspaceWideSignalIdsQuery(workspaceId: string, limit = 2000) {
 export async function listWorkspaceWideSignalIds(workspaceId: string) {
   return (await workspaceWideSignalIdsQuery(workspaceId)).map((r) => r.id);
 }
+
+// ---------------------------------------------------------------------------
+// Render-path queries (fewer round trips)
+// ---------------------------------------------------------------------------
+
+/**
+ * Interest signals for a client AND its competitors in one round trip (the
+ * page used to fetch competitors first, then signals). Workspace-scoped on
+ * both the signals and the brand subquery.
+ */
+export function clientScopeSignalsQuery(workspaceId: string, clientId: string, since: Date) {
+  const scope = db
+    .select({ id: platinaBrands.id })
+    .from(platinaBrands)
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        or(eq(platinaBrands.id, clientId), eq(platinaBrands.parentBrandId, clientId)),
+      ),
+    );
+  return db
+    .select()
+    .from(platinaInterestSignals)
+    .where(
+      and(
+        eq(platinaInterestSignals.workspaceId, workspaceId),
+        inArray(platinaInterestSignals.brandId, scope),
+        gte(platinaInterestSignals.observedAt, since),
+      ),
+    );
+}
+
+export async function listClientScopeSignals(workspaceId: string, clientId: string, since: Date) {
+  return clientScopeSignalsQuery(workspaceId, clientId, since);
+}
+
+/** Every event participant in the workspace — no need to wait for event ids. */
+export function workspaceEventParticipantsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaEventParticipants)
+    .where(eq(platinaEventParticipants.workspaceId, workspaceId));
+}
+
+export async function listWorkspaceEventParticipants(workspaceId: string) {
+  return workspaceEventParticipantsQuery(workspaceId);
+}
+
+// ---------------------------------------------------------------------------
+// Live flow snapshot (3D view) — one round trip for every count
+// ---------------------------------------------------------------------------
+
+/**
+ * Every count the live-flow view shows, as scalar subqueries in ONE statement
+ * (one database round trip instead of fourteen). Each subquery filters its
+ * own table by workspace_id — asserted in platina.test.ts by counting the
+ * workspace parameter.
+ */
+export function flowCountsSql(workspaceId: string, sinceDate: Date, today: string) {
+  // Raw SQL params are not mapped by column type: a Date must go as text.
+  const since = sinceDate.toISOString();
+  const d = platinaSignalDocuments;
+  const docs = (kindSql: ReturnType<typeof sql>, recent: boolean) =>
+    sql`(select count(*)::int from ${d} where ${d.workspaceId} = ${workspaceId} and ${kindSql}${recent ? sql` and ${d.fetchedAt} >= ${since}` : sql``})`;
+  const linkedin = sql`${d.sourceUrl} like 'linkedin:%'`;
+  const web = sql`${d.sourceKind} in ('competitor_site','press_release','trade_editorial') `;
+  const ads = sql`${d.sourceKind} = 'ad_library'`;
+  const events = sql`${d.sourceKind} = 'conference'`;
+  const b = platinaBrainChunks;
+  const brain = (kind: ReturnType<typeof sql>) =>
+    sql`(select count(*)::int from ${b} where ${b.workspaceId} = ${workspaceId} and ${b.status} = 'active' and ${kind})`;
+  return sql`select
+    ${docs(web, false)} as "docsWeb", ${docs(web, true)} as "docsWeb24h",
+    ${docs(linkedin, false)} as "docsLinkedin", ${docs(linkedin, true)} as "docsLinkedin24h",
+    ${docs(ads, false)} as "docsAds", ${docs(ads, true)} as "docsAds24h",
+    ${docs(events, false)} as "docsEvents", ${docs(events, true)} as "docsEvents24h",
+    (select count(*)::int from ${platinaDebateTranscripts} where ${platinaDebateTranscripts.workspaceId} = ${workspaceId}) as "debates",
+    (select count(*)::int from ${platinaDebateTranscripts} where ${platinaDebateTranscripts.workspaceId} = ${workspaceId} and ${platinaDebateTranscripts.createdAt} >= ${since}) as "debates24h",
+    (select count(*)::int from ${platinaInterestSignals} where ${platinaInterestSignals.workspaceId} = ${workspaceId}) as "interestSignals",
+    (select count(*)::int from ${platinaInterestSignals} where ${platinaInterestSignals.workspaceId} = ${workspaceId} and ${platinaInterestSignals.collectedAt} >= ${since}) as "interestSignals24h",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId}) as "events",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId} and ${platinaEvents.startsOn} > ${today}) as "eventsUpcoming",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId} and ${platinaEvents.firstSeenAt} >= ${since}) as "events24h",
+    ${brain(sql`${b.insightKey} is null`)} as "brainClaims",
+    ${brain(sql`(${b.insightKey} like 'interest:%' or ${b.insightKey} like 'pressure:%')`)} as "brainMeasured",
+    ${brain(sql`${b.insightKey} like 'event:%'`)} as "brainEvents",
+    ${brain(sql`${b.createdAt} >= ${since}`)} as "brain24h",
+    (select count(*)::int from ${platinaFindings} where ${platinaFindings.workspaceId} = ${workspaceId}) as "findings",
+    (select count(*)::int from ${platinaFindings} where ${platinaFindings.workspaceId} = ${workspaceId} and ${platinaFindings.status} in ('new','needs_decision')) as "findingsNew",
+    (select count(*)::int from ${platinaPlans} where ${platinaPlans.workspaceId} = ${workspaceId}) as "plans",
+    (select count(*)::int from ${platinaPlans} where ${platinaPlans.workspaceId} = ${workspaceId} and ${platinaPlans.createdAt} >= ${since}) as "plans24h",
+    ((select count(*)::int from ${platinaPlanFeedback} where ${platinaPlanFeedback.workspaceId} = ${workspaceId})
+      + (select count(*)::int from ${platinaOutcomes} where ${platinaOutcomes.workspaceId} = ${workspaceId} and ${platinaOutcomes.synthetic} = false)) as "outcomes",
+    (select count(*)::int from ${platinaAuditRuns} where ${platinaAuditRuns.workspaceId} = ${workspaceId} and ${platinaAuditRuns.status} in ('queued','running','validating')) as "runsActive"`;
+}
+
+export type FlowCountsRow = Record<string, number>;
+
+export async function getFlowCounts(workspaceId: string, now: Date = new Date()): Promise<FlowCountsRow> {
+  const since = new Date(now.getTime() - 86_400_000);
+  const rows = await db.execute(flowCountsSql(workspaceId, since, now.toISOString().slice(0, 10)));
+  return ([...rows][0] ?? {}) as FlowCountsRow;
+}
+
+/** Newest active Brain vectors for the point cloud: kind + confidence, short text for hover. */
+export function flowBrainSampleQuery(workspaceId: string, limit = 240) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      insightKey: platinaBrainChunks.insightKey,
+      confidence: platinaBrainChunks.confidence,
+      createdAt: platinaBrainChunks.createdAt,
+      text: sql<string>`left(${platinaBrainChunks.content}, 140)`,
+    })
+    .from(platinaBrainChunks)
+    .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.status, "active")))
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+export async function listFlowBrainSample(workspaceId: string, limit = 240) {
+  return flowBrainSampleQuery(workspaceId, limit);
+}

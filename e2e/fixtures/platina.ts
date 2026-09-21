@@ -18,6 +18,10 @@ export function platinaPath(subPath: string): string {
 /** Primary destinations (Slice 1 shell) and the h1 each renders. */
 export const PLATINA_ROUTES: { subPath: string; h1: string }[] = [
   { subPath: "", h1: "What changed, what matters, what needs you" },
+  { subPath: "live", h1: "How your intelligence flows, right now" },
+  // "Opportunities" or "Opportunities for <client>" (substring match).
+  { subPath: "opportunities", h1: "Opportunities" },
+  { subPath: "plan", h1: "Plan a campaign" },
   { subPath: "audits", h1: "Audit sources" },
   { subPath: "findings", h1: "Findings" },
   { subPath: "solutions", h1: "Solutions" },
@@ -40,7 +44,7 @@ export const PLATINA_ROUTES: { subPath: string; h1: string }[] = [
  */
 export const PLATINA_LEGACY_ROUTES: { subPath: string; h1: string }[] = [
   { subPath: "brand", h1: "Brand Gene" },
-  { subPath: "scans", h1: "Scan specs" },
+  { subPath: "scans", h1: "Sources we watch" },
   { subPath: "brain", h1: "Brain" },
   { subPath: "ideation", h1: "Ideation" },
   { subPath: "campaigns", h1: "Campaigns" },

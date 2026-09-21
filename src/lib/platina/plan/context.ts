@@ -118,17 +118,19 @@ export async function resolveScope(
   brandId: string | null | undefined,
 ): Promise<Scope | null> {
   if (!brandId) return null;
-  const brand = await getBrand(workspaceId, brandId);
-  if (!brand) return null;
-  const competitors =
-    brand.kind === "own_brand" ? await listCompetitorsOf(workspaceId, brand.id) : [];
-  const [ids, shared] = await Promise.all([
-    listSignalIdsForBrands(workspaceId, [brand.id, ...competitors.map((c) => c.id)]),
-    // Workspace-wide sources (event pages, trade press) are market context
-    // for every client here; without them a client-scoped plan never saw
-    // the events calendar (C5).
+  // One round, not three: the brand, its competitors (empty unless it is a
+  // client) and the workspace-wide sources do not depend on each other.
+  const [brand, related, shared] = await Promise.all([
+    getBrand(workspaceId, brandId),
+    listCompetitorsOf(workspaceId, brandId),
     listWorkspaceWideSignalIds(workspaceId),
   ]);
+  if (!brand) return null;
+  const competitors = brand.kind === "own_brand" ? related : [];
+  const ids = await listSignalIdsForBrands(workspaceId, [brand.id, ...competitors.map((c) => c.id)]);
+  // Workspace-wide sources (event pages, trade press) are market context for
+  // every client here; without them a client-scoped plan never saw the
+  // events calendar (C5).
   return { label: brand.name, signalIds: new Set([...ids, ...shared]), profile: brand.profile ?? null };
 }
 

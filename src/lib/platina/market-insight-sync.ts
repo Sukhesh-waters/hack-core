@@ -19,6 +19,23 @@ import { embedText } from "./embed";
 import { BASELINE_DAYS, RECENT_DAYS, topicMomentum } from "./interest";
 import { writeClientInsights, writeEventInsights, type InsightWriterDeps, type InsightWriteResult } from "./market-insight-writer";
 
+/**
+ * After the writes commit: tell open pages the Brain changed (signal only).
+ * Loaded lazily because realtime-server is `server-only`: the ops scripts
+ * (scripts/insights-sync.ts) run this module outside Next.js, where there is
+ * no live channel to tell.
+ */
+async function announce(workspaceId: string, result: InsightWriteResult): Promise<InsightWriteResult> {
+  if (result.written + result.superseded === 0) return result;
+  try {
+    const { broadcastPlatinaSignal } = await import("./realtime-server");
+    await broadcastPlatinaSignal(workspaceId, "insights");
+  } catch {
+    // Outside the Next.js server: pages converge on their next refresh.
+  }
+  return result;
+}
+
 const deps: InsightWriterDeps = {
   embed: (text) => embedText(text),
   listActive: (ws, prefix) => listActiveInsightChunks(ws, prefix),
@@ -37,7 +54,7 @@ export async function syncClientInsights(
   const ids = [client.id, ...competitors.map((c) => c.id)];
   const since = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * 86_400_000);
   const signals = await listInterestSignals(workspaceId, ids, since);
-  return runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
+  const result = await runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
     writeClientInsights(deps, {
       workspaceId,
       client: { id: client.id, name: client.name },
@@ -54,12 +71,13 @@ export async function syncClientInsights(
       })),
     }),
   );
+  return announce(workspaceId, result);
 }
 
 export async function syncEventInsights(workspaceId: string, now: Date = new Date()): Promise<InsightWriteResult> {
   const [brands, events] = await Promise.all([listBrands(workspaceId), listEvents(workspaceId)]);
   const participants = await listEventParticipants(workspaceId, events.map((e) => e.id));
-  return runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
+  const result = await runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
     writeEventInsights(deps, {
       workspaceId,
       names: new Map(brands.map((b) => [b.id, b.name])),
@@ -80,4 +98,5 @@ export async function syncEventInsights(workspaceId: string, now: Date = new Dat
       })),
     }),
   );
+  return announce(workspaceId, result);
 }

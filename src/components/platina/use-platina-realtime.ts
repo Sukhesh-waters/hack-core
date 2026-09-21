@@ -9,6 +9,9 @@ import {
 import {
   MAX_SUBSCRIBE_ATTEMPTS,
   nextLiveState,
+  pollIntervalMs,
+  refreshOnVisible,
+  SIGNAL_COALESCE_MS,
   type PlatinaLiveState,
 } from "@/lib/platina/realtime-state";
 
@@ -50,6 +53,7 @@ const shared = new Map<string, Shared>();
 export type { PlatinaLiveState };
 export { MAX_SUBSCRIBE_ATTEMPTS };
 
+/** The fallback interval without realtime (see realtime-state.ts pollIntervalMs). */
 export const PLATINA_POLL_INTERVAL_MS = 20_000;
 
 function publish(entry: Shared, state: PlatinaLiveState, detail: string | null) {
@@ -117,6 +121,26 @@ export function usePlatinaRealtime({
   onSignalRef.current = onSignal;
   const scopesRef = useRef(scopes);
   scopesRef.current = scopes;
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  // Render-cost controls (realtime-state.ts): one refresh per burst, none
+  // for a hidden tab, a catch-up when it comes back.
+  const pendingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const missedRef = useRef(false);
+  const lastRef = useRef(Date.now());
+  const deliverRef = useRef<(scope: PlatinaRealtimeScope | "poll") => void>(() => {});
+  deliverRef.current = (scope) => {
+    if (typeof document !== "undefined" && document.hidden) {
+      missedRef.current = scope !== "poll" || missedRef.current;
+      return;
+    }
+    if (pendingRef.current) return;
+    pendingRef.current = setTimeout(() => {
+      pendingRef.current = null;
+      lastRef.current = Date.now();
+      onSignalRef.current(scope);
+    }, scope === "poll" ? 0 : SIGNAL_COALESCE_MS);
+  };
 
   useEffect(() => {
     const sb = topicToken ? supabase() : null;
@@ -135,7 +159,7 @@ export function usePlatinaRealtime({
     const onScope = (scope: PlatinaRealtimeScope) => {
       const filter = scopesRef.current;
       if (!filter || filter.length === 0 || filter.includes(scope)) {
-        onSignalRef.current(scope);
+        deliverRef.current(scope);
       }
     };
     const onState = (next: PlatinaLiveState) => {
@@ -156,14 +180,44 @@ export function usePlatinaRealtime({
     };
   }, [topicToken]);
 
-  // Polling fallback — always active, whether Realtime is up or not.
+  // Polling fallback: fast without realtime, slow while live, off while the
+  // tab is hidden — with a catch-up refresh when it becomes visible again.
   useEffect(() => {
-    const interval = setInterval(
-      () => onSignalRef.current("poll"),
-      PLATINA_POLL_INTERVAL_MS,
-    );
-    return () => clearInterval(interval);
-  }, []);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const arm = () => {
+      if (interval) clearInterval(interval);
+      interval = null;
+      const ms = pollIntervalMs(state, !document.hidden);
+      if (ms !== null) interval = setInterval(() => deliverRef.current("poll"), ms);
+    };
+    const onVisibility = () => {
+      if (
+        !document.hidden &&
+        refreshOnVisible({
+          state: stateRef.current,
+          missedSignal: missedRef.current,
+          msSinceLastRefresh: Date.now() - lastRef.current,
+        })
+      ) {
+        missedRef.current = false;
+        deliverRef.current("poll");
+      }
+      arm();
+    };
+    arm();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      if (interval) clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [state]);
+
+  useEffect(
+    () => () => {
+      if (pendingRef.current) clearTimeout(pendingRef.current);
+    },
+    [],
+  );
 
   return { state, detail };
 }

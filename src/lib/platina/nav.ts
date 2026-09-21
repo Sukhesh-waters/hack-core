@@ -7,6 +7,8 @@
  */
 export const PLATINA_NAV = [
   { slug: "", label: "Cockpit" },
+  // The whole flow, live, in 3D (sources -> analysis -> Brain -> use).
+  { slug: "live", label: "Live flow" },
   { slug: "brands", label: "Clients" },
   // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
   { slug: "opportunities", label: "Opportunities" },

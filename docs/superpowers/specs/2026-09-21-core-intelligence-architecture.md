@@ -46,6 +46,7 @@ still open.
         │  floor -> rerank; scoped to client + competitors + workspace-wide sources
         ▼
  IDEATION (solutions/new)   PLANNER (plan/*)   OPPORTUNITIES PAGE (computed on read)
+                                                  LIVE FLOW (/live: the whole flow in 3D)
         │                         │                interest -> campaigns -> plans -> creative
         ▼                         ▼
  CREATIVE (on demand, last)   PLAN + freshness ("N new signals — re-plan")
@@ -103,8 +104,49 @@ if every model derails.
 | D17 | one viral post (18×) inflated a topic's average | momentum uses the median |
 | D18 | generic profile words ("analytical systems", "service offerings") taken as topics | generic filter widened |
 | D19 | router tests expected NVIDIA absent from the ladders | tests match the agreed ladders (NVIDIA kept) |
+| D20 | every Platina page re-ran all its queries every 20 s, in background tabs too, and once per signal in a burst | refresh policy above |
+| D21 | the insight sync imported a `server-only` module, which would crash the ops scripts | broadcaster loaded lazily; scripts skip the live signal |
+| D22 | realtime e2e counted rows in a 10-row table (could never grow once the fixture had 10 runs); legacy `/scans` expected an old heading | assert on the new run's source; heading updated |
 
-## 5. Open — in priority order
+## 5. Real time and rendering (2026-09-22)
+
+**Live signals.** Every committed write that changes what a page shows fires a
+signal-only broadcast on the workspace's opaque channel (`platina:<hmac>:live`):
+`audits`, `findings`, `solutions`, `outcomes`, `alerts`, and now `insights`
+(Brain insight written/superseded) and `events` (events read). Pages refetch
+through their own authenticated server render; no tenant data crosses the
+channel.
+
+**Refresh policy** (`lib/platina/realtime-state.ts`, tested):
+
+| Situation | Before | Now |
+|---|---|---|
+| Realtime live | full page refresh every 20 s + every signal | every signal (bursts coalesced to one, 800 ms) + safety refresh every 120 s |
+| Realtime down | every 20 s | every 20 s |
+| Background tab | every 20 s | nothing; one catch-up refresh on return if something was missed |
+
+**Server render cost** (warm, remote Postgres ~70 ms per round trip):
+
+| Path | Before | Now | How |
+|---|---|---|---|
+| Opportunities data | ~387 ms, 4 rounds | ~260 ms, 2 rounds | client-independent reads together; competitors + signals in one round (brand subquery) |
+| Cockpit first paint | waited for plan freshness (+~264 ms) | not blocked | freshness streams in through Suspense |
+| Planner / freshness scope | 3 rounds | 2 rounds | brand, competitors, workspace-wide ids in parallel |
+| Live flow data | — | ~75 ms | 26 counts as scalar subqueries in one statement |
+
+**Live flow (3D).** `/p/[ws]/live`: sources -> collected -> AI analysis ->
+Brain -> use -> results, drawn with three.js (loaded only on that page).
+Node size = real count; particles travel each edge in proportion to its last
+24 h; a refreshed snapshot that shows new arrivals fires a burst along
+exactly those edges (`flow-graph.ts arrivals`). The Brain is drawn as a
+point cloud — one point per stored vector, coloured debate claim / measured
+interest / event, faded when older than 24 h. HTML labels (readable, and a
+text list of the same numbers below for screen readers). Pauses when the tab
+is hidden or the view is scrolled away; honours reduced motion; says so when
+WebGL is unavailable. Browser test: `e2e/platina/live-flow.spec.ts` proves
+the canvas draws non-blank pixels with labels and no page errors.
+
+## 6. Open — in priority order
 
 1. **C6 learning loop.** Recorded results already become worked/failed lessons for the planner; they do not yet re-weight which topics/events the Opportunities page ranks first.
 2. **Plane A is empty for Waters in Platina** (0 brand chunks). The InstaMedia Brand Gene vault (93 Waters chunks) is kept separate by the module boundary; the client's own pages feed only its profile. Owner decision needed: let Platina ingest the client's own site into brand chunks (first-party baseline), or keep the baseline to imported campaign results only.

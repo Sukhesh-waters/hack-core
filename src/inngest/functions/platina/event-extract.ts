@@ -10,6 +10,7 @@ import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { routeAI } from "@/lib/ai/router";
 import { extractEventsForWorkspace, type EventExtractDeps } from "@/lib/platina/event-extract";
 import { syncEventInsights } from "@/lib/platina/market-insight-sync";
+import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 /**
  * A pass reads only recently collected documents: the job runs after every
@@ -50,6 +51,7 @@ export const platinaEventExtract = inngest.createFunction(
       const extracted = await step.run(`events-${ws}`, () =>
         extractEventsForWorkspace(deps, { workspaceId: ws, lookbackDays: EVENT_JOB_LOOKBACK_DAYS }),
       );
+      if (extracted.events > 0) await step.run(`announce-events-${ws}`, () => broadcastPlatinaSignal(ws, "events"));
       // Upcoming events into the Brain, so plans and ideation retrieve them (C5).
       const insights = await step.run(`event-insights-${ws}`, () => syncEventInsights(ws));
       results[ws] = { extracted, insights };

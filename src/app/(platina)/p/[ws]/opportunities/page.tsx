@@ -4,11 +4,11 @@ import { PlatinaPage } from "@/components/platina/page";
 import { PendingButton } from "@/components/platina/pending-button";
 import {
   listBrands,
+  listClientScopeSignals,
   listCompetitorsOf,
-  listEventParticipants,
   listEvents,
-  listInterestSignals,
   listPlansWithVerdict,
+  listWorkspaceEventParticipants,
 } from "@/db/queries/platina";
 import { BASELINE_DAYS, clientTopics, RECENT_DAYS, topicMomentum } from "@/lib/platina/interest";
 import {
@@ -115,7 +115,14 @@ export default async function OpportunitiesPage({
   params: { ws: string };
   searchParams: { client?: string; error?: string };
 }) {
-  const brands = await listBrands(params.ws);
+  // Two database rounds, not four: everything that does not depend on the
+  // chosen client first, then the client's competitors and signals together.
+  const [brands, events, participants, plans] = await Promise.all([
+    listBrands(params.ws),
+    listEvents(params.ws),
+    listWorkspaceEventParticipants(params.ws),
+    listPlansWithVerdict(params.ws),
+  ]);
   const clients = brands.filter((b) => b.kind === "own_brand");
   const client = clients.find((c) => c.id === searchParams.client) ?? clients[0];
 
@@ -134,14 +141,10 @@ export default async function OpportunitiesPage({
 
   const now = new Date();
   const since = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * 86_400_000);
-  const competitors = await listCompetitorsOf(params.ws, client.id);
-  const companyIds = [client.id, ...competitors.map((c) => c.id)];
-  const [signals, events, plans] = await Promise.all([
-    listInterestSignals(params.ws, companyIds, since),
-    listEvents(params.ws),
-    listPlansWithVerdict(params.ws),
+  const [competitors, signals] = await Promise.all([
+    listCompetitorsOf(params.ws, client.id),
+    listClientScopeSignals(params.ws, client.id, since),
   ]);
-  const participants = await listEventParticipants(params.ws, events.map((e) => e.id));
 
   const input = {
     client: {
