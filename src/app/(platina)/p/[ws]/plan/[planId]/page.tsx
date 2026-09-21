@@ -5,8 +5,12 @@ import { PlatinaPage } from "@/components/platina/page";
 import { PendingButton } from "@/components/platina/pending-button";
 import { PlanTimeline } from "@/components/platina/plan-timeline";
 import { PLAN_VERDICTS } from "@/db/platina-schema";
-import { getPlan, getPlanFeedback } from "@/db/queries/platina";
-import { recordPlanFeedbackAction } from "../actions";
+import { getPlan, getPlanFeedback, listPlanRevisions } from "@/db/queries/platina";
+import { isStale } from "@/lib/platina/plan/evidence";
+import { freshnessMessage } from "@/lib/platina/plan/freshness";
+import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
+import { cn } from "@/lib/utils";
+import { recordPlanFeedbackAction, revisePlanAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Campaign roadmap" };
@@ -15,6 +19,14 @@ const VERDICT_COPY: Record<(typeof PLAN_VERDICTS)[number], string> = {
   worked: "It worked",
   mixed: "Mixed results",
   failed: "It failed",
+};
+
+const UNGROUNDED_REASON: Record<string, string> = {
+  none_relevant:
+    "We have collected market signals, but none matched this brief closely enough to rest a plan on.",
+  empty_brain: "Nothing has been collected and validated yet, so there was no market evidence to use.",
+  no_client_evidence:
+    "Nothing has been collected for this client and its competitors yet, so there was no evidence to use.",
 };
 
 export default async function PlanDetailPage({
@@ -29,10 +41,47 @@ export default async function PlanDetailPage({
     getPlanFeedback(params.ws, params.planId),
   ]);
   if (!plan) notFound();
+  const [fresh, revisions] = await Promise.all([
+    readPlanFreshness({ workspaceId: params.ws, brandId: plan.brandId, createdAt: plan.createdAt }),
+    listPlanRevisions(params.ws, plan.id),
+  ]);
+  const doc = plan.plan;
 
   return (
-    <PlatinaPage eyebrow="Campaign roadmap" title={plan.title} description={plan.plan.summary}>
+    <PlatinaPage eyebrow="Campaign roadmap" title={plan.title} description={doc.summary}>
       <PlatinaFormError message={searchParams.error} />
+
+      <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        {plan.origin ? (
+          <span className="rounded-full border border-border px-2.5 py-0.5">{plan.origin.label}</span>
+        ) : null}
+        {plan.parentPlanId ? (
+          <Link
+            href={`/p/${params.ws}/plan/${plan.parentPlanId}`}
+            className="underline underline-offset-4"
+          >
+            See the plan this revises
+          </Link>
+        ) : null}
+        {revisions[0] ? (
+          <Link
+            href={`/p/${params.ws}/plan/${revisions[0].id}`}
+            className="font-medium text-brand-amber underline underline-offset-4"
+          >
+            A newer version exists
+          </Link>
+        ) : null}
+      </p>
+
+      {doc.revisionNote ? (
+        <p className="mb-4 whitespace-pre-line rounded-md border border-border bg-card px-4 py-3 text-sm">
+          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            What changed
+          </span>
+          {"\n"}
+          {doc.revisionNote}
+        </p>
+      ) : null}
 
       <p className="mb-4 whitespace-pre-line rounded-md border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
         <span className="font-mono text-[11px] uppercase tracking-[0.18em]">Brief</span>
@@ -40,13 +89,107 @@ export default async function PlanDetailPage({
         {plan.brief}
       </p>
 
-      <PlanTimeline plan={plan.plan} />
+      <section
+        aria-label="New evidence since this plan"
+        className={cn(
+          "mb-6 rounded-lg border p-4",
+          fresh.level === "replan"
+            ? "border-brand-amber/40 bg-brand-amber/5"
+            : "border-border bg-card",
+        )}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm">{freshnessMessage(fresh.count, fresh.scopeLabel)}</p>
+          <form action={revisePlanAction}>
+            <input type="hidden" name="workspaceId" value={params.ws} />
+            <input type="hidden" name="planId" value={plan.id} />
+            <PendingButton pendingLabel="Re-planning…">
+              {fresh.count > 0 ? "Re-plan with the new evidence" : "Re-plan now"}
+            </PendingButton>
+          </form>
+        </div>
+        {fresh.sample.length > 0 ? (
+          <ul className="mt-3 space-y-2">
+            {fresh.sample.map((e) => (
+              <li key={e.id} className="text-xs">
+                <span className="block">{e.content}</span>
+                <span className="text-muted-foreground">
+                  {e.sourceUrl ? (
+                    <a href={e.sourceUrl} className="underline underline-offset-2" rel="noreferrer" target="_blank">
+                      Source
+                    </a>
+                  ) : (
+                    "Source unavailable"
+                  )}
+                  {` · collected ${e.collectedAt.toISOString().slice(0, 10)}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Counts validated signals from this {fresh.scopeLabel ? "client's sources" : "workspace"}, not how
+          much each matters to this plan. Re-planning keeps this version and its recorded result.
+        </p>
+      </section>
+
+      <PlanTimeline plan={doc} />
 
       <p className="mt-3 text-xs text-muted-foreground">
         {plan.lessonsUsed > 0
           ? `Built using ${plan.lessonsUsed} earlier result${plan.lessonsUsed === 1 ? "" : "s"} you recorded.`
           : "First-pass plan: no earlier results were recorded yet, so it comes from the brief alone."}
       </p>
+      {doc.coldStart ? (
+        <p className="mt-2 rounded-md border border-brand-amber/40 bg-brand-amber/5 px-3 py-2 text-xs">
+          Cold start: no collected market evidence and no recorded results informed this plan.{" "}
+          {UNGROUNDED_REASON[doc.evidenceStatus ?? ""] ?? "It is built from the brief alone."}
+        </p>
+      ) : null}
+
+      {(doc.evidence?.length ?? 0) > 0 ? (
+        <section className="mt-6" aria-label="Evidence">
+          <h2 className="text-sm font-medium">Evidence behind each phase</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Public market signals collected for this workspace. Older evidence is marked, not hidden.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {doc.phases.map((phase) => {
+              const cited = (phase.evidenceIds ?? [])
+                .map((id) => doc.evidence?.find((e) => e.id === id))
+                .filter((e): e is NonNullable<typeof e> => Boolean(e));
+              return (
+                <li key={phase.id} className="rounded-md border border-border bg-card p-3">
+                  <p className="text-sm font-medium">{phase.name}</p>
+                  {cited.length === 0 ? (
+                    <p className="mt-1 text-xs text-muted-foreground">No evidence cited for this phase.</p>
+                  ) : (
+                    <ul className="mt-2 space-y-2">
+                      {cited.map((e) => (
+                        <li key={e.id} className="text-xs">
+                          <span className="block">{e.content}</span>
+                          <span className="text-muted-foreground">
+                            {e.sourceUrl ? (
+                              <a href={e.sourceUrl} className="underline underline-offset-2" rel="noreferrer" target="_blank">
+                                Source
+                              </a>
+                            ) : (
+                              "Source unavailable"
+                            )}
+                            {" · "}
+                            {e.collectedAt ? `collected ${e.collectedAt.slice(0, 10)}` : "collection date unknown"}
+                            {isStale(e.collectedAt, new Date()) ? " · STALE" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       {plan.critique.length > 0 ? (
         <section className="mt-6 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-4">

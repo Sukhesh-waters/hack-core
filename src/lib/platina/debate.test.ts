@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ONE_ROUND, nextRoundAllowed } from "./contradiction";
-import { NO_MATERIAL_OBJECTION, parseAttack } from "./debate";
+import {
+  CHALLENGER_SYSTEM,
+  NO_MATERIAL_OBJECTION,
+  NOTHING_NEW,
+  PROPOSER_SYSTEM,
+  isNothingNew,
+  parseAttack,
+  parseHeadline,
+} from "./debate";
 
 describe("debate round cap", () => {
   it("hard-codes a single contradiction round", () => {
@@ -43,5 +51,48 @@ describe("parseAttack — the honest challenger (R5.1)", () => {
     );
     expect(attack.strongestObjection).toBe("single-region sample");
     expect(attack.confounderStrength).toBe(0.6);
+  });
+});
+
+describe("parseHeadline / isNothingNew (R2)", () => {
+  it("takes the model's own naming of the move", () => {
+    expect(
+      parseHeadline(JSON.stringify({ headline: "Bluebird now guarantees a 48-hour roast" })),
+    ).toBe("Bluebird now guarantees a 48-hour roast");
+  });
+
+  it("returns null for a missing, empty or unparseable headline", () => {
+    expect(parseHeadline(JSON.stringify({ text: "x" }))).toBeNull();
+    expect(parseHeadline(JSON.stringify({ headline: "   " }))).toBeNull();
+    expect(parseHeadline("not json at all")).toBeNull();
+    expect(parseHeadline(JSON.stringify({ headline: 42 }))).toBeNull();
+  });
+
+  it("bounds a runaway headline instead of storing an essay as a title", () => {
+    expect(parseHeadline(JSON.stringify({ headline: "x".repeat(400) }))!.length).toBe(120);
+  });
+
+  it("recognises the honest 'nothing new' answer in the forms a model writes it", () => {
+    for (const headline of ["nothing new", "Nothing new", "nothing new."]) {
+      expect(isNothingNew(headline)).toBe(true);
+    }
+    expect(isNothingNew("Bluebird launches nothing new pricing")).toBe(false);
+    expect(isNothingNew(null)).toBe(false);
+  });
+});
+
+describe("the prompts state the rules the output depends on", () => {
+  it("asks the proposer for a headline, novelty and the client angle", () => {
+    expect(PROPOSER_SYSTEM).toContain("headline");
+    expect(PROPOSER_SYSTEM).toContain("NEW");
+    expect(PROPOSER_SYSTEM).toContain("client");
+    expect(PROPOSER_SYSTEM).toContain(NOTHING_NEW);
+    // The defect this round exists to kill.
+    expect(PROPOSER_SYSTEM).toMatch(/do not summarise or restate/i);
+  });
+
+  it("asks the challenger to call out generic claims by name", () => {
+    expect(CHALLENGER_SYSTEM).toMatch(/ordinary marketing copy/i);
+    expect(CHALLENGER_SYSTEM).toContain("confounderStrength");
   });
 });

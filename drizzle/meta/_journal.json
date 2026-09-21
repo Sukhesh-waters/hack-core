@@ -491,6 +491,62 @@
       "when": 1789880242162,
       "tag": "0069_platina_campaign_planner",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1789914524687,
+      "tag": "0070_brown_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1789922829084,
+      "tag": "0071_lush_shadowcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789926076841,
+      "tag": "0072_wise_stellaris",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789927039351,
+      "tag": "0073_clumsy_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789955687006,
+      "tag": "0074_slim_gorilla_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1789955908250,
+      "tag": "0075_outgoing_omega_flight",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1789956284466,
+      "tag": "0076_yellow_maestro",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789967506243,
+      "tag": "0077_watery_rhodey",
+      "breakpoints": true
     }
   ]
 }

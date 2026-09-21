@@ -16,7 +16,7 @@ export default async function ScansPage({
   const specs = await listScanSpecs(params.ws);
 
   return (
-    <PlatinaPage eyebrow="S3–S5 · gate 2" title="Scan specs">
+    <PlatinaPage eyebrow="Sources" title="Sources we watch">
       <PlatinaMovedNotice workspaceId={params.ws} to="audits" label="Audits" />
       <PlatinaFormError message={searchParams.error} />
       <form action={createScanSpecAction} className="mb-8 flex flex-col gap-2">
@@ -58,7 +58,7 @@ export default async function ScansPage({
                     type="submit"
                     className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
                   >
-                    Gate 2 · confirm fetch
+                    Start collecting
                   </button>
                 </form>
               )}

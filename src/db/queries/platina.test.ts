@@ -2,10 +2,32 @@ import { describe, expect, it } from "vitest";
 import {
   auditRunEventsQuery,
   auditRunsQuery,
+  brandByIdQuery,
+  brainEvidenceSinceQuery,
+  ownPagesQuery,
   brandChunksQuery,
+  brandsQuery,
+  findingBrandQuery,
+  planRevisionsQuery,
+  providerFailuresSinceQuery,
+  signalIdsForBrandsQuery,
+  competitorsOfQuery,
+  docCountForBrandsQuery,
+  findingsForBrandsQuery,
+  findingTitleExistsQuery,
+  latestDocumentQuery,
+  pagesTodayQuery,
+  recentBrainEvidenceQuery,
+  recentBrandEvidenceQuery,
+  scanSpecsForBrandQuery,
+  signalProvenanceQuery,
+  transcriptsSinceQuery,
   brainChunksQuery,
+  docsSinceQuery,
   dueReceiptsQuery,
   findingsQuery,
+  findingsSinceQuery,
+  latestRunEventQuery,
   firstPartyOutcomesQuery,
   gateEventsQuery,
   outcomesQuery,
@@ -14,6 +36,8 @@ import {
   signalDocumentsQuery,
   similarBrainChunksQuery,
   similarBrandChunksQuery,
+  brandStandardChunkCountQuery,
+  previousSignalDocumentQuery,
   unprocessedSignalsQuery,
 } from "./platina";
 
@@ -104,10 +128,155 @@ describe("platina query isolation", () => {
     expect(params).toEqual(expect.arrayContaining(["ws_p", "unprocessed"]));
   });
 
+  it("previousSignalDocumentQuery finds the version before this one, in this workspace only", () => {
+    const before = new Date("2026-09-21T10:00:00Z");
+    const { sql, params } = previousSignalDocumentQuery(
+      "ws_p",
+      "https://acme.com/pricing",
+      before,
+    ).toSQL();
+    expect(sql).toContain(String.raw`"workspace_id" =`);
+    expect(sql).toContain(String.raw`"canonical_url" =`);
+    // Strictly BEFORE: the document being analysed must not match itself.
+    expect(sql).toContain(String.raw`"fetched_at" <`);
+    expect(sql).toContain("order by");
+    expect(sql).toContain("limit");
+    // Drizzle serialises the timestamp parameter.
+    expect(params).toEqual(
+      expect.arrayContaining([
+        "ws_p",
+        "https://acme.com/pricing",
+        before.toISOString(),
+      ]),
+    );
+  });
+
+  it("recentBrandEvidenceQuery scopes the standard to one client when asked (R3)", () => {
+    const scoped = recentBrandEvidenceQuery("ws_p", 10, "brand_1").toSQL();
+    expect(scoped.sql).toContain(String.raw`"workspace_id" =`);
+    expect(scoped.sql).toContain(String.raw`"brand_id" =`);
+    expect(scoped.params).toEqual(expect.arrayContaining(["ws_p", "brand_1"]));
+
+    // Without a brand it stays workspace-wide, as it was before R3.
+    const wide = recentBrandEvidenceQuery("ws_p", 10).toSQL();
+    expect(wide.sql).toContain(String.raw`"workspace_id" =`);
+    expect(wide.sql).not.toContain(String.raw`"brand_id" =`);
+  });
+
+  it("brandStandardChunkCountQuery counts only live chunks for one client", () => {
+    const { sql, params } = brandStandardChunkCountQuery("ws_p", "brand_1").toSQL();
+    expect(sql).toContain(String.raw`"workspace_id" =`);
+    expect(sql).toContain(String.raw`"brand_id" =`);
+    expect(sql).toContain(String.raw`"superseded_at" is null`);
+    expect(params).toEqual(expect.arrayContaining(["ws_p", "brand_1"]));
+  });
+
   it("firstPartyOutcomesQuery excludes synthetic demo rows (A4)", () => {
     const { sql, params } = firstPartyOutcomesQuery("ws_p").toSQL();
     expect(sql).toContain('"workspace_id" =');
     expect(sql).toContain('"synthetic" =');
     expect(params).toEqual(expect.arrayContaining(["ws_p", false]));
+  });
+
+  it("brand queries filter workspace_id (a brand in ws A is not read for ws B)", () => {
+    for (const q of [
+      brandsQuery("ws_a"),
+      brandByIdQuery("ws_a", "b1"),
+      competitorsOfQuery("ws_a", "b1"),
+      scanSpecsForBrandQuery("ws_a", "b1"),
+    ]) {
+      const { sql, params } = q.toSQL();
+      expect(sql).toContain('"workspace_id" =');
+      expect(params).toContain("ws_a");
+      expect(params).not.toContain("ws_b");
+    }
+  });
+
+  it("competitorsOfQuery only returns competitors of the given parent", () => {
+    const { params } = competitorsOfQuery("ws_a", "parent-1").toSQL();
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "competitor", "parent-1"]));
+  });
+
+  it("joined per-brand queries carry workspace_id on EVERY table they touch", () => {
+    for (const q of [findingsForBrandsQuery("ws_a", ["b1"]), docCountForBrandsQuery("ws_a", ["b1"])]) {
+      const { sql, params } = q.toSQL();
+      const filters = sql.match(/"workspace_id" =/g) ?? [];
+      expect(filters.length).toBeGreaterThanOrEqual(2);
+      expect(params.filter((p) => p === "ws_a").length).toBe(filters.length);
+    }
+  });
+
+  it("throughput, provenance and stage helper queries are workspace-scoped", () => {
+    const since = new Date("2026-09-20T00:00:00Z");
+    for (const q of [
+      pagesTodayQuery("ws_a", "2026-09-20"),
+      transcriptsSinceQuery("ws_a", since),
+      recentBrainEvidenceQuery("ws_a", 5),
+      recentBrandEvidenceQuery("ws_a", 5),
+      signalProvenanceQuery("ws_a", ["s1"]),
+      latestDocumentQuery("ws_a"),
+      findingTitleExistsQuery("ws_a", "brand_divergence", "t"),
+    ]) {
+      const { sql, params } = q.toSQL();
+      expect(sql).toContain('"workspace_id" =');
+      expect(params).toContain("ws_a");
+    }
+  });
+
+  it("real-time planning queries are workspace-scoped, including every joined table", () => {
+    const since = new Date("2026-09-20T00:00:00Z");
+    for (const q of [
+      brainEvidenceSinceQuery("ws_a", since),
+      planRevisionsQuery("ws_a", "p1"),
+      providerFailuresSinceQuery("ws_a", since),
+    ]) {
+      const { sql, params } = q.toSQL();
+      expect(sql).toContain("workspace_id");
+      expect(params).toContain("ws_a");
+    }
+    for (const q of [signalIdsForBrandsQuery("ws_a", ["b1"]), findingBrandQuery("ws_a", "f1")]) {
+      const { sql, params } = q.toSQL();
+      const filters = sql.match(/"workspace_id" =/g) ?? [];
+      expect(filters.length).toBeGreaterThanOrEqual(2);
+      expect(params.filter((p) => p === "ws_a").length).toBe(filters.length);
+    }
+  });
+
+  it("a client's own pages are read workspace-scoped on both tables, and only that client's", () => {
+    const { sql, params } = ownPagesQuery("ws_a", "brand_1").toSQL();
+    const filters = sql.match(/"workspace_id" =/g) ?? [];
+    expect(filters.length).toBeGreaterThanOrEqual(2);
+    expect(params.filter((p) => p === "ws_a").length).toBe(filters.length);
+    expect(params).toContain("brand_1");
+    expect(sql).not.toContain("embedding");
+  });
+
+  it("the analysis backlog also picks up a claim whose worker died (stale or never timestamped)", () => {
+    const { sql, params } = unprocessedSignalsQuery("ws_a", 5, new Date("2026-09-20T12:00:00Z")).toSQL();
+    expect(sql).toContain("processing_started_at");
+    expect(sql).toContain("is null");
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "unprocessed", "processing"]));
+  });
+
+  it("the provider-swap read is scoped to failed attempts only", () => {
+    const { params } = providerFailuresSinceQuery("ws_a", new Date()).toSQL();
+    expect(params).toContain("failed");
+  });
+
+  it("the unprocessed backlog is read newest first so it cannot hide fresh signals", () => {
+    expect(unprocessedSignalsQuery("ws_a", 50).toSQL().sql).toMatch(/order by .*"created_at" desc/i);
+  });
+
+  it("health counters are workspace-scoped", () => {
+    const since = new Date("2026-09-20T00:00:00Z");
+    for (const q of [
+      docsSinceQuery("ws_p", since),
+      findingsSinceQuery("ws_p", since),
+      latestRunEventQuery("ws_p"),
+    ]) {
+      const { sql, params } = q.toSQL();
+      expect(sql).toContain('"workspace_id" =');
+      expect(params).toContain("ws_p");
+    }
   });
 });

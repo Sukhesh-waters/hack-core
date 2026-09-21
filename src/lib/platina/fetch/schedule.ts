@@ -7,10 +7,20 @@
  * doubling on consecutive unchanged fetches up to a 24-hour cap.
  */
 
+import {
+  DAILY_CAP_REASON,
+  PAGES_PER_SOURCE_DAY,
+  SOURCE_CAP_REASON,
+} from "./budget";
+
 export const ADAPTIVE_START_MINUTES = 360;
 export const ADAPTIVE_MAX_MINUTES = 24 * 60;
-/** Cost cap: actor fetches per source per UTC day. */
-export const MAX_FETCHES_PER_DAY = 48;
+/**
+ * Cost cap: pages collected per source per UTC day (a page, not a run).
+ * Owned by budget.ts, which holds every spend number and the assertions that
+ * keep them composing; re-exported here for the callers that already read it.
+ */
+export const MAX_FETCHES_PER_DAY = PAGES_PER_SOURCE_DAY;
 
 export type SchedulableSpec = {
   id: string;
@@ -90,6 +100,26 @@ export function costCapReached(spec: SchedulableSpec, now = new Date()): boolean
   if (spec.fetchesDay !== today) return false;
   return spec.fetchesToday >= MAX_FETCHES_PER_DAY;
 }
+
+/** Pages this spec may still spend today under its own per-source cap. */
+export function specPagesRemaining(spec: SchedulableSpec, now = new Date()): number {
+  const today = now.toISOString().slice(0, 10);
+  const used = spec.fetchesDay === today ? spec.fetchesToday : 0;
+  return Math.max(0, MAX_FETCHES_PER_DAY - used);
+}
+
+/**
+ * The workspace-wide spend control. Returns how many pages the workspace may
+ * still collect today; 0 means "paused until 00:00 UTC".
+ */
+export function workspacePagesRemaining(
+  pagesToday: number,
+  dailyCap: number,
+): number {
+  return Math.max(0, dailyCap - pagesToday);
+}
+
+export { DAILY_CAP_REASON, SOURCE_CAP_REASON };
 
 /** Adaptive interval after an unchanged fetch: double, capped at 24 h. */
 export function backoffInterval(current: number | null): number {

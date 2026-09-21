@@ -26,7 +26,7 @@ export default async function ConfigPage({
   const config = await getWorkspaceConfig(params.ws);
 
   return (
-    <PlatinaPage eyebrow="SOP harness" title="Workspace config">
+    <PlatinaPage eyebrow="Settings" title="Workspace config">
       <PlatinaMovedNotice workspaceId={params.ws} to="admin" label="Admin" />
       <p className="mb-4 text-sm text-muted-foreground">
         Thresholds are per-workspace. Plane separation, one-round contradiction,

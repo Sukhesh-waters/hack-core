@@ -1,0 +1,14 @@
+{
+  "inputUrl": "https://www.instagram.com/nasa",
+  "id": "528817151",
+  "username": "nasa",
+  "url": "https://www.instagram.com/nasa",
+  "fullName": "NASA",
+  "biography": "Making the seemingly impossible, possible. ✨",
+  "followersCount": 104351584,
+  "followsCount": 91,
+  "postsCount": 4928,
+  "verified": true,
+  "private": false,
+  "__note": "Trimmed from a live apify~instagram-profile-scraper run (2026-09-21). Dropped latestPosts/relatedProfiles/profilePic* — 150KB the mapper never reads."
+}

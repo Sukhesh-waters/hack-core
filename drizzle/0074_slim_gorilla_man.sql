@@ -1,0 +1,1 @@
+CREATE INDEX "platina_signal_documents_ws_canonical_fetched_idx" ON "platina_signal_documents" USING btree ("workspace_id","canonical_url","fetched_at");

@@ -16,6 +16,7 @@ import {
   uniqueIndex,
   vector,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { users, workspaces } from "./schema";
 
 const id = () =>
@@ -133,11 +134,62 @@ export const platinaClaimsRuleKind = pgEnum("platina_claims_rule_kind", [
 export const PLATINA_EMBEDDING_MODEL_VERSION = "gemini-embedding-001";
 
 export type PlatinaScanTarget = {
-  kind: "competitor_site" | "press_release" | "conference" | "trade_editorial" | "ad_library";
+  kind:
+    | "competitor_site"
+    | "press_release"
+    | "conference"
+    | "trade_editorial"
+    | "ad_library"
+    | "social_profile"
+    | "social_posts";
+  /** URL, or "<platform>:@handle" for social kinds (e.g. "instagram:@acme"). */
   value: string;
   // "web" (own-code adapter) is deliberately not a selectable value until the
   // constitution is updated; the runtime registry rejects it too.
   adapter?: "apify";
+  /** Pages/posts to collect per run. Default 1, hard ceiling MAX_PAGES_CEILING. */
+  maxPages?: number;
+  /** Render JavaScript (playwright, ~5-10x cost). Opt-in per source. */
+  renderJs?: boolean;
+  /** Seed the crawl from the site sitemap instead of one start URL. */
+  seedFromSitemap?: boolean;
+};
+
+/** Per-platform engagement numbers. An absent key means "not measured" — never 0. */
+export type PlatinaSignalMetrics = {
+  likes?: number;
+  comments?: number;
+  views?: number;
+  shares?: number;
+  followers?: number;
+  /** ISO timestamp the post was published. */
+  postedAt?: string;
+};
+
+export type PlatinaFindingEvidence = {
+  brandChunkIds: string[];
+  brainChunkIds: string[];
+};
+
+/**
+ * What we understand about a client from its own public pages (first-party,
+ * derived). Context for planning — never evidence to cite.
+ */
+export type ClientProfile = {
+  summary: string;
+  offers: string[];
+  audience: string;
+  tone: string;
+  keywords: string[];
+  /** Notable claims the client makes about itself. */
+  claims: string[];
+};
+
+export type PlatinaBrandHandles = {
+  instagram?: string;
+  tiktok?: string;
+  linkedin?: string;
+  youtube?: string;
 };
 
 export type PlatinaPromptTemplates = {
@@ -172,6 +224,9 @@ export const platinaBrandChunks = pgTable(
   {
     id: id(),
     workspaceId: workspaceFk(),
+    // The client this standard describes. Nullable: workspace-wide brand text
+    // predates clients and keeps working (R3).
+    brandId: text("brand_id"),
     sourceUrl: text("source_url"),
     title: text("title"),
     content: text("content").notNull(),
@@ -188,6 +243,10 @@ export const platinaBrandChunks = pgTable(
   (table) => ({
     workspaceIdx: index("platina_brand_chunks_workspace_id_idx").on(
       table.workspaceId,
+    ),
+    brandIdx: index("platina_brand_chunks_brand_idx").on(
+      table.workspaceId,
+      table.brandId,
     ),
   }),
 );
@@ -233,11 +292,19 @@ export const platinaSignalDocuments = pgTable(
     sourceKind: text("source_kind"),
     contentHash: text("content_hash"),
     processingState: text("processing_state").notNull().default("unprocessed"),
+    // Why analysis passed this document over (low-value page, no new move).
+    // A skipped document is never deleted and never silent.
+    skipReason: text("skip_reason"),
+    // When an analysis worker claimed this document. A claim older than the
+    // stale window (worker died / job runner restarted) is reclaimable.
+    processingStartedAt: timestamp("processing_started_at", { mode: "date" }),
     title: text("title"),
     body: text("body").notNull(),
     fetchedAt: timestamp("fetched_at", { mode: "date" }).notNull().defaultNow(),
     adapter: text("adapter").notNull().default("apify"),
     raw: jsonb("raw"),
+    // Engagement numbers for social documents. Plane B: still never embedded.
+    metrics: jsonb("metrics").$type<PlatinaSignalMetrics>(),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
@@ -248,6 +315,11 @@ export const platinaSignalDocuments = pgTable(
     specHashUnique: uniqueIndex(
       "platina_signal_documents_spec_hash_unique",
     ).on(table.scanSpecId, table.contentHash),
+    // "What did this page look like last time?" — the previous-version lookup
+    // that turns a changed page into a finding about the change (R1).
+    canonicalHistoryIdx: index(
+      "platina_signal_documents_ws_canonical_fetched_idx",
+    ).on(table.workspaceId, table.canonicalUrl, table.fetchedAt),
   }),
 );
 
@@ -367,7 +439,10 @@ export const platinaScanSpecs = pgTable(
     consecutiveUnchanged: integer("consecutive_unchanged").notNull().default(0),
     currentIntervalMinutes: integer("current_interval_minutes"),
     fetchesDay: text("fetches_day"),
+    // Pages returned today (not runs), so a 25-page crawl counts as 25.
     fetchesToday: integer("fetches_today").notNull().default(0),
+    // Nullable by design: specs created before brands existed keep working.
+    brandId: text("brand_id"),
     createdById: text("created_by_id")
       .notNull()
       .references(() => users.id),
@@ -378,6 +453,7 @@ export const platinaScanSpecs = pgTable(
     workspaceIdx: index("platina_scan_specs_workspace_id_idx").on(
       table.workspaceId,
     ),
+    brandIdx: index("platina_scan_specs_brand_id_idx").on(table.brandId),
   }),
 );
 
@@ -474,6 +550,12 @@ export const platinaWorkspaceConfig = pgTable(
     // R4.2 — below this fused similarity, retrieval answers
     // "insufficient_relevance" instead of ranking noise. Slice 10 exposes it.
     similarityFloor: real("similarity_floor").notNull().default(0.35),
+    // Workspace-wide spend control: pages collected per UTC day across all sources.
+    dailyActorCallCap: integer("daily_actor_call_cap").notNull().default(40),
+    // One-time pages per client, spent before the daily cap applies (R7).
+    firstPassPageAllowance: integer("first_pass_page_allowance")
+      .notNull()
+      .default(150),
     compactionStaleDays: integer("compaction_stale_days").notNull().default(90),
     compactionNearDupes: integer("compaction_near_dupes").notNull().default(3),
     compactionCosine: real("compaction_cosine").notNull().default(0.92),
@@ -641,6 +723,8 @@ export const platinaFindings = pgTable(
     summary: text("summary").notNull(),
     strongestObjection: text("strongest_objection"),
     severity: text("severity").notNull().default("medium"),
+    // Chunk ids behind a brand_divergence finding, kept as two separate lists.
+    evidence: jsonb("evidence").$type<PlatinaFindingEvidence>(),
     status: platinaFindingStatus("status").notNull().default("new"),
     humanRuling: text("human_ruling"),
     ruledBy: text("ruled_by").references(() => users.id),
@@ -814,12 +898,41 @@ export type PlanPhase = {
   endDay: number;
   channel: string;
   message: string;
+  /** Ids from PlanDoc.evidence this phase rests on — one plane only (two-layer rule). */
+  evidenceIds?: string[];
+};
+
+/** A frozen copy of the evidence a plan saw, so the roadmap survives chunk demotion. */
+export type PlanEvidenceSnapshot = {
+  id: string;
+  plane: "A" | "B";
+  content: string;
+  sourceUrl: string | null;
+  collectedAt: string | null;
+  confidence: number | null;
+};
+
+/** The situation that started a plan — shown on the roadmap so it is never anonymous. */
+export type PlanOrigin = {
+  kind: "brief" | "finding" | "event" | "client" | "revision";
+  /** Finding id, parent plan id, or event name, depending on kind. */
+  refId?: string;
+  label: string;
+  /** Days from today to a fixed date the plan must land on (events). */
+  anchorDay?: number;
 };
 
 export type PlanDoc = {
+  /** One sentence on what changed versus the plan this one revises. */
+  revisionNote?: string;
   summary: string;
   totalDays: number;
   phases: PlanPhase[];
+  /** True when no collected evidence and no logged results informed the plan. */
+  coldStart?: boolean;
+  /** Why the evidence list is what it is — lets the roadmap explain an ungrounded plan. */
+  evidenceStatus?: "matched" | "none_relevant" | "empty_brain" | "no_client_evidence";
+  evidence?: PlanEvidenceSnapshot[];
 };
 
 export const PLAN_VERDICTS = ["worked", "mixed", "failed"] as const;
@@ -837,6 +950,12 @@ export const platinaPlans = pgTable(
     critique: jsonb("critique").$type<string[]>().notNull().default([]),
     // How many logged results informed this plan (0 = cold start).
     lessonsUsed: integer("lessons_used").notNull().default(0),
+    // The client this plan is for (null = workspace-wide). Scopes the evidence
+    // the planner sees to that client and its competitors.
+    brandId: text("brand_id"),
+    origin: jsonb("origin").$type<PlanOrigin>(),
+    // The plan this one revises: a live re-plan when new evidence arrives.
+    parentPlanId: text("parent_plan_id"),
     createdById: text("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -844,6 +963,8 @@ export const platinaPlans = pgTable(
   },
   (table) => ({
     workspaceIdx: index("platina_plans_workspace_id_idx").on(table.workspaceId),
+    brandIdx: index("platina_plans_brand_id_idx").on(table.brandId),
+    parentIdx: index("platina_plans_parent_plan_id_idx").on(table.parentPlanId),
   }),
 );
 
@@ -871,7 +992,63 @@ export const platinaPlanFeedback = pgTable(
   }),
 );
 
+// ---------------------------------------------------------------------------
+// Brands — the client/project entity the whole spine hangs off (core spine S1).
+// "own_brand" is shown as a Client in the UI; competitors point at their
+// own_brand via parent_brand_id (plain text, not a self-FK: a self-referencing
+// cascade on a table that also cascades from workspaces is a delete path
+// nobody has reasoned about — the relationship is enforced in the query layer).
+// ---------------------------------------------------------------------------
+
+export const platinaBrandKind = pgEnum("platina_brand_kind", [
+  "own_brand",
+  "competitor",
+]);
+
+export const platinaBrandStatus = pgEnum("platina_brand_status", [
+  "active",
+  "paused",
+]);
+
+export const platinaBrands = pgTable(
+  "platina_brands",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    name: text("name").notNull(),
+    kind: platinaBrandKind("kind").notNull().default("own_brand"),
+    parentBrandId: text("parent_brand_id"),
+    homepageUrl: text("homepage_url"),
+    handles: jsonb("handles").$type<PlatinaBrandHandles>().notNull().default({}),
+    region: text("region"),
+    notes: text("notes"),
+    // Derived from the client's own scraped pages (own_brand only). The error
+    // is kept so a failed analysis is visible, never silently empty.
+    profile: jsonb("profile").$type<ClientProfile>(),
+    profileSources: jsonb("profile_sources").$type<string[]>(),
+    profileUpdatedAt: timestamp("profile_updated_at", { mode: "date" }),
+    profileError: text("profile_error"),
+    // Pages already spent from this client one-time first-pass allowance (R7).
+    firstPassPagesUsed: integer("first_pass_pages_used").notNull().default(0),
+    status: platinaBrandStatus("status").notNull().default("active"),
+    createdById: text("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_brands_workspace_id_idx").on(table.workspaceId),
+    parentIdx: index("platina_brands_parent_idx").on(table.parentBrandId),
+    nameUnique: uniqueIndex("platina_brands_workspace_name_unique").on(
+      table.workspaceId,
+      sql`lower(${table.name})`,
+    ),
+  }),
+);
+
 export const platinaWorkspaceScopedTables = {
+  platinaBrands,
   platinaPlans,
   platinaPlanFeedback,
   platinaBrandChunks,

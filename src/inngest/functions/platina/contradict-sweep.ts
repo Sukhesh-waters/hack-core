@@ -1,19 +1,17 @@
 import { inngest } from "@/inngest/client";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import {
-  getScanSpec,
+  countTranscriptsSince,
   getWorkspaceConfig,
-  insertBrainChunk,
   insertFinding,
-  insertTranscript,
   listDebateTranscripts,
   listOpenOperationalFindings,
   listUnresolvedSignals,
-  markSignalProcessed,
 } from "@/db/queries/platina";
-import { runContradictionRound } from "@/lib/platina/debate";
-import { embedText } from "@/lib/platina/embed";
-import { findingPathFor, findingUseCaseForSourceKind } from "@/lib/platina/findings";
+import {
+  analysisBatchSize,
+  analyzeEventId,
+} from "@/lib/platina/analysis";
 import {
   OBJECTION_RATE_CEILING,
   OBJECTION_WINDOW,
@@ -23,13 +21,14 @@ import {
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 /**
- * Contradiction sweep. Triggered by a new signal batch (event carries the
- * workspace) or by the 6-hour cron backstop over all workspaces. Processes
- * only unprocessed signal documents, marks each after its round, and creates
- * user-facing findings: agreed → visible finding + embedded Brain chunk;
- * contested → finding awaiting a human ruling; refuted → transcript only.
+ * Contradiction sweep — the dispatcher. Triggered by a new signal batch (event
+ * carries the workspace) or by the 6-hour cron backstop over all workspaces.
+ * It fans out one `platina/signal.analyze` event per unprocessed document,
+ * newest first, bounded by the workspace's daily analysis cap; the analysis
+ * itself (debate -> finding / Brain chunk) lives in signal-analyze.ts so it
+ * runs concurrently and retries per signal.
  *
- * R5.1: after each workspace batch, the objection rate over the recent
+ * R5.1: after each workspace's dispatch, the objection rate over the recent
  * transcript window is computed; a ceiling breach raises one open
  * operational finding against the current prompt version.
  */
@@ -50,103 +49,36 @@ export const platinaContradictSweep = inngest.createFunction(
       ? [requestedWorkspace]
       : await step.run("list-workspaces", () => listAllWorkspaceIds());
 
-    let written = 0;
-    let escalated = 0;
+    let dispatched = 0;
     for (const workspaceId of workspaceIds) {
-      // Stored thresholds govern this workspace's contradiction pass.
-      const config = await step.run(`config-${workspaceId}`, () =>
-        getWorkspaceConfig(workspaceId),
+      const startOfDay = new Date(
+        `${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`,
       );
-      const floors = config
-        ? {
-            contestedFloor: config.contestedFloor,
-            qualifiedFloor: config.qualifiedFloor,
-          }
-        : undefined;
-      const signals = await step.run(`signals-${workspaceId}`, () =>
-        listUnresolvedSignals(workspaceId),
+      const analysedToday = await step.run(`analysed-today-${workspaceId}`, () =>
+        countTranscriptsSince(workspaceId, startOfDay),
       );
-      for (const signal of signals.slice(0, 5)) {
-        const result = await step.run(`debate-${signal.id}`, () =>
-          runContradictionRound(
-            `${signal.title ?? ""}\n${signal.body}`,
-            floors,
-          ),
+      const budget = analysisBatchSize(analysedToday);
+      if (budget > 0) {
+        const signals = await step.run(`signals-${workspaceId}`, () =>
+          listUnresolvedSignals(workspaceId, budget),
         );
-        const transcriptId = await step.run(`transcript-${signal.id}`, () =>
-          insertTranscript({
-            workspaceId,
-            signalIds: [signal.id],
-            proposerClaim: result.claim.text,
-            challengerAttack: result.attack.text,
-            score: result.result.score,
-            state: result.result.state,
-            strongestObjection: result.result.caveat,
-          }),
-        );
-        const path = findingPathFor(result.result.state);
-
-        let brainChunkId: string | null = null;
-        if (path.brainChunk) {
-          const content = result.result.caveat
-            ? `${result.claim.text}\nCaveat: ${result.result.caveat}`
-            : result.claim.text;
-          // Embed at write time; a router outage stores the chunk without a
-          // vector rather than blocking the finding.
-          const embedding = await step.run(`embed-${signal.id}`, () =>
-            embedText(content),
+        if (signals.length > 0) {
+          await step.sendEvent(
+            `dispatch-${workspaceId}`,
+            signals.map((signal) => ({
+              id: analyzeEventId(signal.id),
+              name: "platina/signal.analyze",
+              data: { workspaceId, signalId: signal.id },
+            })),
           );
-          brainChunkId = await step.run(`brain-${signal.id}`, () =>
-            insertBrainChunk({
-              workspaceId,
-              content,
-              confidence: result.result.score,
-              agreementState: result.result.state,
-              sourceSignalIds: [signal.id],
-              generation: 0,
-              transcriptId,
-              embedding: embedding ?? undefined,
-            }),
-          );
-          written += 1;
+          dispatched += signals.length;
         }
-
-        if (path.finding) {
-          // The source kind sets the use case (Slice 7).
-          let useCase = "competitor_change";
-          if (signal.scanSpecId) {
-            const spec = await step.run(`spec-${signal.id}`, () =>
-              getScanSpec(workspaceId, signal.scanSpecId!),
-            );
-            useCase = findingUseCaseForSourceKind(spec?.targets[0]?.kind);
-          }
-          await step.run(`finding-${signal.id}`, () =>
-            insertFinding({
-              workspaceId,
-              signalDocumentId: signal.id,
-              transcriptId,
-              brainChunkId,
-              useCase,
-              title:
-                signal.title ??
-                result.claim.text.slice(0, 80),
-              summary: result.claim.text,
-              strongestObjection: result.result.caveat ?? result.attack.text,
-              status: path.finding === "needs_decision" ? "needs_decision" : "new",
-            }),
-          );
-          if (path.finding === "needs_decision") escalated += 1;
-          await broadcastPlatinaSignal(workspaceId, "findings");
-        } else if (result.result.state === "contested" || result.result.state === "refuted") {
-          escalated += 1;
-        }
-
-        await step.run(`processed-${signal.id}`, () =>
-          markSignalProcessed(workspaceId, signal.id),
-        );
       }
 
       // R5.1 — objection-rate telemetry against the prompt version.
+      const config = await step.run(`config-${workspaceId}`, () =>
+        getWorkspaceConfig(workspaceId),
+      );
       const rounds = await step.run(`objection-window-${workspaceId}`, () =>
         listDebateTranscripts(workspaceId, OBJECTION_WINDOW),
       );
@@ -155,7 +87,6 @@ export const platinaContradictSweep = inngest.createFunction(
           listOpenOperationalFindings(workspaceId),
         );
         if (open.length === 0) {
-          // The config was loaded at the top of this workspace's pass.
           const rate = objectionRate(rounds.map((r) => ({ state: r.state })));
           await step.run(`operational-finding-${workspaceId}`, () =>
             insertFinding({
@@ -177,6 +108,6 @@ export const platinaContradictSweep = inngest.createFunction(
         }
       }
     }
-    return { written, escalated };
+    return { dispatched };
   },
 );

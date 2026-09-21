@@ -1,0 +1,1 @@
+ALTER TABLE "platina_signal_documents" ADD COLUMN "processing_started_at" timestamp;

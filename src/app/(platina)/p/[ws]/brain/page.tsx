@@ -12,7 +12,7 @@ export default async function BrainPage({
   const chunks = await listBrainChunks(params.ws);
 
   return (
-    <PlatinaPage eyebrow="S6–S7 · plane C" title="Brain">
+    <PlatinaPage eyebrow="Knowledge" title="Brain">
       <PlatinaMovedNotice
         workspaceId={params.ws}
         to="findings"

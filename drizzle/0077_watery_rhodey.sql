@@ -1,0 +1,2 @@
+ALTER TABLE "platina_brands" ADD COLUMN "first_pass_pages_used" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "platina_workspace_config" ADD COLUMN "first_pass_page_allowance" integer DEFAULT 150 NOT NULL;

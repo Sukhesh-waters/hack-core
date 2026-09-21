@@ -18,7 +18,7 @@ const LABEL: Record<PlatinaLiveState, string> = {
  */
 export function PlatinaLiveStatus({ topicToken }: { topicToken: string | null }) {
   const router = useRouter();
-  const { state } = usePlatinaRealtime({
+  const { state, detail } = usePlatinaRealtime({
     topicToken,
     onSignal: () => router.refresh(),
   });
@@ -28,7 +28,9 @@ export function PlatinaLiveStatus({ topicToken }: { topicToken: string | null })
       className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground"
       title={
         state === "polling"
-          ? "Refreshing on a 20-second interval"
+          ? detail
+            ? `Refreshing on a 20-second interval — live updates unavailable: ${detail}`
+            : "Refreshing on a 20-second interval"
           : "Realtime signal plus 20-second polling fallback"
       }
     >

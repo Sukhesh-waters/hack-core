@@ -6,6 +6,7 @@
  * failure yields drift "not_run" with the claims verdict intact.
  */
 import { routeAI } from "@/lib/ai/router";
+import { extractJson } from "./json";
 import { enforceClaims, type ClaimViolation, type ClaimsDna } from "./claims";
 
 export type DriftMismatch = {
@@ -34,7 +35,10 @@ export async function auditCopyAgainstStandard(input: {
   } as const;
 
   if (input.standardChunks.length === 0) {
-    return { claims: claimsResult, drift: { state: "not_run", mismatches: [] } };
+    return {
+      claims: claimsResult,
+      drift: { state: "not_run", mismatches: [] },
+    };
   }
 
   try {
@@ -49,10 +53,11 @@ export async function auditCopyAgainstStandard(input: {
         "List only exact, traceable mismatches: each must cite the standard " +
         'line index and the offending copy excerpt. Reply JSON {"mismatches": ' +
         '[{"standardIndex": number, "copyExcerpt": string, "why": string}]}. ' +
-        "If the copy conforms, reply {\"mismatches\": []}.",
+        'If the copy conforms, reply {"mismatches": []}.',
       prompt: `Standard:\n${standard}\n\nCopy:\n${input.copy.slice(0, 3000)}`,
     });
-    const parsed = JSON.parse(raw) as { mismatches?: unknown };
+    const parsed = extractJson<{ mismatches?: unknown }>(raw);
+    if (!parsed) throw new Error("no JSON in reply");
     const mismatches: DriftMismatch[] = Array.isArray(parsed.mismatches)
       ? parsed.mismatches.flatMap((m): DriftMismatch[] => {
           const mm = m as Record<string, unknown>;
@@ -76,6 +81,9 @@ export async function auditCopyAgainstStandard(input: {
           : { state: "drifted", mismatches },
     };
   } catch {
-    return { claims: claimsResult, drift: { state: "not_run", mismatches: [] } };
+    return {
+      claims: claimsResult,
+      drift: { state: "not_run", mismatches: [] },
+    };
   }
 }

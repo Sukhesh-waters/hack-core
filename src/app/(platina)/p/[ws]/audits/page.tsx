@@ -35,6 +35,8 @@ const KIND_LABEL: Record<string, string> = {
   conference: "Conference",
   trade_editorial: "Editorial",
   ad_library: "Ad library",
+  social_profile: "Social profile",
+  social_posts: "Social posts",
 };
 
 const FRESHNESS_LABEL = {
@@ -100,6 +102,8 @@ export default async function AuditsPage({
             <option value="trade_editorial">Trade editorial</option>
             <option value="conference">Conference page</option>
             <option value="ad_library">Ad library</option>
+            <option value="social_profile">Social profile (instagram:@handle)</option>
+            <option value="social_posts">Social posts (instagram:@handle)</option>
           </select>
           <select
             name="cadenceMinutes"

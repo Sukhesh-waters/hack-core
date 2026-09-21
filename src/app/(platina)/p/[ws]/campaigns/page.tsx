@@ -13,7 +13,7 @@ export default async function CampaignsPage({
   const campaigns = await listCampaigns(params.ws);
 
   return (
-    <PlatinaPage eyebrow="S10–S11 · gate 4" title="Campaigns">
+    <PlatinaPage eyebrow="Campaigns" title="Campaigns">
       <PlatinaMovedNotice
         workspaceId={params.ws}
         to="solutions"
@@ -34,7 +34,7 @@ export default async function CampaignsPage({
                 type="submit"
                 className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground"
               >
-                Gate 4 · approve to ship
+                Approve to ship
               </button>
             </form>
           </li>

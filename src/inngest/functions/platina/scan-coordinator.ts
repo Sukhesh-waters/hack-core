@@ -1,5 +1,5 @@
 import { inngest } from "@/inngest/client";
-import { listSchedulableSpecs } from "@/db/queries/platina";
+import { listSchedulableSpecs, listStaleQueuedRuns } from "@/db/queries/platina";
 import {
   isDue,
   isProbeCapable,
@@ -21,6 +21,21 @@ export const platinaScanCoordinator = inngest.createFunction(
       listSchedulableSpecs(),
     );
     const now = new Date();
+    // Runs requested while the job runner was down are stuck "queued" — the
+    // event was never delivered. Re-send them; the guarded queued->running
+    // transition makes a duplicate delivery harmless.
+    const stuck = await step.run("stale-queued-runs", () =>
+      listStaleQueuedRuns(new Date(now.getTime() - 2 * 60_000)),
+    );
+    if (stuck.length > 0) {
+      await step.sendEvent(
+        "requeue-stale-runs",
+        stuck.map((r) => ({
+          name: "platina/audit-run.requested",
+          data: { runId: r.id, workspaceId: r.workspaceId },
+        })),
+      );
+    }
     // Tick bucket: one fan-out per spec per tick, replay-safe.
     const tick = now.toISOString().slice(0, 16);
 

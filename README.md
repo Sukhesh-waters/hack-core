@@ -46,11 +46,34 @@ Required env (see `.env.example` for details):
 Without `DATABASE_URL` the app still builds and renders the landing/login
 pages; DB-backed flows show a "setup required" notice.
 
+## Running the background jobs
+
+Collection, probes, audit runs and the contradiction sweep are Inngest
+functions. `npm run dev` does **not** run them: with `INNGEST_DEV=1` the app
+waits for a local Inngest dev server, and without one nothing scheduled ever
+fires — and nothing logs an error, because nothing was asked to happen.
+
+Easiest: `npm run dev:all` starts both, cross-platform, with prefixed output and
+Ctrl+C stopping both. Or run them in separate terminals:
+
+```bash
+npm run dev        # terminal 1
+npm run dev:jobs   # terminal 2 — discovers /api/inngest on port 3000
+```
+
+To check the loop, open `/p/<workspaceId>/admin/health`. It reports the
+scheduler heartbeat, database, collection token and (on request) which AI
+provider answered, with the next step spelled out for anything not working.
+To test the fetch step alone, bypassing Inngest:
+`npx tsx scripts/smoke-collect.ts --ws <id> --spec <id>` (one real Apify run).
+
 ## Scripts
 
 | Command | What it does |
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js |
+| `npm run dev:all` | **Start here.** App + Inngest dev server together (nothing scheduled runs without the job runner) |
+| `npm run dev:jobs` | Just the Inngest dev server, for a second terminal |
 | `npm run lint` / `typecheck` / `test` | CI trio (also runs on GitHub Actions) |
 | `npm run db:generate` | Generate SQL migration from `src/db/schema.ts` |
 | `npm run db:migrate` | Apply migrations |

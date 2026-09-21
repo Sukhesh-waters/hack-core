@@ -7,6 +7,7 @@
  */
 export const PLATINA_NAV = [
   { slug: "", label: "Cockpit" },
+  { slug: "brands", label: "Clients" },
   { slug: "plan", label: "Plan" },
   { slug: "audits", label: "Audits" },
   { slug: "findings", label: "Findings" },

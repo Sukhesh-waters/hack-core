@@ -45,6 +45,15 @@ export default async function AdminPage({
       <PlatinaFormError message={searchParams.error} />
       <div className="mb-8 grid gap-3 md:grid-cols-2">
         <Link
+          href={`/p/${params.ws}/admin/health`}
+          className="rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
+        >
+          <p className="font-medium">Collection health</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Is collection running right now, and what to do if it is not.
+          </p>
+        </Link>
+        <Link
           href={`/p/${params.ws}/admin/brand`}
           className="rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
         >
@@ -156,6 +165,17 @@ export default async function AdminPage({
               type="number"
               step="0.05"
               defaultValue={config?.similarityFloor ?? 0.35}
+              className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="text-xs font-medium">
+            Daily collection limit (pages read per day, all sources)
+            <input
+              name="dailyActorCallCap"
+              type="number"
+              min={1}
+              max={1000}
+              defaultValue={config?.dailyActorCallCap ?? 40}
               className="mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
             />
           </label>

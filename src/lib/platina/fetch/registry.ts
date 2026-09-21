@@ -1,4 +1,7 @@
-import type { PlatinaScanTarget } from "@/db/platina-schema";
+import type {
+  PlatinaScanTarget,
+  PlatinaSignalMetrics,
+} from "@/db/platina-schema";
 
 /** Any spec the caller might hand the registry, approved or not. */
 export type ScanSpecCandidate = {
@@ -6,6 +9,8 @@ export type ScanSpecCandidate = {
   workspaceId: string;
   status: "draft" | "approved" | "running" | "done" | "failed";
   targets: PlatinaScanTarget[];
+  /** Pages the adapter may still spend today (spec and workspace caps combined). */
+  pageBudget?: number;
 };
 
 /** Only this shape may reach an adapter. */
@@ -22,12 +27,18 @@ export type RawSignalDoc = {
   canonicalUrl?: string;
   contentHash?: string;
   raw?: unknown;
+  /** Engagement numbers (social kinds). Absent keys mean "not measured". */
+  metrics?: PlatinaSignalMetrics;
 };
 
 /** A target that produced nothing usable. Never stored as a signal doc. */
 export type FetchFailure = { target: string; error: string };
 
 export type FetchOutcome = {
+  /** Pages/posts the actors returned — what the daily cap is charged for. */
+  pages?: number;
+  /** Targets that needed a rendered (headless browser) crawl to return text. */
+  escalated?: { target: string; reason: string }[];
   docs: RawSignalDoc[];
   failures: FetchFailure[];
 };

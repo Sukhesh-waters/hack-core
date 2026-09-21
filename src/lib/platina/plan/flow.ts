@@ -1,3 +1,4 @@
+import type { PlanOrigin } from "@/db/platina-schema";
 import { insertPlan } from "@/db/queries/platina";
 import {
   runOrchestration,
@@ -12,6 +13,7 @@ import {
 import {
   assemblePlanContext,
   type PlanContext,
+  type PlanRevisionInput,
 } from "@/lib/platina/plan/context";
 
 export type PlanFlowOutput = {
@@ -34,13 +36,27 @@ export function runPlanFlow(params: {
   workspaceId: string;
   brief: string;
   userId: string | null;
+  /** The client this plan is for; scopes evidence to it and its competitors. */
+  brandId?: string | null;
+  /** The situation that started the plan, stored with it. */
+  origin?: PlanOrigin | null;
+  /** A fixed date (days from today) the plan must land on. */
+  anchor?: { label: string; day: number } | null;
+  /** Set when re-planning: the earlier plan and its id. */
+  revision?: (PlanRevisionInput & { planId: string }) | null;
 }): Promise<OrchestrationResult<PlanFlowOutput>> {
   return runOrchestration({
     taskType: "campaign_plan",
-    contextParams: { workspaceId: params.workspaceId, brief: params.brief },
+    contextParams: {
+      workspaceId: params.workspaceId,
+      brief: params.brief,
+      brandId: params.brandId ?? null,
+      anchor: params.anchor ?? null,
+      revisionOf: params.revision ?? null,
+    },
     assembleContext: assemblePlanContext,
     agent: (context) => generateCampaignPlan(context),
-    validate: (plan) => validatePlan(plan),
+    validate: (plan, context) => validatePlan(plan, context),
     critic: async (plan, context: PlanContext): Promise<CriticVerdict> => {
       try {
         const critique = await critiquePlan(plan, context);
@@ -62,6 +78,9 @@ export function runPlanFlow(params: {
         critique: criticFeedback,
         lessonsUsed: context.worked.length + context.failed.length,
         createdById: params.userId,
+        brandId: params.brandId ?? null,
+        origin: params.origin ?? null,
+        parentPlanId: params.revision?.planId ?? null,
       });
       return { planId, criticFeedback };
     },

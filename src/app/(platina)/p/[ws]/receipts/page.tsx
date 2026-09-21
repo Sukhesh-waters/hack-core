@@ -16,7 +16,7 @@ export default async function ReceiptsPage({
   const receipts = await listReceipts(params.ws);
 
   return (
-    <PlatinaPage eyebrow="S9 · S12" title="Decision receipts">
+    <PlatinaPage eyebrow="Decision log" title="Decision receipts">
       <PlatinaMovedNotice
         workspaceId={params.ws}
         to="outcomes"

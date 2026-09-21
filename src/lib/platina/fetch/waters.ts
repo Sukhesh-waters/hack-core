@@ -18,7 +18,15 @@
  * the run is marked failed rather than degraded-with-nothing.
  */
 import type { PlatinaScanTarget } from "@/db/platina-schema";
+import {
+  effectivePages,
+  isSocialKind,
+  mapSocialItem,
+  parseSocialRef,
+  planTarget,
+} from "./actors";
 import { canonicalizeUrl, contentHash } from "./canonical";
+import { shouldEscalate } from "./render";
 import {
   registerAdapter,
   type ApprovedScanSpec,
@@ -43,32 +51,18 @@ export function actorForSourceKind(kind: PlatinaScanTarget["kind"]): string {
   }
 }
 
-function buildInput(kind: PlatinaScanTarget["kind"], url: string) {
-  if (kind === "ad_library") {
-    return {
-      urls: [{ url }],
-      count: 10,
-      proxy: { useApifyProxy: true, apifyProxyGroups: ["RESIDENTIAL"] },
-    };
-  }
-  return {
-    startUrls: [{ url }],
-    maxCrawlDepth: 0,
-    maxCrawlPages: 1,
-    crawlerType: "cheerio",
-  };
-}
-
 const APIFY_BASE = "https://api.apify.com/v2/acts";
 
 async function runActor(
   actorSlug: string,
   input: Record<string, unknown>,
+  memoryMb?: number,
 ): Promise<Record<string, unknown>[]> {
   const token = process.env.APIFY_TOKEN;
   if (!token) throw new Error("APIFY_TOKEN is not set");
+  const memory = memoryMb ? `&memory=${memoryMb}` : "";
   const res = await fetch(
-    `${APIFY_BASE}/${actorSlug}/run-sync-get-dataset-items?token=${token}`,
+    `${APIFY_BASE}/${actorSlug}/run-sync-get-dataset-items?token=${token}${memory}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -76,6 +70,13 @@ async function runActor(
       signal: AbortSignal.timeout(240_000),
     },
   );
+  if (res.status === 402) {
+    // 402 is Apify's "limit reached": the account's memory (too many runs at
+    // once) or its monthly usage — never a problem with the target site.
+    throw new Error(
+      "Apify refused the run (402): the account's memory or usage limit was reached — too many runs at once, or credits are used up",
+    );
+  }
   if (!res.ok) {
     throw new Error(`Apify run failed (${res.status})`);
   }
@@ -144,43 +145,94 @@ export async function fetchViaWaters(
 ): Promise<FetchOutcome> {
   const docs: RawSignalDoc[] = [];
   const failures: FetchOutcome["failures"] = [];
+  // Sources that only gave up their content to a rendered crawl. The caller
+  // persists this so the wasted plain pass happens once, not every time.
+  const escalated: NonNullable<FetchOutcome["escalated"]> = [];
+  let remaining = spec.pageBudget;
+  let pagesFetched = 0;
 
   for (const target of spec.targets) {
-    let parsed: URL;
-    try {
-      parsed = new URL(target.value);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        throw new Error("not an http(s) URL");
+    if (!isSocialKind(target.kind)) {
+      try {
+        const parsed = new URL(target.value);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("not an http(s) URL");
+        }
+      } catch {
+        failures.push({ target: target.value, error: "invalid URL" });
+        continue;
       }
-    } catch {
-      failures.push({ target: target.value, error: "invalid URL" });
-      continue;
     }
-    try {
-      const items = await runActor(
-        actorForSourceKind(target.kind),
-        buildInput(target.kind, target.value),
-      );
-      const mapped = items
-        .map((item) =>
-          target.kind === "ad_library"
-            ? mapAdItem(item, target)
-            : mapPageItem(item, target),
-        )
-        .filter((d): d is RawSignalDoc => d !== null);
-      if (mapped.length === 0) {
-        failures.push({
-          target: target.value,
-          error: "actor returned no usable items",
-        });
-      }
-      docs.push(...mapped);
-    } catch (error) {
+    const pages = effectivePages(target, remaining);
+    if (pages === 0) {
       failures.push({
         target: target.value,
-        error: error instanceof Error ? error.message : "fetch failed",
+        error: "daily collection budget exhausted",
+      });
+      continue;
+    }
+    const social = isSocialKind(target.kind) ? parseSocialRef(target.value) : null;
+    const collect = async (renderJs: boolean) => {
+      const plan = planTarget({ ...target, renderJs }, pages);
+      const items = await runActor(plan.actor, plan.input, plan.memoryMb);
+      // Cost is per page returned; an empty run still cost one call.
+      const cost = Math.max(1, items.length);
+      pagesFetched += cost;
+      if (remaining !== undefined) remaining = Math.max(0, remaining - cost);
+      return items
+        .map((item) =>
+          social
+            ? mapSocialItem(item, target, social)
+            : target.kind === "ad_library"
+              ? mapAdItem(item, target)
+              : mapPageItem(item, target),
+        )
+        .filter((d): d is RawSignalDoc => d !== null);
+    };
+
+    let mapped: RawSignalDoc[] = [];
+    let error: string | null = null;
+    try {
+      mapped = await collect(Boolean(target.renderJs));
+    } catch (thrown) {
+      error = thrown instanceof Error ? thrown.message : "fetch failed";
+    }
+
+    // A JavaScript site hands a plain fetch an empty shell, which looks like a
+    // successful page and is worse than a failure because nothing says so.
+    // One rendered retry, decided by evidence, and remembered afterwards.
+    if (!social && target.kind !== "ad_library") {
+      const decision = shouldEscalate({
+        alreadyRendering: Boolean(target.renderJs),
+        docs: mapped,
+        error,
+        remainingPages: remaining ?? pages,
+      });
+      if (decision.escalate) {
+        try {
+          const rendered = await collect(true);
+          if (rendered.length > 0) {
+            mapped = rendered;
+            error = null;
+            escalated.push({ target: target.value, reason: decision.reason });
+          }
+        } catch (thrown) {
+          error ??= thrown instanceof Error ? thrown.message : "rendered fetch failed";
+        }
+      }
+    }
+
+    if (error) {
+      failures.push({ target: target.value, error });
+      continue;
+    }
+    if (mapped.length === 0) {
+      failures.push({
+        target: target.value,
+        error: "actor returned no usable items",
       });
     }
+    docs.push(...mapped);
   }
 
   if (docs.length === 0 && failures.length > 0) {
@@ -188,7 +240,7 @@ export async function fetchViaWaters(
       `every target failed: ${failures.map((f) => `${f.target} (${f.error})`).join("; ")}`,
     );
   }
-  return { docs, failures };
+  return { docs, failures, pages: pagesFetched, escalated };
 }
 
 export function registerWatersAdapter() {

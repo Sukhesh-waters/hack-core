@@ -1,13 +1,30 @@
 import { inngest } from "@/inngest/client";
 import {
+  addFirstPassPages,
   getAuditRun,
+  markTargetsRendered,
+  getBrand,
   getScanSpec,
+  getWorkspaceConfig,
+  getWorkspacePagesToday,
   insertSignalDocuments,
   recordFetchOutcome,
   transitionAuditRun,
 } from "@/db/queries/platina";
 import { runApprovedScan } from "@/lib/platina/fetch/registry";
-import { backoffInterval, tightenInterval } from "@/lib/platina/fetch/schedule";
+import {
+  DEFAULT_FIRST_PASS_PAGES,
+  DEFAULT_WORKSPACE_DAY_CAP,
+  budgetForRun,
+  firstPassRemaining,
+} from "@/lib/platina/fetch/budget";
+import {
+  backoffInterval,
+  specPagesRemaining,
+  tightenInterval,
+  workspacePagesRemaining,
+} from "@/lib/platina/fetch/schedule";
+import { divergenceStage, ideationStage } from "@/lib/platina/stages/wire";
 import { registerWatersAdapter } from "@/lib/platina/fetch/waters";
 import {
   executeAuditRun,
@@ -28,6 +45,10 @@ export const platinaAuditRun = inngest.createFunction(
   {
     id: "platina-audit-run",
     triggers: [{ event: "platina/audit-run.requested" }],
+    // Every run is a paid Apify call and the account has one memory pool, so
+    // runs are limited account-wide. A first pass of many sources queues here
+    // instead of stampeding the actor API (which answers 402).
+    concurrency: { limit: 2 },
   },
   async ({ event, step }) => {
     const data = event.data as { runId?: string; workspaceId?: string };
@@ -37,6 +58,18 @@ export const platinaAuditRun = inngest.createFunction(
     const { runId, workspaceId } = data;
 
     return step.run(`execute-${runId}`, async () => {
+      // Which client is this run about? Resolved once and reused by the
+      // analysis stages, so they compare this client's standard with this
+      // client's competitors and nobody else's (R3).
+      let runBrandId: string | null | undefined;
+      const brandOfRun = async (ws: string, run: AuditRunRecord) => {
+        if (runBrandId === undefined) {
+          const spec = run.specId ? await getScanSpec(ws, run.specId) : null;
+          runBrandId = spec?.brandId ?? null;
+        }
+        return runBrandId;
+      };
+
       const outcome = await executeAuditRun(
         {
           loadRun: async (ws, id) => {
@@ -59,25 +92,85 @@ export const platinaAuditRun = inngest.createFunction(
             if (spec.status !== "approved") {
               throw new Error("audit source is not approved");
             }
+            // Spend control (R7). A client's one-time first-pass allowance is
+            // spent first and bypasses the daily cap, so a new client is
+            // readable the same afternoon; after that the daily cap applies.
+            const config = await getWorkspaceConfig(ws);
+            const today = new Date().toISOString().slice(0, 10);
+            const brand = spec.brandId ? await getBrand(ws, spec.brandId) : null;
+            const decision = budgetForRun({
+              specRemaining: specPagesRemaining(spec),
+              workspaceRemaining: workspacePagesRemaining(
+                await getWorkspacePagesToday(ws, today),
+                config?.dailyActorCallCap ?? DEFAULT_WORKSPACE_DAY_CAP,
+              ),
+              firstPassRemaining: brand
+                ? firstPassRemaining(
+                    brand.firstPassPagesUsed,
+                    config?.firstPassPageAllowance ?? DEFAULT_FIRST_PASS_PAGES,
+                  )
+                : 0,
+            });
+            if (decision.pages === 0) throw new Error(decision.reason);
+            const pageBudget = decision.pages;
             const outcome = await runApprovedScan({
               id: spec.id,
               workspaceId: spec.workspaceId,
               status: spec.status,
               targets: spec.targets,
+              pageBudget,
             });
             const inserted = await insertSignalDocuments(
               ws,
               spec.id,
               outcome.docs,
             );
+            // Charge the first pass only for what was really collected, and
+            // only while that purse is the one paying (R7).
+            if (decision.charge === "first_pass" && spec.brandId) {
+              await addFirstPassPages(ws, spec.brandId, outcome.pages ?? 0);
+            }
+            // A target that only gave up its content to a browser is marked as
+            // such, so the next tick skips the pointless plain fetch (R9).
+            if (outcome.escalated && outcome.escalated.length > 0) {
+              await markTargetsRendered(
+                ws,
+                spec.id,
+                outcome.escalated.map((e) => e.target),
+              );
+            }
+            // A client's own pages feed its profile (not the competitor debate).
+            if (spec.brandId && outcome.docs.length > 0) {
+              try {
+                const brand = await getBrand(ws, spec.brandId);
+                if (brand?.kind === "own_brand" && (inserted > 0 || !brand.profile)) {
+                  await inngest.send({
+                    name: "platina/client.profile.requested",
+                    data: { workspaceId: ws, brandId: brand.id },
+                  });
+                }
+              } catch {
+                // The pages are stored; the profile can be rebuilt on the next run.
+              }
+            }
             return {
               fetched: outcome.docs.length,
+              pages: outcome.pages,
               inserted,
               failures: outcome.failures.map(
                 (f) => `${f.target} (${f.error})`,
               ),
+              // A successful rendered retry is a NOTE, never a failure: it
+              // must not degrade a run that actually collected its content.
+              notes: (outcome.escalated ?? []).map(
+                (e) => `${e.target}: now read with a browser (${e.reason})`,
+              ),
             };
           },
+          runDivergenceStage: async (ws, run) =>
+            divergenceStage(ws, await brandOfRun(ws, run)),
+          runIdeationStage: async (ws, run) =>
+            ideationStage(ws, await brandOfRun(ws, run)),
           dispatchContradiction: async (ws) => {
             await inngest.send({
               name: "platina/contradict.requested",

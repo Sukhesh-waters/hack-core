@@ -8,6 +8,7 @@
  * with `reranked: false`. Never a fabricated score.
  */
 import { routeAI } from "@/lib/ai/router";
+import { extractJson } from "./json";
 
 export type RerankCandidate = { id: string; content: string };
 
@@ -44,7 +45,8 @@ export async function rerankCandidates<T extends RerankCandidate>(
         "same order, no commentary.",
       prompt: `Question: ${topic.slice(0, 500)}\n\nCandidates:\n${listing}`,
     });
-    const parsed = JSON.parse(raw) as { scores?: unknown };
+    const parsed = extractJson<{ scores?: unknown }>(raw);
+    if (!parsed) throw new Error("no JSON in reply");
     const scores = Array.isArray(parsed.scores) ? parsed.scores : null;
     if (!scores || scores.length !== bounded.length) {
       return { items: bounded.slice(0, take), reranked: false };

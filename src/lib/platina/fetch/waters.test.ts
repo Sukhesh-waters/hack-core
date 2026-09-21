@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApprovedScanSpec } from "./registry";
 import { actorForSourceKind, fetchViaWaters } from "./waters";
 
@@ -43,7 +43,7 @@ describe("actorForSourceKind", () => {
 
   it("throws on an unknown kind instead of guessing", () => {
     expect(() =>
-      actorForSourceKind("social_posts" as never),
+      actorForSourceKind("mystery_kind" as never),
     ).toThrow(/no actor mapped/);
   });
 });
@@ -151,5 +151,28 @@ describe("fetchViaWaters", () => {
     expect(outcome).toBeInstanceOf(Error);
     expect(fetchMock).not.toHaveBeenCalled();
     delete process.env.APIFY_TOKEN;
+  });
+});
+
+describe("fetchViaWaters — Apify account limits", () => {
+  beforeEach(() => {
+    process.env.APIFY_TOKEN = "test-token";
+  });
+  afterEach(() => {
+    delete process.env.APIFY_TOKEN;
+  });
+
+  it("passes the requested memory so parallel runs share the account's memory pool", async () => {
+    const fetchMock = mockApify([{ url: "https://example.com/page", markdown: "hello world", metadata: { title: "t" } }]);
+    vi.stubGlobal("fetch", fetchMock);
+    await fetchViaWaters(spec("competitor_site"));
+    expect(String(fetchMock.mock.calls[0][0])).toContain("&memory=1024");
+  });
+
+  it("explains a 402 as an account limit (memory or usage), not a problem with the site", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 402, json: async () => ({}) })));
+    await expect(fetchViaWaters(spec("competitor_site"))).rejects.toThrow(
+      /Apify refused the run \(402\).*memory or usage limit/,
+    );
   });
 });

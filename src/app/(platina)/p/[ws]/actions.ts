@@ -55,6 +55,7 @@ import {
   snapshotRunConfig,
 } from "@/lib/platina/orchestrator";
 import { embedText } from "@/lib/platina/embed";
+import { parseSocialRef } from "@/lib/platina/fetch/actors";
 import { chunkProse } from "@/lib/platina/chunking";
 import { claimsGate, claimsDnaFromRules } from "@/lib/platina/claims-gate";
 import { getConferencePreset } from "@/lib/platina/presets";
@@ -145,6 +146,8 @@ const SOURCE_KINDS = [
   "conference",
   "trade_editorial",
   "ad_library",
+  "social_profile",
+  "social_posts",
 ] as const;
 const CADENCE_MINUTES = [5, 10, 15] as const;
 
@@ -168,11 +171,17 @@ export async function createScanSpecAction(formData: FormData): Promise<void> {
   if (!CADENCE_MINUTES.includes(cadenceMinutes as 5 | 10 | 15)) {
     refuse(ws, "audits", "Cadence must be 5, 10, or 15 minutes.");
   }
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-  } catch {
-    refuse(ws, "audits", "Target must be a valid http(s) URL.");
+  if (kind === "social_profile" || kind === "social_posts") {
+    if (!parseSocialRef(value)) {
+      refuse(ws, "audits", "Use instagram:@handle or tiktok:@handle.");
+    }
+  } else {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    } catch {
+      refuse(ws, "audits", "Target must be a valid http(s) URL.");
+    }
   }
   await insertScanSpec({
     workspaceId: ws,
@@ -559,7 +568,14 @@ export async function saveConfigAction(formData: FormData): Promise<void> {
   // The analysis sequence is the stored order filtered to the steps the
   // operator left enabled — order is preserved, not re-invented.
   const promptVersion = Number(formData.get("promptVersion") ?? 1);
+  // Workspace spend limit (pages read per UTC day). Only applied when the
+  // form sent a sane whole number; anything else leaves the stored value alone.
+  const capRaw = formData.get("dailyActorCallCap");
+  const cap = capRaw === null ? NaN : Number(capRaw);
   await upsertWorkspaceConfig(ws, {
+    ...(Number.isInteger(cap) && cap >= 1 && cap <= 1000
+      ? { dailyActorCallCap: cap }
+      : {}),
     minBaselineN: Number(formData.get("minBaselineN") ?? 20),
     contestedFloor: Number(formData.get("contestedFloor") ?? 0.4),
     qualifiedFloor: Number(formData.get("qualifiedFloor") ?? 0.7),

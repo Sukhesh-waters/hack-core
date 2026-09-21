@@ -1,10 +1,13 @@
-import { and, cosineDistance, desc, eq, inArray, isNull, lte, notInArray, sql } from "drizzle-orm";
+import { aiUsage } from "@/db/schema";
+import { and, cosineDistance, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, notInArray, or, sql } from "drizzle-orm";
+import { STALE_CLAIM_MINUTES } from "@/lib/platina/analysis";
 import { db } from "@/db";
 import {
   platinaAlertRules,
   platinaAuditRunEvents,
   platinaAuditRuns,
   platinaBrandChunks,
+  platinaBrands,
   platinaBrainChunks,
   platinaBrandSources,
   platinaCampaigns,
@@ -25,7 +28,11 @@ import {
   platinaWorkspaceProfiles,
   PLATINA_EMBEDDING_MODEL_VERSION,
   type PlanDoc,
+  type PlanOrigin,
   type PlanVerdict,
+  type ClientProfile,
+  type PlatinaBrandHandles,
+  type PlatinaFindingEvidence,
   type PlatinaRunConfigSnapshot,
   type PlatinaScanTarget,
 } from "@/db/platina-schema";
@@ -255,6 +262,101 @@ export async function insertGateEvent(event: GateWrite) {
   return row.id;
 }
 
+/**
+ * Retires the current standard for one client so a re-confirmation replaces
+ * it instead of stacking a second copy beside it (R3). Never deletes: the old
+ * standard stays readable as history.
+ */
+/** How many live standard chunks this client has — 0 means "not confirmed". */
+export function brandStandardChunkCountQuery(workspaceId: string, brandId: string) {
+  return db
+    .select({ value: count() })
+    .from(platinaBrandChunks)
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        eq(platinaBrandChunks.brandId, brandId),
+        isNull(platinaBrandChunks.supersededAt),
+      ),
+    );
+}
+
+export async function countBrandStandardChunks(workspaceId: string, brandId: string) {
+  const [row] = await brandStandardChunkCountQuery(workspaceId, brandId);
+  return Number(row?.value ?? 0);
+}
+
+/**
+ * Charges pages against a client's one-time first-pass allowance (R7).
+ * Additive in SQL so two concurrent runs cannot lose each other's spend.
+ */
+export async function addFirstPassPages(
+  workspaceId: string,
+  brandId: string,
+  pages: number,
+) {
+  if (pages <= 0) return;
+  await db
+    .update(platinaBrands)
+    .set({
+      firstPassPagesUsed: sql`${platinaBrands.firstPassPagesUsed} + ${pages}`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.id, brandId),
+      ),
+    );
+}
+
+/**
+ * Remembers that a target only yields content to a rendered crawl (R9), so the
+ * wasted plain pass happens once rather than on every tick. Rewrites the
+ * targets array in place; unknown targets are left untouched.
+ */
+export async function markTargetsRendered(
+  workspaceId: string,
+  specId: string,
+  targetValues: string[],
+) {
+  if (targetValues.length === 0) return;
+  const spec = await getScanSpec(workspaceId, specId);
+  if (!spec) return;
+  const wanted = new Set(targetValues);
+  const targets = spec.targets.map((target) =>
+    wanted.has(target.value) && !target.renderJs
+      ? { ...target, renderJs: true }
+      : target,
+  );
+  if (targets.every((t, i) => t.renderJs === spec.targets[i].renderJs)) return;
+  await db
+    .update(platinaScanSpecs)
+    .set({ targets, updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.id, specId),
+      ),
+    );
+}
+
+export async function supersedeBrandChunksForBrand(
+  workspaceId: string,
+  brandId: string,
+) {
+  await db
+    .update(platinaBrandChunks)
+    .set({ supersededAt: new Date() })
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        eq(platinaBrandChunks.brandId, brandId),
+        isNull(platinaBrandChunks.supersededAt),
+      ),
+    );
+}
+
 export async function insertBrandChunk(input: {
   workspaceId: string;
   content: string;
@@ -262,6 +364,8 @@ export async function insertBrandChunk(input: {
   title?: string;
   embedding?: number[];
   chunkIndex?: number;
+  /** The client this standard describes (R3). Null = workspace-wide. */
+  brandId?: string | null;
 }) {
   const [row] = await db
     .insert(platinaBrandChunks)
@@ -295,6 +399,7 @@ export async function insertSignalDocuments(
         body: doc.body,
         adapter: doc.adapter,
         raw: doc.raw,
+        metrics: doc.metrics ?? null,
       })),
     )
     .onConflictDoNothing({
@@ -357,6 +462,7 @@ export async function insertScanSpec(input: {
   targets: PlatinaScanTarget[];
   createdById: string;
   cadenceMinutes?: number;
+  brandId?: string | null;
 }) {
   const [row] = await db
     .insert(platinaScanSpecs)
@@ -623,6 +729,7 @@ export async function upsertWorkspaceConfig(
     contestedFloor: number;
     qualifiedFloor: number;
     similarityFloor: number;
+    dailyActorCallCap: number;
     analysisSequence: ("competitor_scan" | "brand_divergence" | "ideation" | "claims_screen")[];
     promptVersion: number;
   }>,
@@ -642,29 +749,115 @@ export async function upsertWorkspaceConfig(
   return row.id;
 }
 
-export function unprocessedSignalsQuery(workspaceId: string) {
+/** Waiting for analysis: never started, or claimed by a worker that died. */
+function analysisPending(staleBefore: Date) {
+  return or(
+    eq(platinaSignalDocuments.processingState, "unprocessed"),
+    and(
+      eq(platinaSignalDocuments.processingState, "processing"),
+      or(
+        isNull(platinaSignalDocuments.processingStartedAt),
+        lte(platinaSignalDocuments.processingStartedAt, staleBefore),
+      ),
+    ),
+  );
+}
+
+const staleClaimCutoff = () => new Date(Date.now() - STALE_CLAIM_MINUTES * 60_000);
+
+export function unprocessedSignalsQuery(
+  workspaceId: string,
+  limit = 20,
+  staleBefore: Date = staleClaimCutoff(),
+) {
   return db
     .select()
     .from(platinaSignalDocuments)
     .where(
       and(
         eq(platinaSignalDocuments.workspaceId, workspaceId),
-        eq(platinaSignalDocuments.processingState, "unprocessed"),
+        analysisPending(staleBefore),
       ),
     )
+    // Newest first: a backlog must never hide the freshest signals.
     .orderBy(desc(platinaSignalDocuments.createdAt))
-    .limit(20);
+    .limit(limit);
 }
 
-export async function listUnresolvedSignals(workspaceId: string) {
-  return unprocessedSignalsQuery(workspaceId);
+export async function listUnresolvedSignals(workspaceId: string, limit = 20) {
+  return unprocessedSignalsQuery(workspaceId, limit);
+}
+
+/**
+ * The version of the same page that came before this one (core spine R1).
+ * Scoped to the workspace and matched on the canonical URL, so a re-fetch of
+ * the same page under a different scan spec still finds its predecessor.
+ * Newest first — the one immediately before `before`.
+ */
+export function previousSignalDocumentQuery(
+  workspaceId: string,
+  canonicalUrl: string,
+  before: Date,
+) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      title: platinaSignalDocuments.title,
+      body: platinaSignalDocuments.body,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.canonicalUrl, canonicalUrl),
+        lt(platinaSignalDocuments.fetchedAt, before),
+      ),
+    )
+    .orderBy(desc(platinaSignalDocuments.fetchedAt))
+    .limit(1);
+}
+
+export async function getPreviousSignalDocument(
+  workspaceId: string,
+  canonicalUrl: string | null,
+  before: Date,
+) {
+  if (!canonicalUrl) return null;
+  const [row] = await previousSignalDocumentQuery(workspaceId, canonicalUrl, before);
+  return row ?? null;
+}
+
+/**
+ * Passed over without analysis, with the reason kept (R1/R2). Terminal like
+ * "processed" so the sweep never re-dispatches it, but distinguishable: the
+ * operator can see what was not read and why.
+ */
+export async function markSignalSkipped(
+  workspaceId: string,
+  signalId: string,
+  reason: string,
+) {
+  await db
+    .update(platinaSignalDocuments)
+    .set({
+      processingState: "processed",
+      processingStartedAt: null,
+      skipReason: reason.slice(0, 300),
+    })
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.id, signalId),
+      ),
+    );
 }
 
 /** Mark a signal's contradiction round complete — the sweep never re-reads it. */
 export async function markSignalProcessed(workspaceId: string, signalId: string) {
   await db
     .update(platinaSignalDocuments)
-    .set({ processingState: "processed" })
+    .set({ processingState: "processed", processingStartedAt: null })
     .where(
       and(
         eq(platinaSignalDocuments.workspaceId, workspaceId),
@@ -1025,7 +1218,9 @@ export async function recordProbeState(
 export async function recordFetchOutcome(
   workspaceId: string,
   specId: string,
-  outcome: { inserted: number; failed: boolean },
+  // pages = pages/posts the run actually returned (cost is per page, not per
+  // run); a failed or empty run still counts as one call.
+  outcome: { inserted: number; failed: boolean; pages?: number },
   intervals: {
     tighten: (current: number | null, floor: number) => number;
     backoff: (current: number | null) => number;
@@ -1035,7 +1230,9 @@ export async function recordFetchOutcome(
   if (!spec) return;
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
-  const fetchesToday = spec.fetchesDay === today ? spec.fetchesToday + 1 : 1;
+  const cost = Math.max(1, outcome.pages ?? 1);
+  const fetchesToday =
+    spec.fetchesDay === today ? spec.fetchesToday + cost : cost;
   const changed = outcome.inserted > 0;
   await db
     .update(platinaScanSpecs)
@@ -1102,6 +1299,8 @@ export async function insertFinding(input: {
   title: string;
   summary: string;
   strongestObjection?: string | null;
+  severity?: "critical" | "high" | "medium" | "low";
+  evidence?: PlatinaFindingEvidence | null;
   status: "new" | "needs_decision";
 }) {
   const [row] = await db
@@ -1731,6 +1930,9 @@ export function plansWithVerdictQuery(workspaceId: string, limit = 30) {
       brief: platinaPlans.brief,
       lessonsUsed: platinaPlans.lessonsUsed,
       createdAt: platinaPlans.createdAt,
+      brandId: platinaPlans.brandId,
+      origin: platinaPlans.origin,
+      parentPlanId: platinaPlans.parentPlanId,
       verdict: platinaPlanFeedback.verdict,
     })
     .from(platinaPlans)
@@ -1791,6 +1993,9 @@ export async function insertPlan(input: {
   critique: string[];
   lessonsUsed: number;
   createdById: string | null;
+  brandId?: string | null;
+  origin?: PlanOrigin | null;
+  parentPlanId?: string | null;
 }): Promise<string> {
   const [row] = await db
     .insert(platinaPlans)
@@ -1863,4 +2068,742 @@ export async function listPlanLessons(
   limit = 3,
 ) {
   return planLessonsQuery(workspaceId, verdict, limit);
+}
+
+// ---------------------------------------------------------------------------
+// Health (core spine S0) — cheap, workspace-scoped counters for the health page
+// ---------------------------------------------------------------------------
+
+export function docsSinceQuery(workspaceId: string, since: Date) {
+  return db
+    .select({ n: count() })
+    .from(platinaSignalDocuments)
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        gte(platinaSignalDocuments.createdAt, since),
+      ),
+    );
+}
+
+export function findingsSinceQuery(workspaceId: string, since: Date) {
+  return db
+    .select({ n: count() })
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        gte(platinaFindings.createdAt, since),
+      ),
+    );
+}
+
+export function latestRunEventQuery(workspaceId: string) {
+  return db
+    .select({ at: max(platinaAuditRunEvents.createdAt) })
+    .from(platinaAuditRunEvents)
+    .where(eq(platinaAuditRunEvents.workspaceId, workspaceId));
+}
+
+export async function countDocsSince(workspaceId: string, since: Date) {
+  return (await docsSinceQuery(workspaceId, since))[0]?.n ?? 0;
+}
+
+export async function countFindingsSince(workspaceId: string, since: Date) {
+  return (await findingsSinceQuery(workspaceId, since))[0]?.n ?? 0;
+}
+
+export async function getLatestRunEventAt(workspaceId: string) {
+  return (await latestRunEventQuery(workspaceId))[0]?.at ?? null;
+}
+
+/** Round-trip probe. Not workspace data — touches no table. */
+export async function pingDatabase() {
+  await db.execute(sql`select 1`);
+}
+
+// ---------------------------------------------------------------------------
+// Brands (core spine S1) — every read is workspace-scoped in the query itself.
+// ---------------------------------------------------------------------------
+
+export function brandsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaBrands)
+    .where(eq(platinaBrands.workspaceId, workspaceId))
+    .orderBy(platinaBrands.name);
+}
+
+export function brandByIdQuery(workspaceId: string, brandId: string) {
+  return db
+    .select()
+    .from(platinaBrands)
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.id, brandId),
+      ),
+    )
+    .limit(1);
+}
+
+export function competitorsOfQuery(workspaceId: string, parentBrandId: string) {
+  return db
+    .select()
+    .from(platinaBrands)
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.kind, "competitor"),
+        eq(platinaBrands.parentBrandId, parentBrandId),
+      ),
+    )
+    .orderBy(platinaBrands.name);
+}
+
+export function scanSpecsForBrandQuery(workspaceId: string, brandId: string) {
+  return db
+    .select()
+    .from(platinaScanSpecs)
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.brandId, brandId),
+      ),
+    )
+    .orderBy(desc(platinaScanSpecs.createdAt));
+}
+
+export async function listBrands(workspaceId: string) {
+  return brandsQuery(workspaceId);
+}
+
+export async function getBrand(workspaceId: string, brandId: string) {
+  return (await brandByIdQuery(workspaceId, brandId))[0] ?? null;
+}
+
+export async function listCompetitorsOf(
+  workspaceId: string,
+  parentBrandId: string,
+) {
+  return competitorsOfQuery(workspaceId, parentBrandId);
+}
+
+export async function listScanSpecsForBrand(
+  workspaceId: string,
+  brandId: string,
+) {
+  return scanSpecsForBrandQuery(workspaceId, brandId);
+}
+
+export async function createBrand(input: {
+  workspaceId: string;
+  name: string;
+  kind?: "own_brand" | "competitor";
+  parentBrandId?: string | null;
+  homepageUrl?: string | null;
+  handles?: PlatinaBrandHandles;
+  region?: string | null;
+  notes?: string | null;
+  createdById: string;
+}) {
+  // A competitor must hang off an own_brand in the SAME workspace — enforced
+  // here because parent_brand_id deliberately has no foreign key.
+  if (input.parentBrandId) {
+    const parent = await getBrand(input.workspaceId, input.parentBrandId);
+    if (!parent || parent.kind !== "own_brand") {
+      throw new Error("competitor parent must be an own brand in this workspace");
+    }
+  }
+  const [row] = await db
+    .insert(platinaBrands)
+    .values({
+      ...input,
+      kind: input.kind ?? "own_brand",
+      parentBrandId: input.parentBrandId ?? null,
+    })
+    .returning({ id: platinaBrands.id });
+  return row.id;
+}
+
+export async function updateBrand(
+  workspaceId: string,
+  brandId: string,
+  patch: Partial<{
+    name: string;
+    homepageUrl: string | null;
+    handles: PlatinaBrandHandles;
+    region: string | null;
+    notes: string | null;
+    status: "active" | "paused";
+  }>,
+) {
+  await db
+    .update(platinaBrands)
+    .set({ ...patch, updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.id, brandId),
+      ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Spend control (core spine S3) — pages collected today across the workspace.
+// ---------------------------------------------------------------------------
+
+export function pagesTodayQuery(workspaceId: string, day: string) {
+  return db
+    .select({ pages: sql<number>`coalesce(sum(${platinaScanSpecs.fetchesToday}), 0)::int` })
+    .from(platinaScanSpecs)
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.fetchesDay, day),
+      ),
+    );
+}
+
+export async function getWorkspacePagesToday(workspaceId: string, day: string) {
+  return (await pagesTodayQuery(workspaceId, day))[0]?.pages ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Throughput (core spine S4)
+// ---------------------------------------------------------------------------
+
+export function transcriptsSinceQuery(workspaceId: string, since: Date) {
+  return db
+    .select({ n: count() })
+    .from(platinaDebateTranscripts)
+    .where(
+      and(
+        eq(platinaDebateTranscripts.workspaceId, workspaceId),
+        gte(platinaDebateTranscripts.createdAt, since),
+      ),
+    );
+}
+
+export async function countTranscriptsSince(workspaceId: string, since: Date) {
+  return (await transcriptsSinceQuery(workspaceId, since))[0]?.n ?? 0;
+}
+
+/**
+ * Atomically takes a signal for analysis: only one caller can flip it from
+ * unprocessed to processing, so a double-dispatch analyses it once.
+ */
+export async function claimSignal(
+  workspaceId: string,
+  signalId: string,
+  staleBefore: Date = staleClaimCutoff(),
+) {
+  const rows = await db
+    .update(platinaSignalDocuments)
+    .set({ processingState: "processing", processingStartedAt: new Date() })
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.id, signalId),
+        // Only one caller wins; a claim held by a dead worker can be taken over.
+        analysisPending(staleBefore),
+      ),
+    )
+    .returning();
+  return rows[0] ?? null;
+}
+
+/** Hands a claimed signal back after a failed analysis so the next sweep retries it. */
+export async function releaseSignal(workspaceId: string, signalId: string) {
+  await db
+    .update(platinaSignalDocuments)
+    .set({ processingState: "unprocessed", processingStartedAt: null })
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.id, signalId),
+        eq(platinaSignalDocuments.processingState, "processing"),
+      ),
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Evidence provenance (core spine S5/S6) — light reads, never the embedding.
+// ---------------------------------------------------------------------------
+
+export function recentBrainEvidenceQuery(workspaceId: string, limit: number) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      sourceSignalIds: platinaBrainChunks.sourceSignalIds,
+      createdAt: platinaBrainChunks.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.status, "active"),
+      ),
+    )
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+/**
+ * The declared brand standard. With a brandId it is that client's standard
+ * only — workspace-wide brand text belongs to no client and must not be
+ * compared against another client's competitors (R3).
+ */
+export function recentBrandEvidenceQuery(
+  workspaceId: string,
+  limit: number,
+  brandId?: string | null,
+) {
+  return db
+    .select({
+      id: platinaBrandChunks.id,
+      content: platinaBrandChunks.content,
+      sourceUrl: platinaBrandChunks.sourceUrl,
+      createdAt: platinaBrandChunks.createdAt,
+    })
+    .from(platinaBrandChunks)
+    .where(
+      and(
+        eq(platinaBrandChunks.workspaceId, workspaceId),
+        isNull(platinaBrandChunks.supersededAt),
+        ...(brandId ? [eq(platinaBrandChunks.brandId, brandId)] : []),
+      ),
+    )
+    .orderBy(desc(platinaBrandChunks.createdAt))
+    .limit(limit);
+}
+
+export function signalProvenanceQuery(workspaceId: string, ids: string[]) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        inArray(platinaSignalDocuments.id, ids),
+      ),
+    );
+}
+
+export async function listRecentBrainEvidence(workspaceId: string, limit = 12) {
+  return recentBrainEvidenceQuery(workspaceId, limit);
+}
+
+export async function listRecentBrandEvidence(
+  workspaceId: string,
+  limit = 12,
+  brandId?: string | null,
+) {
+  return recentBrandEvidenceQuery(workspaceId, limit, brandId);
+}
+
+export async function listSignalProvenance(workspaceId: string, ids: string[]) {
+  if (ids.length === 0) return [];
+  return signalProvenanceQuery(workspaceId, ids);
+}
+
+export function findingTitleExistsQuery(
+  workspaceId: string,
+  useCase: string,
+  title: string,
+) {
+  return db
+    .select({ id: platinaFindings.id })
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.useCase, useCase),
+        eq(platinaFindings.title, title),
+        inArray(platinaFindings.status, ["new", "needs_decision", "validated"]),
+      ),
+    )
+    .limit(1);
+}
+
+/** Stage reruns are frequent; an open finding with the same title is not repeated. */
+export async function findingTitleExists(
+  workspaceId: string,
+  useCase: string,
+  title: string,
+) {
+  return (await findingTitleExistsQuery(workspaceId, useCase, title)).length > 0;
+}
+
+// ---------------------------------------------------------------------------
+// Per-brand views (core spine S7). Joins carry workspace_id on EVERY table.
+// ---------------------------------------------------------------------------
+
+export function findingsForBrandsQuery(
+  workspaceId: string,
+  brandIds: string[],
+  limit = 10,
+) {
+  return db
+    .select({
+      id: platinaFindings.id,
+      title: platinaFindings.title,
+      summary: platinaFindings.summary,
+      severity: platinaFindings.severity,
+      status: platinaFindings.status,
+      useCase: platinaFindings.useCase,
+      createdAt: platinaFindings.createdAt,
+    })
+    .from(platinaFindings)
+    .innerJoin(
+      platinaSignalDocuments,
+      eq(platinaFindings.signalDocumentId, platinaSignalDocuments.id),
+    )
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+      ),
+    )
+    .orderBy(desc(platinaFindings.createdAt))
+    .limit(limit);
+}
+
+export function docCountForBrandsQuery(workspaceId: string, brandIds: string[]) {
+  return db
+    .select({ n: count() })
+    .from(platinaSignalDocuments)
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+      ),
+    );
+}
+
+export async function listFindingsForBrands(
+  workspaceId: string,
+  brandIds: string[],
+  limit = 10,
+) {
+  if (brandIds.length === 0) return [];
+  return findingsForBrandsQuery(workspaceId, brandIds, limit);
+}
+
+export async function countDocsForBrands(workspaceId: string, brandIds: string[]) {
+  if (brandIds.length === 0) return 0;
+  return (await docCountForBrandsQuery(workspaceId, brandIds))[0]?.n ?? 0;
+}
+
+export function latestDocumentQuery(workspaceId: string) {
+  return db
+    .select({ at: max(platinaSignalDocuments.fetchedAt) })
+    .from(platinaSignalDocuments)
+    .where(eq(platinaSignalDocuments.workspaceId, workspaceId));
+}
+
+export async function getLatestDocumentAt(workspaceId: string) {
+  return (await latestDocumentQuery(workspaceId))[0]?.at ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Real-time planning (client-scoped evidence, plan freshness, provider notice)
+// ---------------------------------------------------------------------------
+
+/** Signal documents collected for these brands (a client and its competitors). */
+/**
+ * Collected documents that carry engagement measurements, per brand (R4).
+ * Joined through the scan spec, so a document is attributed to the brand whose
+ * source produced it. Workspace-filtered on both sides of the join.
+ */
+export function engagementDocsForBrandsQuery(
+  workspaceId: string,
+  brandIds: string[],
+  limit = 200,
+) {
+  return db
+    .select({
+      brandId: platinaScanSpecs.brandId,
+      metrics: platinaSignalDocuments.metrics,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+        isNotNull(platinaSignalDocuments.metrics),
+      ),
+    )
+    .orderBy(desc(platinaSignalDocuments.fetchedAt))
+    .limit(limit);
+}
+
+export async function listEngagementDocsForBrands(
+  workspaceId: string,
+  brandIds: string[],
+  limit = 200,
+) {
+  if (brandIds.length === 0) return [];
+  return engagementDocsForBrandsQuery(workspaceId, brandIds, limit);
+}
+
+export function signalIdsForBrandsQuery(
+  workspaceId: string,
+  brandIds: string[],
+  limit = 5000,
+) {
+  return db
+    .select({ id: platinaSignalDocuments.id })
+    .from(platinaSignalDocuments)
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+      ),
+    )
+    .orderBy(desc(platinaSignalDocuments.fetchedAt))
+    .limit(limit);
+}
+
+export async function listSignalIdsForBrands(
+  workspaceId: string,
+  brandIds: string[],
+) {
+  if (brandIds.length === 0) return [];
+  return (await signalIdsForBrandsQuery(workspaceId, brandIds)).map((r) => r.id);
+}
+
+/** Validated Brain chunks written after a moment — "what is new since this plan". */
+export function brainEvidenceSinceQuery(
+  workspaceId: string,
+  since: Date,
+  limit = 100,
+) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      sourceSignalIds: platinaBrainChunks.sourceSignalIds,
+      createdAt: platinaBrainChunks.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.status, "active"),
+        gte(platinaBrainChunks.createdAt, since),
+      ),
+    )
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+export async function listBrainEvidenceSince(
+  workspaceId: string,
+  since: Date,
+  limit = 100,
+) {
+  return brainEvidenceSinceQuery(workspaceId, since, limit);
+}
+
+/** Provider attempts that failed for this workspace's AI calls — the ladder swapping. */
+export function providerFailuresSinceQuery(workspaceId: string, since: Date) {
+  return db
+    .select({
+      provider: aiUsage.provider,
+      model: aiUsage.model,
+      failures: count(),
+      lastError: max(aiUsage.error),
+    })
+    .from(aiUsage)
+    .where(
+      and(
+        eq(aiUsage.workspaceId, workspaceId),
+        eq(aiUsage.status, "failed"),
+        gte(aiUsage.createdAt, since),
+      ),
+    )
+    .groupBy(aiUsage.provider, aiUsage.model);
+}
+
+export async function listProviderFailuresSince(workspaceId: string, since: Date) {
+  return providerFailuresSinceQuery(workspaceId, since);
+}
+
+/** Which client a finding is about: finding -> signal -> source -> brand. */
+export function findingBrandQuery(workspaceId: string, findingId: string) {
+  return db
+    .select({ brandId: platinaScanSpecs.brandId })
+    .from(platinaFindings)
+    .innerJoin(
+      platinaSignalDocuments,
+      eq(platinaFindings.signalDocumentId, platinaSignalDocuments.id),
+    )
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaFindings.id, findingId),
+      ),
+    )
+    .limit(1);
+}
+
+/**
+ * The client (own brand) a finding belongs to. A competitor's finding resolves
+ * to the client that competitor was added for. Null when the source has no brand.
+ */
+export async function getClientForFinding(workspaceId: string, findingId: string) {
+  const brandId = (await findingBrandQuery(workspaceId, findingId))[0]?.brandId;
+  if (!brandId) return null;
+  const brand = await getBrand(workspaceId, brandId);
+  if (!brand) return null;
+  if (brand.kind === "own_brand") return brand;
+  return brand.parentBrandId ? getBrand(workspaceId, brand.parentBrandId) : null;
+}
+
+/** Plans that revise this one (newest first) — the "newer version" link. */
+export function planRevisionsQuery(workspaceId: string, planId: string) {
+  return db
+    .select({ id: platinaPlans.id, title: platinaPlans.title, createdAt: platinaPlans.createdAt })
+    .from(platinaPlans)
+    .where(
+      and(
+        eq(platinaPlans.workspaceId, workspaceId),
+        eq(platinaPlans.parentPlanId, planId),
+      ),
+    )
+    .orderBy(desc(platinaPlans.createdAt));
+}
+
+export async function listPlanRevisions(workspaceId: string, planId: string) {
+  return planRevisionsQuery(workspaceId, planId);
+}
+
+// ---------------------------------------------------------------------------
+// Client profile + first-run robustness
+// ---------------------------------------------------------------------------
+
+/** A client's OWN scraped pages (not its competitors'), newest first. */
+export function ownPagesQuery(workspaceId: string, brandId: string, limit = 40) {
+  return db
+    .select({
+      url: platinaSignalDocuments.sourceUrl,
+      canonicalUrl: platinaSignalDocuments.canonicalUrl,
+      kind: platinaSignalDocuments.sourceKind,
+      title: platinaSignalDocuments.title,
+      body: sql<string>`left(${platinaSignalDocuments.body}, 2500)`,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(
+      platinaScanSpecs,
+      eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id),
+    )
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.brandId, brandId),
+      ),
+    )
+    .orderBy(desc(platinaSignalDocuments.fetchedAt))
+    .limit(limit);
+}
+
+export async function listOwnPages(workspaceId: string, brandId: string, limit = 40) {
+  return ownPagesQuery(workspaceId, brandId, limit);
+}
+
+export async function saveBrandProfile(
+  workspaceId: string,
+  brandId: string,
+  input: { profile: ClientProfile; sources: string[] },
+) {
+  await db
+    .update(platinaBrands)
+    .set({
+      profile: input.profile,
+      profileSources: input.sources,
+      profileUpdatedAt: new Date(),
+      profileError: null,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.id, brandId),
+        eq(platinaBrands.kind, "own_brand"),
+      ),
+    );
+}
+
+/** A failed analysis stays visible on the client page instead of an empty card. */
+export async function saveBrandProfileError(
+  workspaceId: string,
+  brandId: string,
+  message: string,
+) {
+  await db
+    .update(platinaBrands)
+    .set({ profileError: message.slice(0, 300), updatedAt: new Date() })
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        eq(platinaBrands.id, brandId),
+      ),
+    );
+}
+
+/**
+ * Runs that were created but never picked up (the job runner was down when
+ * they were requested). Cross-workspace by design, like listSchedulableSpecs:
+ * a background sweep — every row carries its own workspace_id.
+ */
+export async function listStaleQueuedRuns(olderThan: Date, limit = 50) {
+  return db
+    .select({ id: platinaAuditRuns.id, workspaceId: platinaAuditRuns.workspaceId })
+    .from(platinaAuditRuns)
+    .where(
+      and(
+        eq(platinaAuditRuns.status, "queued"),
+        lte(platinaAuditRuns.queuedAt, olderThan),
+      ),
+    )
+    .orderBy(platinaAuditRuns.queuedAt)
+    .limit(limit);
 }

@@ -3,29 +3,22 @@ import {
   createAuditRun,
   getScanSpec,
   getWorkspaceConfig,
+  getWorkspacePagesToday,
   recordProbeState,
+  transitionAuditRun,
 } from "@/db/queries/platina";
-import { probeSource, type ProbeFetch } from "@/lib/platina/fetch/probe";
+import { probeSource } from "@/lib/platina/fetch/probe";
+import { headProbeFetch } from "@/lib/platina/fetch/probe-fetch";
 import {
   ADAPTIVE_START_MINUTES,
+  DAILY_CAP_REASON,
+  SOURCE_CAP_REASON,
   costCapReached,
   isDue,
+  workspacePagesRemaining,
 } from "@/lib/platina/fetch/schedule";
 import { snapshotRunConfig } from "@/lib/platina/orchestrator";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
-
-/** Header-only conditional GET — retrieves validators, discards content. */
-const headProbeFetch: ProbeFetch = async (url, init) => {
-  const res = await fetch(url, {
-    method: "GET",
-    headers: init.headers,
-    signal: AbortSignal.timeout(15_000),
-    redirect: "follow",
-  });
-  // Drain and discard: the probe never retains page content.
-  await res.arrayBuffer().catch(() => undefined);
-  return res;
-};
 
 /**
  * Tier-1 probe worker (R1). For probe-capable sources: a cheap conditional
@@ -61,8 +54,55 @@ export const platinaProbeTick = inngest.createFunction(
     const targetUrl = spec.targets[0]?.value;
     if (!targetUrl) return { skipped: "no target" };
 
-    if (costCapReached(spec)) {
-      return { skipped: "daily fetch cap reached" };
+    const today = new Date().toISOString().slice(0, 10);
+    const config = await step.run("load-config", () =>
+      getWorkspaceConfig(workspaceId),
+    );
+    const pagesToday = await step.run("pages-today", () =>
+      getWorkspacePagesToday(workspaceId, today),
+    );
+
+    // Spend control. A pause is never silent: it is recorded as a degraded run
+    // with its reason, once per source per day (per workspace for the workspace
+    // cap), so the Audits timeline and the cockpit can say why collection stopped.
+    const sourceCapped = costCapReached(spec);
+    const workspaceCapped =
+      workspacePagesRemaining(pagesToday, config?.dailyActorCallCap ?? 40) === 0;
+    if (sourceCapped || workspaceCapped) {
+      const reason = workspaceCapped ? DAILY_CAP_REASON : SOURCE_CAP_REASON;
+      const key = workspaceCapped
+        ? `cap-pause:workspace:${today}`
+        : `cap-pause:${specId}:${today}`;
+      const pausedRunId = await step.run("record-pause", async () => {
+        const id = await createAuditRun({
+          workspaceId,
+          specId: workspaceCapped ? null : specId,
+          trigger: "schedule",
+          idempotencyKey: key,
+          configSnapshot: snapshotRunConfig(config),
+        });
+        if (!id) return null; // already recorded today
+        await transitionAuditRun({
+          workspaceId,
+          runId: id,
+          from: ["queued"],
+          to: "running",
+          message: "Paused by the daily collection cap",
+        });
+        await transitionAuditRun({
+          workspaceId,
+          runId: id,
+          from: ["running"],
+          to: "degraded",
+          message: reason,
+          degradedReason: reason,
+        });
+        return id;
+      });
+      if (pausedRunId) {
+        await broadcastPlatinaSignal(workspaceId, "audits", pausedRunId);
+      }
+      return { skipped: reason };
     }
 
     if (data.probeCapable) {
@@ -102,9 +142,6 @@ export const platinaProbeTick = inngest.createFunction(
     }
 
     // Changed (or adaptively due): create the run and dispatch the worker.
-    const config = await step.run("load-config", () =>
-      getWorkspaceConfig(workspaceId),
-    );
     const runId = await step.run("create-run", () =>
       createAuditRun({
         workspaceId,

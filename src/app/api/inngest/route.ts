@@ -1,5 +1,6 @@
 import { serve } from "inngest/next";
 import { inngest } from "@/inngest/client";
+import { runAsWorkload } from "@/lib/ai/orchestration";
 import { accountSync } from "@/inngest/functions/account-sync";
 import { adLibraryScan } from "@/inngest/functions/ad-library-scan";
 import { automationSweep } from "@/inngest/functions/automation";
@@ -17,6 +18,8 @@ import { platinaAuditRun } from "@/inngest/functions/platina/audit-run";
 import { platinaScanCoordinator } from "@/inngest/functions/platina/scan-coordinator";
 import { platinaProbeTick } from "@/inngest/functions/platina/probe-tick";
 import { platinaContradictSweep } from "@/inngest/functions/platina/contradict-sweep";
+import { platinaSignalAnalyze } from "@/inngest/functions/platina/signal-analyze";
+import { platinaClientProfile } from "@/inngest/functions/platina/client-profile";
 import { platinaBrainMaintenance } from "@/inngest/functions/platina/brain-maintenance";
 import { platinaReceiptReview } from "@/inngest/functions/platina/receipt-review";
 import { platinaOutcomeIngest } from "@/inngest/functions/platina/outcome-ingest";
@@ -25,7 +28,7 @@ import { platinaEventWindow } from "@/inngest/functions/platina/event-window";
 import { platinaDivergenceScan } from "@/inngest/functions/platina/divergence-scan";
 import { platinaBrandRefresh } from "@/inngest/functions/platina/brand-refresh";
 
-export const { GET, POST, PUT } = serve({
+const handler = serve({
   client: inngest,
   functions: [
     contentReminder,
@@ -45,6 +48,8 @@ export const { GET, POST, PUT } = serve({
     platinaScanCoordinator,
     platinaProbeTick,
     platinaContradictSweep,
+    platinaSignalAnalyze,
+    platinaClientProfile,
     platinaBrainMaintenance,
     platinaReceiptReview,
     platinaOutcomeIngest,
@@ -54,4 +59,15 @@ export const { GET, POST, PUT } = serve({
     platinaBrandRefresh,
   ],
 });
+
+export const { GET, PUT } = handler;
+
+/**
+ * Every job runs as "background" work: the model router then puts NVIDIA
+ * first and keeps Groq's small per-minute budget for people waiting on a
+ * page (see src/lib/ai/orchestration.ts). One wrapper here instead of a
+ * setting on every call site; POST is the only verb that executes steps.
+ */
+export const POST = (...args: Parameters<typeof handler.POST>) =>
+  runAsWorkload("background", () => handler.POST(...args));
 

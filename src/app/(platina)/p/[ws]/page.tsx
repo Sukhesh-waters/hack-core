@@ -1,15 +1,20 @@
 import Link from "next/link";
+import { CollectionBanner } from "@/components/platina/collection-banner";
 import { PlatinaPage } from "@/components/platina/page";
 import {
   listAlertDeliveries,
   listAuditRuns,
+  listBrands,
   listCampaigns,
   listFindings,
   listGateEvents,
+  listPlansWithVerdict,
   listReceipts,
   listScanSpecs,
 } from "@/db/queries/platina";
 import { buildInbox } from "@/lib/platina/inbox";
+import { freshnessMessage } from "@/lib/platina/plan/freshness";
+import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
 import { freshnessState } from "@/lib/platina/run-status";
 
 export const dynamic = "force-dynamic";
@@ -40,7 +45,7 @@ export default async function PlatinaCockpit({
 }: {
   params: { ws: string };
 }) {
-  const [specs, receipts, campaigns, gates, runs, findings, deliveries] =
+  const [specs, receipts, campaigns, gates, runs, findings, deliveries, brands, latestPlans] =
     await Promise.all([
       listScanSpecs(params.ws),
       listReceipts(params.ws),
@@ -49,7 +54,17 @@ export default async function PlatinaCockpit({
       listAuditRuns(params.ws, 5),
       listFindings(params.ws),
       listAlertDeliveries(params.ws),
+      listBrands(params.ws),
+      listPlansWithVerdict(params.ws, 1),
     ]);
+  const livePlan = latestPlans[0] ?? null;
+  const livePlanFresh = livePlan
+    ? await readPlanFreshness({
+        workspaceId: params.ws,
+        brandId: livePlan.brandId,
+        createdAt: livePlan.createdAt,
+      })
+    : null;
 
   const base = `/p/${params.ws}`;
   const renderedAt = new Date();
@@ -154,6 +169,47 @@ export default async function PlatinaCockpit({
       title="What changed, what matters, what needs you"
       description={`Data as of ${renderedAt.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}. Platina never writes to Waters systems.`}
     >
+      <CollectionBanner workspaceId={params.ws} />
+      {brands.some((b) => b.kind === "own_brand") ? null : (
+        <section aria-label="Get started" className="mb-8 rounded-lg border border-border bg-card p-5">
+          <h2 className="font-display text-lg font-medium">Add your first client</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Tell us who you are working for and we&apos;ll suggest what to watch, then start collecting.
+          </p>
+          <Link
+            href={`${base}/start`}
+            className="mt-3 inline-block rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground"
+          >
+            Add a client
+          </Link>
+        </section>
+      )}
+      {livePlan && livePlanFresh ? (
+        <section aria-label="Live plan" className="mb-8 rounded-lg border border-border bg-card p-4">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            Live plan
+          </p>
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <Link
+                href={`${base}/plan/${livePlan.id}`}
+                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                {livePlan.title}
+              </Link>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {freshnessMessage(livePlanFresh.count, livePlanFresh.scopeLabel)}
+              </p>
+            </div>
+            <Link
+              href={`${base}/plan/${livePlan.id}`}
+              className="rounded-md border border-border px-3 py-1.5 text-xs"
+            >
+              {livePlanFresh.count > 0 ? "Review and re-plan" : "Open plan"}
+            </Link>
+          </div>
+        </section>
+      ) : null}
       <section aria-label="Priority inbox" className="mb-8">
         <h2 className="font-display text-lg font-medium">Priority inbox</h2>
         {inbox.length === 0 ? (

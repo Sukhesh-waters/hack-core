@@ -104,21 +104,22 @@ describe("router observability", () => {
     ]);
   });
 
-  it("a total failure still leaves a failed row and rethrows", async () => {
+  it("a total failure leaves one failed row PER rung and rethrows", async () => {
+    // Round 4: every rung is attempted, so a total outage is visible as the
+    // whole ladder failing — not just whichever provider was asked last.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(jsonResponse({ error: "bad" }, 400)),
+      vi.fn().mockImplementation(() => jsonResponse({ error: "bad" }, 400)),
     );
 
     await expect(routeAI({ kind: "chat", prompt: "x" })).rejects.toBeInstanceOf(
       AIRouterError,
     );
 
-    expect(logMock).toHaveBeenCalledTimes(1);
-    expect(logMock.mock.calls[0][0]).toMatchObject({
-      provider: "groq",
-      status: "failed",
-    });
+    expect(logMock.mock.calls.map((c) => [c[0].provider, c[0].status])).toEqual([
+      ["groq", "failed"],
+      ["gemini", "failed"],
+    ]);
   });
 
   it("logs a failed embed attempt with latency", async () => {

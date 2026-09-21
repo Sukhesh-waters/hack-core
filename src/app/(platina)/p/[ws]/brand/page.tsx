@@ -20,7 +20,7 @@ export default async function BrandPage({
   const declared = gates.filter((g) => g.gate === "declare");
 
   return (
-    <PlatinaPage eyebrow="S1 · gate 1" title="Brand Gene">
+    <PlatinaPage eyebrow="Brand standard" title="Brand Gene">
       <PlatinaMovedNotice
         workspaceId={params.ws}
         to="admin/brand"
@@ -52,7 +52,7 @@ export default async function BrandPage({
         ))}
       </ul>
       <p className="mt-4 font-mono text-xs text-muted-foreground">
-        {declared.length} Gate 1 events written
+        {declared.length} declarations recorded
       </p>
     </PlatinaPage>
   );

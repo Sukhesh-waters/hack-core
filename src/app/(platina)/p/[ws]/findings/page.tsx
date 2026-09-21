@@ -258,6 +258,18 @@ export default async function FindingsPage({
                   </div>
                 )}
 
+                {f.useCase === "competitor_change" &&
+                  ["new", "needs_decision", "validated"].includes(f.status) && (
+                    <div className="mt-2">
+                      <Link
+                        href={`/p/${params.ws}/plan?from=finding:${f.id}`}
+                        className="text-xs font-medium text-primary hover:underline"
+                      >
+                        Plan a response to this move →
+                      </Link>
+                    </div>
+                  )}
+
                 {f.useCase === "brand_drift" && f.status === "new" && (
                   <form
                     action={reauditDriftAction}

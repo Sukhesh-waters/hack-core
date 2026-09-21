@@ -38,7 +38,7 @@ export default async function IdeationPage({
   const proposals = support.ok ? draftProposals("Waters campaign", buckets) : [];
 
   return (
-    <PlatinaPage eyebrow="S8–S10 · gate 3" title="Ideation">
+    <PlatinaPage eyebrow="Directions" title="Ideation">
       <PlatinaMovedNotice
         workspaceId={params.ws}
         to="solutions/new"
@@ -81,7 +81,7 @@ export default async function IdeationPage({
               type="submit"
               className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
             >
-              Gate 3 · approve direction
+              Approve direction
             </button>
           </form>
         </article>

@@ -4,6 +4,7 @@ import { CheckCircle2 } from "lucide-react";
 import { requireUser } from "@/auth";
 import { getMembership } from "@/db/queries/memberships";
 import { getWorkspaceById } from "@/db/queries/workspaces";
+import { listBrands } from "@/db/queries/platina";
 import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +26,10 @@ export default async function WorkspaceReadyPage({
   const workspace = await getWorkspaceById(searchParams.ws);
   if (!workspace) redirect("/hub");
 
+  const hasClients = (await listBrands(workspace.id)).some(
+    (b) => b.kind === "own_brand",
+  );
+
   return (
     <div className="mx-auto max-w-lg text-center">
       <CheckCircle2
@@ -36,7 +41,7 @@ export default async function WorkspaceReadyPage({
       <p className="mt-2 text-sm text-muted-foreground/70">
         You&apos;re in as{" "}
         <span className="font-mono text-brand-purple">{membership.role}</span>.
-        Ingestion, Brand DNA, and the studio come online in the next slices.
+        Next, add your first client and we&apos;ll start collecting.
       </p>
 
       <GlassCard className="mt-8 p-6 text-left">
@@ -55,7 +60,18 @@ export default async function WorkspaceReadyPage({
           asChild
           className="rounded-full bg-brand-teal text-foreground hover:bg-brand-teal/90"
         >
-          <Link href={`/w/${workspace.id}/kb`}>Enter workspace</Link>
+          <Link
+            href={hasClients ? `/p/${workspace.id}` : `/p/${workspace.id}/start`}
+          >
+            {hasClients ? "Open Platina" : "Add your first client"}
+          </Link>
+        </Button>
+        <Button
+          asChild
+          variant="outline"
+          className="rounded-full border-border bg-transparent text-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Link href={`/w/${workspace.id}/kb`}>Open the InstaMedia workspace</Link>
         </Button>
         <Button
           asChild

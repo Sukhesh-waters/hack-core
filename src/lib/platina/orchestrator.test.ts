@@ -118,7 +118,7 @@ describe("executeAuditRun", () => {
     expect(store.broadcasts).toHaveLength(3);
     expect(store.contradictions).toEqual(["ws-1"]);
     expect(store.specOutcomes).toEqual([
-      { specId: "spec-1", inserted: 3, failed: false },
+      { specId: "spec-1", inserted: 3, failed: false, pages: 3 },
     ]);
   });
 
@@ -193,6 +193,84 @@ describe("executeAuditRun", () => {
   });
 });
 
+describe("executeAuditRun — analysis stages (core spine S5)", () => {
+  const withStages = (
+    store: FakeStore,
+    stages: Partial<Pick<OrchestratorDeps, "runDivergenceStage" | "runIdeationStage">>,
+  ): OrchestratorDeps => ({ ...makeDeps(store), ...stages });
+
+  it("runs all three default stages and reports real counters per stage", async () => {
+    const store = makeStore(makeRun());
+    const deps = withStages(store, {
+      runDivergenceStage: async () => ({ status: "done", produced: 2, note: "2 new divergence(s)" }),
+      runIdeationStage: async () => ({ status: "done", produced: 1, note: "1 new direction(s)" }),
+    });
+    const result = await executeAuditRun(deps, "ws-1", "run-1");
+    expect(result).toMatchObject({ outcome: "completed" });
+    const message = store.transitions.find((t) => t.to === "validating")?.message ?? "";
+    expect(message).toContain("competitor_scan: 3 fetched");
+    expect(message).toContain("brand_divergence: 2 new divergence(s)");
+    expect(message).toContain("ideation: 1 new direction(s)");
+    expect(store.transitions.at(-1)?.counters).toMatchObject({ brand_divergence: 2, ideation: 1 });
+  });
+
+  it("a stage that throws marks the run degraded with the reason, never completed", async () => {
+    const store = makeStore(makeRun());
+    const deps = withStages(store, {
+      runDivergenceStage: async () => {
+        throw new Error("2 divergence(s) rejected: uncited");
+      },
+      runIdeationStage: async () => ({ status: "done", produced: 0, note: "0 new direction(s)" }),
+    });
+    const result = await executeAuditRun(deps, "ws-1", "run-1");
+    expect(result).toMatchObject({ outcome: "degraded" });
+    expect(store.transitions.at(-1)?.degradedReason).toContain("brand_divergence failed");
+  });
+
+  it("a stage that legitimately has nothing to do is skipped with its reason, not degraded", async () => {
+    const store = makeStore(makeRun());
+    const deps = withStages(store, {
+      runDivergenceStage: async () => ({ status: "skipped", reason: "no declared brand standard yet" }),
+      runIdeationStage: async () => ({ status: "skipped", reason: "needs 3 validated patterns, has 0" }),
+    });
+    const result = await executeAuditRun(deps, "ws-1", "run-1");
+    expect(result).toMatchObject({ outcome: "completed" });
+    expect(store.transitions.find((t) => t.to === "validating")?.message).toContain(
+      "brand_divergence: skipped (no declared brand standard yet)",
+    );
+  });
+
+  it("a run in which no stage did any work never reads completed", async () => {
+    const run = makeRun({
+      configSnapshot: { ...snapshotRunConfig(null), analysisSequence: ["brand_divergence", "ideation"] },
+    });
+    const store = makeStore(run);
+    const result = await executeAuditRun(makeDeps(store), "ws-1", "run-1");
+    expect(result).toMatchObject({ outcome: "degraded", reason: "no analysis stage ran" });
+  });
+
+  it("does not run analysis stages when this run's own fetch failed", async () => {
+    const store = makeStore(makeRun(), async () => {
+      throw new Error("apify 402");
+    });
+    let ran = false;
+    const deps = withStages(store, {
+      runDivergenceStage: async () => {
+        ran = true;
+        return { status: "done", produced: 0, note: "" };
+      },
+    });
+    expect(await executeAuditRun(deps, "ws-1", "run-1")).toMatchObject({ outcome: "failed" });
+    expect(ran).toBe(false);
+  });
+
+  it("charges the source for pages returned, not for runs", async () => {
+    const store = makeStore(makeRun(), async () => ({ fetched: 3, inserted: 1, failures: [], pages: 25 } as never));
+    await executeAuditRun(makeDeps(store), "ws-1", "run-1");
+    expect((store.specOutcomes[0] as { pages?: number }).pages).toBe(25);
+  });
+});
+
 describe("manualIdempotencyKey", () => {
   it("is stable within a minute and differs across minutes", () => {
     const at = new Date("2026-09-17T12:34:56Z");
@@ -200,5 +278,30 @@ describe("manualIdempotencyKey", () => {
     const nextMinute = new Date("2026-09-17T12:35:01Z");
     expect(manualIdempotencyKey("s1", at)).toBe(manualIdempotencyKey("s1", sameMinute));
     expect(manualIdempotencyKey("s1", at)).not.toBe(manualIdempotencyKey("s1", nextMinute));
+  });
+});
+
+describe("R9 — a rendered retry is a note, never a failure", () => {
+  it("puts fetch notes on the timeline and leaves the run completed", async () => {
+    const store = makeStore(makeRun());
+    const deps: OrchestratorDeps = {
+      ...makeDeps(store),
+      runFetchStage: async () => ({
+        fetched: 3,
+        inserted: 3,
+        failures: [],
+        pages: 3,
+        notes: [
+          "https://acme.test: now read with a browser (the page returned almost no text)",
+        ],
+      }),
+    };
+    const outcome = await executeAuditRun(deps, "ws-1", "run-1");
+
+    expect(outcome.outcome).toBe("completed");
+    const messages = store.transitions.map((t) => t.message ?? "").join(" | ");
+    expect(messages).toContain("now read with a browser");
+    // The whole point: a note must not become a degradedReason.
+    expect(store.transitions.some((t) => t.degradedReason)).toBe(false);
   });
 });
