@@ -26,6 +26,16 @@ import {
   planTarget,
 } from "./actors";
 import { canonicalizeUrl, contentHash } from "./canonical";
+import {
+  FIRECRAWL_MAX_AGE_MS,
+  SIGNAL_PROMPT,
+  SIGNAL_SCHEMA,
+  extractJsonEnabled,
+  firecrawlPlan,
+  mapFirecrawlPage,
+  shouldFallBack,
+} from "./firecrawl-web";
+import { scrapeWithFirecrawl } from "@/lib/scrape/firecrawl";
 import { shouldEscalate } from "./render";
 import {
   registerAdapter,
@@ -148,6 +158,8 @@ export async function fetchViaWaters(
   // Sources that only gave up their content to a rendered crawl. The caller
   // persists this so the wasted plain pass happens once, not every time.
   const escalated: NonNullable<FetchOutcome["escalated"]> = [];
+  // Targets Firecrawl could not read and Apify then collected.
+  const fallbacks: NonNullable<FetchOutcome["fallbacks"]> = [];
   let remaining = spec.pageBudget;
   let pagesFetched = 0;
 
@@ -171,6 +183,33 @@ export async function fetchViaWaters(
       });
       continue;
     }
+    // Rung 1 for a single public page: Firecrawl — about a second, JavaScript
+    // rendered, 1 credit. A failure another scraper could survive (outage,
+    // credits, timeout, bot wall) falls through to the Apify path below; a
+    // page that is simply gone (404) is recorded once, without paying Apify
+    // to hear the same answer.
+    let firecrawlReason: string | null = null;
+    if (firecrawlPlan(target, pages)) {
+      try {
+        const page = await scrapeWithFirecrawl(target.value, {
+          maxAgeMs: FIRECRAWL_MAX_AGE_MS,
+          ...(extractJsonEnabled()
+            ? { jsonSchema: SIGNAL_SCHEMA, jsonPrompt: SIGNAL_PROMPT }
+            : {}),
+        });
+        pagesFetched += 1;
+        if (remaining !== undefined) remaining = Math.max(0, remaining - 1);
+        docs.push(mapFirecrawlPage(page, target));
+        continue;
+      } catch (thrown) {
+        firecrawlReason = thrown instanceof Error ? thrown.message : "Firecrawl failed";
+        if (!shouldFallBack(thrown)) {
+          failures.push({ target: target.value, error: firecrawlReason });
+          continue;
+        }
+      }
+    }
+
     const social = isSocialKind(target.kind) ? parseSocialRef(target.value) : null;
     const collect = async (renderJs: boolean) => {
       const plan = planTarget({ ...target, renderJs }, pages);
@@ -223,8 +262,14 @@ export async function fetchViaWaters(
     }
 
     if (error) {
-      failures.push({ target: target.value, error });
+      failures.push({
+        target: target.value,
+        error: firecrawlReason ? `${error}; before that, ${firecrawlReason}` : error,
+      });
       continue;
+    }
+    if (firecrawlReason && mapped.length > 0) {
+      fallbacks.push({ target: target.value, reason: firecrawlReason });
     }
     if (mapped.length === 0) {
       failures.push({
@@ -240,7 +285,7 @@ export async function fetchViaWaters(
       `every target failed: ${failures.map((f) => `${f.target} (${f.error})`).join("; ")}`,
     );
   }
-  return { docs, failures, pages: pagesFetched, escalated };
+  return { docs, failures, pages: pagesFetched, escalated, fallbacks };
 }
 
 export function registerWatersAdapter() {

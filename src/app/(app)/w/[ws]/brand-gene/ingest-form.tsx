@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ingestKnowledgeUrl, type IngestState } from "./knowledge-actions";
 
-function SubmitButton() {
+function SubmitButton({ wholeSite }: { wholeSite: boolean }) {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" disabled={pending}>
-      {pending ? "Fetching…" : "Ingest URL"}
+      {pending ? (wholeSite ? "Reading the site…" : "Fetching…") : wholeSite ? "Ingest site" : "Ingest URL"}
     </Button>
   );
 }
@@ -18,10 +18,14 @@ function SubmitButton() {
 export function IngestForm({
   workspaceId,
   clientId,
+  siteAvailable = false,
 }: {
   workspaceId: string;
   clientId: string;
+  /** Whole-site reading needs Firecrawl (FIRECRAWL_API_KEY). */
+  siteAvailable?: boolean;
 }) {
+  const [wholeSite, setWholeSite] = useState(siteAvailable);
   const [state, formAction] = useFormState<IngestState, FormData>(
     ingestKnowledgeUrl,
     undefined,
@@ -49,10 +53,25 @@ export function IngestForm({
           onChange={(e) => setUrl(e.target.value)}
           required
         />
-        <SubmitButton />
+        {wholeSite ? <input type="hidden" name="scope" value="site" /> : null}
+        <SubmitButton wholeSite={wholeSite} />
       </div>
+      {siteAvailable ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={wholeSite}
+            onChange={(e) => setWholeSite(e.target.checked)}
+            className="h-3.5 w-3.5 accent-primary"
+          />
+          Also read the site&apos;s key pages — about, products, solutions, news (up to 9
+          pages, about 10 Firecrawl credits, 20–40 seconds)
+        </label>
+      ) : null}
       {state?.error ? (
         <p className="text-sm text-destructive">{state.error}</p>
+      ) : state?.notice ? (
+        <p className="text-sm text-muted-foreground">{state.notice}</p>
       ) : null}
     </form>
   );

@@ -162,9 +162,15 @@ export const platinaAuditRun = inngest.createFunction(
               ),
               // A successful rendered retry is a NOTE, never a failure: it
               // must not degrade a run that actually collected its content.
-              notes: (outcome.escalated ?? []).map(
-                (e) => `${e.target}: now read with a browser (${e.reason})`,
-              ),
+              notes: [
+                ...(outcome.escalated ?? []).map(
+                  (e) => `${e.target}: now read with a browser (${e.reason})`,
+                ),
+                // Firecrawl could not read it, Apify did: collected, so a note.
+                ...(outcome.fallbacks ?? []).map(
+                  (f) => `${f.target}: read with Apify after Firecrawl failed (${f.reason})`,
+                ),
+              ],
             };
           },
           runDivergenceStage: async (ws, run) =>

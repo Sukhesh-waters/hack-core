@@ -75,3 +75,24 @@ describe("actionErrorMessage — existing mappings unchanged", () => {
     expect(actionErrorMessage(new Error("ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR"))).toContain("Secure connection failed");
   });
 });
+
+describe("actionErrorMessage — scraping says what actually happened", () => {
+  it("passes a ScrapeError through verbatim", () => {
+    const error = Object.assign(new Error("Firecrawl credits are used up for this billing period (402)."), {
+      name: "ScrapeError",
+    });
+    expect(actionErrorMessage(error)).toBe("Firecrawl credits are used up for this billing period (402).");
+  });
+
+  it("names a site's refusal instead of hiding it", () => {
+    expect(actionErrorMessage(new Error("Fetch failed with status 403."))).toBe(
+      "The website blocked the request (403) — it refuses automated readers.",
+    );
+    expect(actionErrorMessage(new Error("Fetch failed with status 404."))).toMatch(/doesn't exist \(404\)/);
+    expect(actionErrorMessage(new Error("Fetch failed with status 500."))).toMatch(/answered with an error \(500\)/);
+  });
+
+  it("an unreachable site is not 'something went wrong'", () => {
+    expect(actionErrorMessage(new TypeError("fetch failed"))).toMatch(/Couldn't reach that website/);
+  });
+});

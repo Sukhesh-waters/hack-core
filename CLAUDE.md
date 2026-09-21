@@ -32,6 +32,15 @@
   (conditional GET, ETag/If-Modified-Since, sitemap lastmod, RSS/Atom) that
   retrieves no page content is not a content fetch and may run as own code;
   content retrieval remains Apify-only until the own-code adapter ships.
+  **Owner decision 2026-09-21 (Firecrawl):** a single public web page
+  (competitor_site / press_release / trade_editorial / conference, one page,
+  no sitemap crawl) is fetched through Firecrawl first, falling back to the
+  Apify crawler when Firecrawl fails for a reason another scraper could
+  survive. Social profiles/posts, the Meta ad library and multi-page crawls
+  stay Apify-only. The one Firecrawl client is shared infra at
+  `src/lib/scrape/firecrawl.ts` (allowlisted in the boundary test); docs keep
+  the same Plane B rules (source=public, never embedded, never citable).
+  InstaMedia's paste-a-URL knowledge ingest also uses it (first-party vault).
   Platina code must not call InstaMedia
   ticket, Hub, SOP, content, calendar, campaign, or notification modules.
   `platina_campaigns.sop_run_id` and Platina alert actions `hub_message` / `ticket` /

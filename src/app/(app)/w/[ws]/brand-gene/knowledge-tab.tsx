@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { routeAI } from "@/lib/ai/router";
 import { runWithAiCost } from "@/lib/ai/usage-context";
+import { firecrawlConfigured } from "@/lib/scrape/firecrawl";
 import { IngestForm } from "./ingest-form";
 import { IngestedSourcesList, SourcesCard } from "./sources-list";
 
@@ -81,7 +82,11 @@ export async function KnowledgeTab({
           vault — declared material, not public pattern data. Never cited as
           performance truth.
         </p>
-        <IngestForm workspaceId={workspaceId} clientId={clientId} />
+        <IngestForm
+          workspaceId={workspaceId}
+          clientId={clientId}
+          siteAvailable={firecrawlConfigured()}
+        />
         <IngestedSourcesList sources={sources} />
       </GlassCard>
 

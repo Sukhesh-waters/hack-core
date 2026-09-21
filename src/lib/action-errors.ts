@@ -58,6 +58,24 @@ export function actionErrorMessage(error: unknown): string {
   ) {
     return message;
   }
+  // Scrape failures are written for people ("Firecrawl credits are used up",
+  // "The page answered 404") — the next step is in the message itself.
+  if (error instanceof Error && error.name === "ScrapeError") {
+    return message;
+  }
+  // A site refusing us is the site's answer, not our bug: say which answer.
+  const refused = /Fetch failed with status (\d{3})/.exec(message);
+  if (refused) {
+    const status = Number(refused[1]);
+    return status === 401 || status === 403 || status === 429
+      ? `The website blocked the request (${status}) — it refuses automated readers.`
+      : status === 404
+        ? "That page doesn't exist (404) — check the address."
+        : `The website answered with an error (${status}).`;
+  }
+  if (message === "fetch failed" || message.includes("ENOTFOUND") || message.includes("ECONNRESET")) {
+    return "Couldn't reach that website — check the address, or the site may be down.";
+  }
   if (message.includes("Only HTML pages are supported")) {
     return "Only HTML webpages are supported for URL ingestion.";
   }

@@ -80,6 +80,10 @@ const ALLOWED_EXACT = new Set([
   "@/lib/ai/context/types",
   "@/lib/ai/usage-context",
   "@/lib/action-errors",
+  // Owner decision 2026-09-21 (CLAUDE.md): Firecrawl is the first rung for a
+  // single public web page. Its one client is shared infra outside Platina;
+  // social and ad-library content stays Apify-only.
+  "@/lib/scrape/firecrawl",
   "@/lib/utils",
   "@/inngest/client",
 ]);

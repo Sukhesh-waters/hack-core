@@ -2,11 +2,13 @@ import type { getSourceRegistry } from "@/db/queries/sources";
 import type { knowledgeSourcesQuery } from "@/db/queries/knowledge";
 import { Badge } from "@/components/ui/badge";
 import { importJobDisplayStatus } from "@/lib/import-pipeline";
+import { ingestDisplayStatus } from "@/lib/knowledge-ingest";
 
 const STATUS_STYLE: Record<string, string> = {
   ready: "border-brand-teal/40 text-brand-teal",
   failed: "border-destructive/40 text-destructive",
   pending: "border-brand-amber/40 text-brand-amber",
+  interrupted: "border-destructive/40 text-destructive",
 };
 
 type KnowledgeSourceRow = Awaited<ReturnType<typeof knowledgeSourcesQuery>>[number];
@@ -26,7 +28,9 @@ export function IngestedSourcesList({
   }
   return (
     <ul className="mt-4 space-y-2">
-      {sources.map((source) => (
+      {sources.map((source) => {
+        const status = ingestDisplayStatus(source);
+        return (
         <li
           key={source.id}
           className="flex items-center justify-between gap-3 text-sm"
@@ -43,23 +47,33 @@ export function IngestedSourcesList({
             <Badge
               variant="outline"
               className={
-                STATUS_STYLE[source.status] ?? "border-border text-muted-foreground/70"
+                STATUS_STYLE[status] ?? "border-border text-muted-foreground/70"
               }
             >
-              {source.status === "pending"
+              {status === "pending"
                 ? "Ingesting…"
-                : source.status === "ready"
+                : status === "ready"
                   ? `${source.chunkCount} chunks`
-                  : "Failed"}
+                  : status === "interrupted"
+                    ? "Interrupted"
+                    : "Failed"}
             </Badge>
-            {source.status === "failed" && source.error ? (
-              <span className="font-mono text-xs text-muted-foreground/70">
-                {source.error.slice(0, 40)}
+            {status === "failed" && source.error ? (
+              <span
+                className="max-w-[16rem] truncate text-xs text-muted-foreground/70"
+                title={source.error}
+              >
+                {source.error}
+              </span>
+            ) : status === "interrupted" ? (
+              <span className="text-xs text-muted-foreground/70">
+                Stopped before finishing — paste the URL again.
               </span>
             ) : null}
           </span>
         </li>
-      ))}
+        );
+      })}
     </ul>
   );
 }

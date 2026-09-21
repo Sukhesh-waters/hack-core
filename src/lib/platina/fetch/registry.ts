@@ -39,6 +39,8 @@ export type FetchOutcome = {
   pages?: number;
   /** Targets that needed a rendered (headless browser) crawl to return text. */
   escalated?: { target: string; reason: string }[];
+  /** Targets Firecrawl could not read that Apify then collected (a note, not a failure). */
+  fallbacks?: { target: string; reason: string }[];
   docs: RawSignalDoc[];
   failures: FetchFailure[];
 };

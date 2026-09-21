@@ -1,4 +1,11 @@
 import * as cheerio from "cheerio";
+import { actionErrorMessage } from "@/lib/action-errors";
+import {
+  ScrapeError,
+  firecrawlConfigured,
+  isUnsupportedByFirecrawl,
+  scrapeWithFirecrawl,
+} from "@/lib/scrape/firecrawl";
 
 /**
  * Pure text extraction + chunking for the Brand Gene Knowledge tab's
@@ -85,4 +92,119 @@ export async function fetchPage(
   }
   const html = await response.text();
   return { html: html.slice(0, MAX_RESPONSE_BYTES), contentType };
+}
+
+// ---------------------------------------------------------------------------
+// readPage — the one entry point: own fetch and Firecrawl, in either order
+// ---------------------------------------------------------------------------
+
+/** Firecrawl markdown -> plain prose for chunking: keep paragraphs, drop link/image syntax. */
+export function markdownToText(markdown: string): string {
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/\\([|*_`#[\]()])/g, "$1")
+    .replace(/^\s*(?:[-*_]\s*){3,}$/gm, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+export type ReadPageResult = {
+  title: string | null;
+  text: string;
+  via: "direct" | "firecrawl";
+};
+
+type Reader = (url: string) => Promise<{ title: string | null; text: string }>;
+
+const readDirect: Reader = async (url) => {
+  const { html } = await fetchPage(url);
+  return extractReadableText(html);
+};
+
+const readFirecrawl: Reader = async (url) => {
+  const page = await scrapeWithFirecrawl(url);
+  return { title: page.title ?? null, text: markdownToText(page.markdown) };
+};
+
+/**
+ * Reads one page for the knowledge base, trying two readers in order:
+ *
+ *   prefer "firecrawl" (a person is waiting — paste-a-URL): Firecrawl first.
+ *     It renders JavaScript and gets past most bot walls — the pages our
+ *     own fetch cannot read at all. 1 credit.
+ *   prefer "direct" (background refresh): our own fetch first — free — and
+ *     Firecrawl only when that is blocked, empty or a JavaScript shell.
+ *
+ * A reader "fails" on an error OR on too little text (a login wall or a React
+ * shell is not a page). When both fail, the error names both reasons, so the
+ * person sees "blocked (403); Firecrawl credits used up" rather than
+ * "Something went wrong".
+ */
+export async function readPage(
+  url: string,
+  options: {
+    prefer?: "direct" | "firecrawl";
+    readers?: { direct?: Reader; firecrawl?: Reader };
+    firecrawlAvailable?: boolean;
+  } = {},
+): Promise<ReadPageResult> {
+  const direct = options.readers?.direct ?? readDirect;
+  const firecrawl = options.readers?.firecrawl ?? readFirecrawl;
+  const firecrawlOk =
+    (options.firecrawlAvailable ?? firecrawlConfigured()) && !isUnsupportedByFirecrawl(url);
+
+  const plan: { via: ReadPageResult["via"]; read: Reader }[] =
+    options.prefer === "firecrawl"
+      ? [
+          ...(firecrawlOk ? [{ via: "firecrawl" as const, read: firecrawl }] : []),
+          { via: "direct" as const, read: direct },
+        ]
+      : [
+          { via: "direct" as const, read: direct },
+          ...(firecrawlOk ? [{ via: "firecrawl" as const, read: firecrawl }] : []),
+        ];
+
+  const reasons: string[] = [];
+  for (const step of plan) {
+    try {
+      const { title, text } = await step.read(url);
+      if (text.length >= MIN_EXTRACT_CHARS) return { title, text, via: step.via };
+      reasons.push(
+        step.via === "direct"
+          ? "the page has too little readable text (a JavaScript app or a login wall)"
+          : "Firecrawl found too little readable text",
+      );
+    } catch (error) {
+      reasons.push(actionErrorMessage(error).replace(/\.$/, ""));
+    }
+  }
+
+  const social = isUnsupportedByFirecrawl(url)
+    ? " Social profiles can't be read from a URL — use the social connectors instead."
+    : "";
+  throw new ScrapeError(`Couldn't read that page: ${reasons.join("; ")}.${social}`, false);
+}
+
+/**
+ * An ingest runs inside one request and takes a few seconds. A row still
+ * "pending" long after that was orphaned — the request died (a dev-server
+ * restart after an .env change, a deploy, a crash) before it could write
+ * "ready" or "failed". Shown as interrupted instead of "Ingesting…" forever.
+ */
+export const INGEST_ORPHAN_AFTER_MS = 3 * 60_000;
+
+export function ingestDisplayStatus(
+  source: { status: string; createdAt: Date | string | null },
+  now: Date = new Date(),
+): "ready" | "failed" | "pending" | "interrupted" {
+  if (source.status === "ready" || source.status === "failed") return source.status;
+  const created = source.createdAt ? new Date(source.createdAt).getTime() : NaN;
+  if (Number.isFinite(created) && now.getTime() - created > INGEST_ORPHAN_AFTER_MS) {
+    return "interrupted";
+  }
+  return "pending";
 }

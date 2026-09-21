@@ -60,7 +60,7 @@ export const knowledgeRefresh = inngest.createFunction(
     for (const source of staleSources) {
       const result = await step.run(`refresh-${source.id}`, async () => {
         try {
-          const { fetchPage, extractReadableText, chunkText } = await import(
+          const { readPage, chunkText } = await import(
             "@/lib/knowledge-ingest"
           );
           const { routeAI } = await import("@/lib/ai/router");
@@ -70,12 +70,11 @@ export const knowledgeRefresh = inngest.createFunction(
             return { status: "skipped" as const, reason: "no url" };
           }
 
-          const { html } = await fetchPage(source.url);
-          const { text } = extractReadableText(html);
-
-          if (text.length < 200) {
-            return { status: "skipped" as const, reason: "too short" };
-          }
+          // Background: our own (free) fetch first, Firecrawl only when that
+          // is blocked or returns a JavaScript shell — credits go to pages
+          // that need them. When neither yields enough text readPage throws a
+          // readable reason, and the catch below records it on the source.
+          const { text } = await readPage(source.url, { prefer: "direct" });
 
           const rawChunks = chunkText(text);
           const compacted = compactSimilarChunks(rawChunks);
