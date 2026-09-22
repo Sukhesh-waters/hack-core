@@ -585,6 +585,16 @@ export const platinaWorkspaceConfig = pgTable(
     firstPassPageAllowance: integer("first_pass_page_allowance")
       .notNull()
       .default(150),
+    // C6: own-site pages read per UTC day, and the total kept per client.
+    ownSiteDailyPages: integer("own_site_daily_pages").notNull().default(50),
+    ownSiteMaxPages: integer("own_site_max_pages").notNull().default(300),
+    // C6 learning loop: results per feature value before it moves a ranking,
+    // share of suggestions kept for trying something new, days of numbers
+    // before a review opens, and how fast old results fade.
+    learningMinN: integer("learning_min_n").notNull().default(5),
+    learningExploreShare: real("learning_explore_share").notNull().default(0.2),
+    reviewAfterDays: integer("review_after_days").notNull().default(7),
+    learningHalfLifeDays: integer("learning_half_life_days").notNull().default(90),
     compactionStaleDays: integer("compaction_stale_days").notNull().default(90),
     compactionNearDupes: integer("compaction_near_dupes").notNull().default(3),
     compactionCosine: real("compaction_cosine").notNull().default(0.92),
@@ -1059,6 +1069,9 @@ export const platinaBrands = pgTable(
     profileError: text("profile_error"),
     // Pages already spent from this client one-time first-pass allowance (R7).
     firstPassPagesUsed: integer("first_pass_pages_used").notNull().default(0),
+    // C6: when the client's own site was last listed (map), and why it failed.
+    ownSiteMappedAt: timestamp("own_site_mapped_at", { mode: "date" }),
+    ownSiteError: text("own_site_error"),
     status: platinaBrandStatus("status").notNull().default("active"),
     createdById: text("created_by_id")
       .notNull()
@@ -1101,6 +1114,8 @@ export const platinaWorkspaceScopedTables = {
   platinaOutcomeImports,
   platinaAlertDeliveries,
 } as const;
+// C6 tables are declared further down this file; they join the registry in
+// platinaC6ScopedTables (a const can't reference a later declaration).
 
 // ---------------------------------------------------------------------------
 // Interest signals (campaign intelligence C3) — numbers, not prose. Plane B.
@@ -1236,3 +1251,273 @@ export const platinaEventParticipants = pgTable(
     ),
   }),
 );
+
+// ---------------------------------------------------------------------------
+// C6 — own website (Plane A) and the learning loop (owner decision 2026-09-22)
+// ---------------------------------------------------------------------------
+
+/** queued -> read | failed | skipped; "gone" = no longer in the site map. */
+export const OWN_SITE_PAGE_STATUSES = ["queued", "read", "failed", "skipped", "gone"] as const;
+export type OwnSitePageStatus = (typeof OWN_SITE_PAGE_STATUSES)[number];
+
+/**
+ * One page of a client's OWN website. Consented first-party (Plane A): read
+ * through Firecrawl, chunked into platina_first_party_chunks. A header-only
+ * probe (sitemap lastmod / ETag / Last-Modified) decides re-reads, so an
+ * unchanged page never spends a credit.
+ */
+export const platinaOwnSitePages = pgTable(
+  "platina_own_site_pages",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brandId: text("brand_id").notNull(),
+    url: text("url").notNull(),
+    title: text("title"),
+    /** Read order: higher first (products/applications before the rest). */
+    priority: real("priority").notNull().default(0),
+    status: text("status").$type<OwnSitePageStatus>().notNull().default("queued"),
+    contentHash: text("content_hash"),
+    /** Change-probe validators, stored as the server sent them. */
+    sitemapLastmod: text("sitemap_lastmod"),
+    etag: text("etag"),
+    lastModified: text("last_modified"),
+    /** Set by the probe when a validator moved; the reader picks these first. */
+    changeDetectedAt: timestamp("change_detected_at", { mode: "date" }),
+    chunkCount: integer("chunk_count").notNull().default(0),
+    error: text("error"),
+    lastReadAt: timestamp("last_read_at", { mode: "date" }),
+    lastCheckedAt: timestamp("last_checked_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_own_site_pages_workspace_id_idx").on(table.workspaceId),
+    pageUnique: uniqueIndex("platina_own_site_pages_unique").on(
+      table.workspaceId,
+      table.brandId,
+      table.url,
+    ),
+  }),
+);
+
+export const FIRST_PARTY_CHUNK_KINDS = ["own_site", "lesson"] as const;
+export type FirstPartyChunkKind = (typeof FIRST_PARTY_CHUNK_KINDS)[number];
+
+/**
+ * Plane A knowledge that is NOT the declared brand standard: the client's own
+ * website pages and confirmed lessons from its own results. Embedded and
+ * citable as first-party evidence. Kept apart from platina_brand_chunks on
+ * purpose: a client's chunks there mean "confirmed standard" (R3/O3), and a
+ * crawled page must never switch that on by itself.
+ */
+export const platinaFirstPartyChunks = pgTable(
+  "platina_first_party_chunks",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brandId: text("brand_id"),
+    kind: text("kind").$type<FirstPartyChunkKind>().notNull(),
+    /** Own-site page id or review id this chunk came from. */
+    sourceRef: text("source_ref").notNull(),
+    sourceUrl: text("source_url"),
+    title: text("title"),
+    content: text("content").notNull(),
+    chunkIndex: integer("chunk_index").notNull().default(0),
+    embedding: vector("embedding", { dimensions: 768 }),
+    embeddingModelVersion: text("embedding_model_version")
+      .notNull()
+      .default(PLATINA_EMBEDDING_MODEL_VERSION),
+    supersededAt: timestamp("superseded_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_first_party_chunks_workspace_id_idx").on(table.workspaceId),
+    sourceIdx: index("platina_first_party_chunks_source_idx").on(
+      table.workspaceId,
+      table.sourceRef,
+    ),
+    brandIdx: index("platina_first_party_chunks_brand_idx").on(
+      table.workspaceId,
+      table.brandId,
+      table.kind,
+    ),
+  }),
+);
+
+export const CREATIVE_STATUSES = ["draft", "live", "ended"] as const;
+export type CreativeStatus = (typeof CREATIVE_STATUSES)[number];
+
+/**
+ * One posted piece of work, the unit the learning loop learns about. The
+ * descriptors (channel, format, topic, hook type, posted time) are the
+ * features results are credited to; the links (plan phase, opportunity) are
+ * how a result is traced back to the evidence it rested on.
+ */
+export const platinaCreatives = pgTable(
+  "platina_creatives",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brandId: text("brand_id"),
+    planId: text("plan_id").references(() => platinaPlans.id, { onDelete: "set null" }),
+    phaseId: text("phase_id"),
+    /** "topic:<name>" or "event:<name>": the opportunity it answered. */
+    opportunityKey: text("opportunity_key"),
+    title: text("title").notNull(),
+    channel: text("channel").notNull(),
+    format: text("format").notNull(),
+    topic: text("topic"),
+    hookType: text("hook_type"),
+    cta: text("cta"),
+    url: text("url"),
+    /** Post id on the platform, for connected-account matching. */
+    externalId: text("external_id"),
+    /** What we expect and why, in one line. Required: a result is read against it. */
+    hypothesis: text("hypothesis").notNull(),
+    postedAt: timestamp("posted_at", { mode: "date" }),
+    status: text("status").$type<CreativeStatus>().notNull().default("live"),
+    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_creatives_workspace_id_idx").on(table.workspaceId),
+    planIdx: index("platina_creatives_plan_idx").on(table.workspaceId, table.planId),
+    brandIdx: index("platina_creatives_brand_idx").on(table.workspaceId, table.brandId),
+  }),
+);
+
+/**
+ * A snapshot of a creative's numbers at one moment. Snapshots accumulate and
+ * are never overwritten, so growth over time is visible. A metric the source
+ * did not give is null, never 0.
+ */
+export const platinaCreativeMetrics = pgTable(
+  "platina_creative_metrics",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    creativeId: text("creative_id")
+      .notNull()
+      .references(() => platinaCreatives.id, { onDelete: "cascade" }),
+    capturedAt: timestamp("captured_at", { mode: "date" }).notNull(),
+    impressions: integer("impressions"),
+    reach: integer("reach"),
+    clicks: integer("clicks"),
+    engagements: integer("engagements"),
+    saves: integer("saves"),
+    shares: integer("shares"),
+    videoViews: integer("video_views"),
+    leads: integer("leads"),
+    spend: real("spend"),
+    /** manual | csv | connector:<name> */
+    source: text("source").notNull().default("manual"),
+    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_creative_metrics_workspace_id_idx").on(table.workspaceId),
+    creativeIdx: index("platina_creative_metrics_creative_idx").on(
+      table.creativeId,
+      table.capturedAt,
+    ),
+    snapshotUnique: uniqueIndex("platina_creative_metrics_snapshot_unique").on(
+      table.workspaceId,
+      table.creativeId,
+      table.capturedAt,
+      table.source,
+    ),
+  }),
+);
+
+export const REVIEW_VERDICTS = ["worked", "mixed", "failed"] as const;
+export type ReviewVerdict = (typeof REVIEW_VERDICTS)[number];
+export const REVIEW_FACTORS = ["topic", "hook", "format", "timing", "audience", "channel"] as const;
+export type ReviewFactor = (typeof REVIEW_FACTORS)[number];
+export type ReviewEffect = "helped" | "hurt" | "neutral";
+
+/** Numbers the code computed for a review. The model never writes these. */
+export type ReviewFacts = {
+  snapshots: number;
+  days: number;
+  impressions: number | null;
+  engagementRate: number | null;
+  medianEngagementRate: number | null;
+  /** engagementRate / medianEngagementRate; null below min-N. */
+  index: number | null;
+  baselineN: number;
+  leads: number | null;
+  beatMedian: boolean | null;
+};
+
+export type ReviewWhy = { factor: ReviewFactor; effect: ReviewEffect; reason: string };
+
+/**
+ * What / why / how for one creative. Drafted by the model from the computed
+ * facts; only a CONFIRMED review becomes a lesson and moves the learning. The
+ * system never learns from its own unreviewed guesses.
+ */
+export const platinaCreativeReviews = pgTable(
+  "platina_creative_reviews",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    creativeId: text("creative_id")
+      .notNull()
+      .references(() => platinaCreatives.id, { onDelete: "cascade" }),
+    status: text("status").$type<"draft" | "confirmed">().notNull().default("draft"),
+    verdict: text("verdict").$type<ReviewVerdict>(),
+    facts: jsonb("facts").$type<ReviewFacts>().notNull(),
+    what: text("what"),
+    why: jsonb("why").$type<ReviewWhy[]>().notNull().default([]),
+    how: text("how"),
+    keep: text("keep"),
+    /** model | human: who wrote the current text. */
+    draftedBy: text("drafted_by").notNull().default("model"),
+    draftError: text("draft_error"),
+    confirmedById: text("confirmed_by_id").references(() => users.id, { onDelete: "set null" }),
+    confirmedAt: timestamp("confirmed_at", { mode: "date" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_creative_reviews_workspace_id_idx").on(table.workspaceId),
+    creativeUnique: uniqueIndex("platina_creative_reviews_creative_unique").on(table.creativeId),
+  }),
+);
+
+/**
+ * Audit log of everything the loop changed and why: a demoted or promoted
+ * Brain hypothesis (backtracking), a stored lesson. "Why did this drop?" is
+ * always answerable from here.
+ */
+export const platinaLearningEvents = pgTable(
+  "platina_learning_events",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brandId: text("brand_id"),
+    /** demote | promote | lesson */
+    kind: text("kind").notNull(),
+    /** The review that caused it. */
+    reviewId: text("review_id"),
+    /** Brain chunk id, first-party chunk id, ... */
+    targetRef: text("target_ref"),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_learning_events_workspace_id_idx").on(table.workspaceId),
+    reviewIdx: index("platina_learning_events_review_idx").on(table.workspaceId, table.reviewId),
+  }),
+);
+
+export const platinaC6ScopedTables = {
+  platinaOwnSitePages,
+  platinaFirstPartyChunks,
+  platinaCreatives,
+  platinaCreativeMetrics,
+  platinaCreativeReviews,
+  platinaLearningEvents,
+} as const;

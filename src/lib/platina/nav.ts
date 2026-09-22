@@ -13,6 +13,8 @@ export const PLATINA_NAV = [
   // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
   { slug: "opportunities", label: "Opportunities" },
   { slug: "plan", label: "Plan" },
+  // C6 learning loop: creatives, their numbers, reviews, what they teach.
+  { slug: "results", label: "Results" },
   { slug: "audits", label: "Audits" },
   { slug: "findings", label: "Findings" },
   { slug: "solutions", label: "Solutions" },

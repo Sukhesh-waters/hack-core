@@ -575,6 +575,20 @@
       "when": 1790007765395,
       "tag": "0081_funny_selene",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1790055514083,
+      "tag": "0082_slow_shriek",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1790055687951,
+      "tag": "0083_flat_tempest",
+      "breakpoints": true
     }
   ]
 }

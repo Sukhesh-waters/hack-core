@@ -5,6 +5,9 @@ import { PlatinaFormError } from "@/components/platina/form-error";
 import { AutoRefresh } from "@/components/platina/auto-refresh";
 import { PendingButton } from "@/components/platina/pending-button";
 import { PlatinaPage } from "@/components/platina/page";
+import { OwnSiteCard } from "@/components/platina/own-site-card";
+import { firstPartyChunkCountsQuery, listOwnSitePages } from "@/db/queries/platina-learning";
+import { summariseOwnSite } from "@/lib/platina/own-site";
 import {
   countBrandStandardChunks,
   countDocsForBrands,
@@ -19,7 +22,7 @@ import {
 import { profileIsConfirmable } from "@/lib/platina/brand-standard";
 import { describeEngagement, summariseEngagement } from "@/lib/platina/engagement";
 import { runSummary, type RunRow } from "@/lib/platina/run-summary";
-import { confirmBrandStandardAction, refreshProfileAction } from "../actions";
+import { confirmBrandStandardAction, readOwnSiteAction, refreshProfileAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Client" };
@@ -48,7 +51,7 @@ export default async function BrandPage({
   searchParams,
 }: {
   params: { ws: string; id: string };
-  searchParams: { error?: string; started?: string; analysing?: string };
+  searchParams: { error?: string; started?: string; analysing?: string; reading?: string };
 }) {
   const brand = await getBrand(params.ws, params.id);
   if (!brand) notFound();
@@ -57,7 +60,7 @@ export default async function BrandPage({
 
   const competitors = brand.kind === "own_brand" ? await listCompetitorsOf(params.ws, brand.id) : [];
   const ids = [brand.id, ...competitors.map((c) => c.id)];
-  const [own, config, docCount, findings, runs, standardChunks, engagementDocs, ...competitorSpecs] = await Promise.all([
+  const [own, config, docCount, findings, runs, standardChunks, engagementDocs, sitePages, chunkCounts, ...competitorSpecs] = await Promise.all([
     listScanSpecsForBrand(params.ws, brand.id),
     getWorkspaceConfig(params.ws),
     countDocsForBrands(params.ws, ids),
@@ -65,6 +68,8 @@ export default async function BrandPage({
     listAuditRuns(params.ws, 60),
     countBrandStandardChunks(params.ws, brand.id),
     listEngagementDocsForBrands(params.ws, ids),
+    brand.kind === "own_brand" ? listOwnSitePages(params.ws, brand.id) : Promise.resolve([]),
+    brand.kind === "own_brand" ? firstPartyChunkCountsQuery(params.ws) : Promise.resolve([]),
     ...competitors.map((c) => listScanSpecsForBrand(params.ws, c.id)),
   ]);
   const specs = [...own, ...competitorSpecs.flat()];
@@ -95,6 +100,11 @@ export default async function BrandPage({
   const hasApproved = specs.some((sp) => sp.status === "approved");
   // The profile is built right after the client's own pages are stored.
   const profilePending = isClient && hasApproved && !brand.profile && !brand.profileError;
+  const siteSummary = summariseOwnSite(sitePages);
+  const siteChunks = chunkCounts
+    .filter((c) => c.brandId === brand.id && c.kind === "own_site")
+    .reduce((sum, c) => sum + Number(c.chunks), 0);
+  const siteReading = Boolean(searchParams.reading) && siteSummary.queued + siteSummary.changed > 0;
 
   return (
     <PlatinaPage
@@ -104,7 +114,7 @@ export default async function BrandPage({
         [brand.homepageUrl, brand.region].filter(Boolean).join(" · ") || undefined
       }
     >
-      <AutoRefresh active={scraping || profilePending || Boolean(searchParams.analysing)} />
+      <AutoRefresh active={scraping || profilePending || Boolean(searchParams.analysing) || siteReading} />
       <CollectionBanner workspaceId={params.ws} />
       <PlatinaFormError message={searchParams.error} />
       {searchParams.started ? (
@@ -230,6 +240,25 @@ export default async function BrandPage({
             </p>
           )}
         </section>
+      ) : null}
+
+      {isClient ? (
+        <OwnSiteCard
+          workspaceId={params.ws}
+          brandId={brand.id}
+          name={brand.name}
+          homepageUrl={brand.homepageUrl}
+          summary={siteSummary}
+          chunks={siteChunks}
+          mappedAt={brand.ownSiteMappedAt}
+          mapError={brand.ownSiteError}
+          failed={sitePages
+            .filter((p) => p.status === "failed")
+            .slice(0, 10)
+            .map((p) => ({ url: p.url, error: p.error }))}
+          action={readOwnSiteAction}
+          now={now}
+        />
       ) : null}
 
       {engagementRows.length > 0 ? (

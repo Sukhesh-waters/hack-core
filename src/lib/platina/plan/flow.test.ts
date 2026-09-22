@@ -30,6 +30,11 @@ vi.mock("@/db/queries/platina", () => ({
   listSignalIdsForBrands: vi.fn(),
   listWorkspaceWideSignalIds: vi.fn().mockResolvedValue([]),
 }));
+// C6 first-party knowledge and confirmed results: none in these flows.
+vi.mock("@/db/queries/platina-learning", () => ({
+  similarFirstPartyChunksQuery: vi.fn().mockResolvedValue([]),
+  listConfirmedResults: vi.fn().mockResolvedValue([]),
+}));
 // The rerank pass is its own unit; here it keeps the fused order.
 vi.mock("@/lib/platina/rerank", () => ({
   rerankCandidates: async (_q: string, items: unknown[], take: number) => ({

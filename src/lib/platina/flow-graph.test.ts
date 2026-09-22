@@ -90,3 +90,44 @@ describe("visual scales", () => {
     expect(nodeRadius(999)).toBe(0.98);
   });
 });
+
+describe("C6 learning loop in the live flow", () => {
+  const learning = {
+    ownSite: 87,
+    ownSite24h: 87,
+    lessons: 2,
+    lessons24h: 1,
+    creatives: 4,
+    metrics: 9,
+    metrics24h: 3,
+    reviewsConfirmed: 2,
+    reviewsConfirmed24h: 1,
+    backtracks: 3,
+    backtracks24h: 2,
+  };
+
+  it("adds the own site, first-party knowledge, creatives and learning, on real counts", () => {
+    const { nodes, edges } = buildFlowGraph(counts({ learning }));
+    const byId = new Map(nodes.map((n) => [n.id, n]));
+    expect(byId.get("src:own")?.value).toBe(87);
+    expect(byId.get("firstparty")?.value).toBe(89);
+    expect(byId.get("out:learning")?.caption).toContain("3 traced back");
+    const loop = edges.filter((e) => e.from === "out:learning");
+    expect(loop.map((e) => e.to).sort()).toEqual(["brain", "firstparty", "use:opportunities"]);
+    expect(loop.every((e) => e.feedback)).toBe(true);
+  });
+
+  it("a confirmed review fires a burst along the loop", () => {
+    const before = buildFlowGraph(counts({ learning })).edges;
+    const after = buildFlowGraph(counts({ learning: { ...learning, reviewsConfirmed: 3, lessons: 3, backtracks: 4 } })).edges;
+    const fired = arrivals(before, after);
+    expect(fired.get("out:learning->firstparty")).toBe(1);
+    expect(fired.get("out:learning->brain")).toBe(1);
+    expect(fired.get("out:creatives->out:learning")).toBe(1);
+  });
+
+  it("older snapshots without learning counts still build", () => {
+    const { nodes } = buildFlowGraph(counts());
+    expect(nodes.some((n) => n.id === "out:learning")).toBe(false);
+  });
+});

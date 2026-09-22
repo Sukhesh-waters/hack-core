@@ -25,6 +25,20 @@ export type FlowCounts = {
   plans24h: number;
   outcomes: number;
   runsActive: number;
+  /** C6: the client's own website and the learning loop. Optional: older snapshots lack it. */
+  learning?: {
+    ownSite: number;
+    ownSite24h: number;
+    lessons: number;
+    lessons24h: number;
+    creatives: number;
+    metrics: number;
+    metrics24h: number;
+    reviewsConfirmed: number;
+    reviewsConfirmed24h: number;
+    backtracks: number;
+    backtracks24h: number;
+  };
 };
 
 export type FlowStage = "sources" | "collected" | "analysis" | "brain" | "use" | "results";
@@ -92,6 +106,7 @@ export function buildFlowGraph(c: FlowCounts): { nodes: FlowNode[]; edges: FlowE
   const docsTotal = c.docs.web + c.docs.linkedin + c.docs.ads + c.docs.events;
   const docs24h = c.docs24h.web + c.docs24h.linkedin + c.docs24h.ads + c.docs24h.events;
   const brainTotal = c.brain.claims + c.brain.measured + c.brain.events;
+  const L = c.learning;
 
   const spec: Omit<FlowNode, "position">[] = [
     { id: "src:web", label: "Web pages", stage: "sources", value: c.docs.web, caption: recent(c.docs24h.web) },
@@ -119,6 +134,32 @@ export function buildFlowGraph(c: FlowCounts): { nodes: FlowNode[]; edges: FlowE
     { id: "use:planner", label: "Planner", stage: "use", value: c.plans, caption: recent(c.plans24h) },
     { id: "use:findings", label: "Findings", stage: "use", value: c.findings, caption: `${c.findingsNew} awaiting review` },
     { id: "out:results", label: "Recorded results", stage: "results", value: c.outcomes, caption: "teach the planner" },
+    ...(L
+      ? ([
+          { id: "src:own", label: "Own website", stage: "sources", value: L.ownSite, caption: recent(L.ownSite24h) },
+          {
+            id: "firstparty",
+            label: "First-party",
+            stage: "brain",
+            value: L.ownSite + L.lessons,
+            caption: `${L.ownSite} own-site passages · ${L.lessons} lessons`,
+          },
+          {
+            id: "out:creatives",
+            label: "Creatives + numbers",
+            stage: "results",
+            value: L.creatives,
+            caption: `${L.metrics} measurements · ${recent(L.metrics24h)}`,
+          },
+          {
+            id: "out:learning",
+            label: "Learning",
+            stage: "results",
+            value: L.reviewsConfirmed,
+            caption: `${L.reviewsConfirmed} confirmed reviews · ${L.backtracks} traced back`,
+          },
+        ] satisfies Omit<FlowNode, "position">[])
+      : []),
   ];
 
   const byStage = new Map<FlowStage, Omit<FlowNode, "position">[]>();
@@ -153,6 +194,20 @@ export function buildFlowGraph(c: FlowCounts): { nodes: FlowNode[]; edges: FlowE
     e("brain", "use:opportunities", c.brain24h, brainTotal),
     e("use:planner", "out:results", 0, c.outcomes),
     e("out:results", "use:planner", 0, c.outcomes, true),
+    ...(L
+      ? [
+          e("src:own", "firstparty", L.ownSite24h, L.ownSite),
+          e("firstparty", "use:planner", L.ownSite24h + L.lessons24h, L.ownSite + L.lessons),
+          e("use:opportunities", "out:creatives", L.metrics24h, L.creatives),
+          e("use:planner", "out:creatives", L.metrics24h, L.metrics),
+          e("out:creatives", "out:learning", L.reviewsConfirmed24h, L.reviewsConfirmed),
+          // The loop closing: lessons become first-party knowledge, results
+          // re-rank opportunities, and backtracking reaches into the Brain.
+          e("out:learning", "firstparty", L.lessons24h, L.lessons, true),
+          e("out:learning", "use:opportunities", L.reviewsConfirmed24h, L.reviewsConfirmed, true),
+          e("out:learning", "brain", L.backtracks24h, L.backtracks, true),
+        ]
+      : []),
   ];
   return { nodes, edges };
 }

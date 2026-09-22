@@ -119,6 +119,14 @@ export function pickSitePages(input: {
   referenceUrl?: string;
   links: { url: string; title?: string }[];
   max?: number;
+  /**
+   * Keep every same-site, same-language page that survives the noise filters,
+   * best first, instead of only positively scored ones. A client's OWN site
+   * is read in full (C6); the score then only sets the reading order.
+   */
+  keepAll?: boolean;
+  /** Sets the working locale only (unlike referenceUrl, the page is not skipped). */
+  localeUrl?: string;
 }): PickedPage[] {
   const max = input.max ?? DEFAULT_SITE_PAGES;
   let site: string;
@@ -127,7 +135,7 @@ export function pickSitePages(input: {
   } catch {
     return [];
   }
-  const reference = localeOf(input.referenceUrl ?? input.startUrl);
+  const reference = localeOf(input.localeUrl ?? input.referenceUrl ?? input.startUrl);
   const skipKeys = new Set(
     [input.startUrl, input.referenceUrl]
       .filter((u): u is string => Boolean(u))
@@ -177,7 +185,7 @@ export function pickSitePages(input: {
   }
 
   return [...best.values()]
-    .filter((p) => p.score > 0)
+    .filter((p) => input.keepAll || p.score > 0)
     .sort((a, b) => b.score - a.score || a.url.length - b.url.length)
     .slice(0, max);
 }

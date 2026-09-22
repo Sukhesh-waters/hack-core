@@ -5,9 +5,10 @@ import * as platina from "./platina-schema";
 
 describe("platina workspace isolation", () => {
   it("every platina table has a non-null workspace_id", () => {
-    for (const [name, table] of Object.entries(
-      platina.platinaWorkspaceScopedTables,
-    )) {
+    for (const [name, table] of Object.entries({
+      ...platina.platinaWorkspaceScopedTables,
+      ...platina.platinaC6ScopedTables,
+    })) {
       const columns = getTableColumns(table);
       expect(columns.workspaceId, `${name} is missing workspaceId`).toBeDefined();
       expect(columns.workspaceId.notNull, `${name}.workspaceId is nullable`).toBe(
@@ -17,9 +18,10 @@ describe("platina workspace isolation", () => {
   });
 
   it("every platina table indexes workspace_id", () => {
-    for (const [name, table] of Object.entries(
-      platina.platinaWorkspaceScopedTables,
-    )) {
+    for (const [name, table] of Object.entries({
+      ...platina.platinaWorkspaceScopedTables,
+      ...platina.platinaC6ScopedTables,
+    })) {
       const { indexes } = getTableConfig(table);
       const hasWorkspaceIndex = indexes.some((idx) =>
         idx.config.columns.some(
@@ -43,6 +45,14 @@ describe("three-plane structural invariants", () => {
     expect(
       getTableColumns(platina.platinaBrainChunks).embeddingModelVersion,
     ).toBeDefined();
+  });
+
+  it("C6 first-party chunks are embedded and versioned; creatives and metrics are not", () => {
+    const chunks = getTableColumns(platina.platinaFirstPartyChunks);
+    expect(chunks.embedding).toBeDefined();
+    expect(chunks.embeddingModelVersion).toBeDefined();
+    expect(Object.keys(getTableColumns(platina.platinaCreatives))).not.toContain("embedding");
+    expect(Object.keys(getTableColumns(platina.platinaCreativeMetrics))).not.toContain("embedding");
   });
 
   it("plane B signal documents have NO embedding column", () => {

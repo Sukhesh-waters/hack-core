@@ -12,6 +12,11 @@ import {
   platinaBrandSources,
   platinaCampaigns,
   platinaClaimsRules,
+  platinaCreativeMetrics,
+  platinaCreativeReviews,
+  platinaCreatives,
+  platinaFirstPartyChunks,
+  platinaLearningEvents,
   platinaDebateTranscripts,
   platinaEventParticipants,
   platinaEvents,
@@ -3191,6 +3196,10 @@ export function flowCountsSql(workspaceId: string, sinceDate: Date, today: strin
   const ads = sql`${d.sourceKind} = 'ad_library'`;
   const events = sql`${d.sourceKind} = 'conference'`;
   const b = platinaBrainChunks;
+  // C6: first-party knowledge (own site, lessons), live chunks only.
+  const f = platinaFirstPartyChunks;
+  const fp = (kind: ReturnType<typeof sql>, recent: boolean) =>
+    sql`(select count(*)::int from ${f} where ${f.workspaceId} = ${workspaceId} and ${f.supersededAt} is null and ${kind}${recent ? sql` and ${f.createdAt} >= ${since}` : sql``})`;
   const brain = (kind: ReturnType<typeof sql>) =>
     sql`(select count(*)::int from ${b} where ${b.workspaceId} = ${workspaceId} and ${b.status} = 'active' and ${kind})`;
   return sql`select
@@ -3215,7 +3224,16 @@ export function flowCountsSql(workspaceId: string, sinceDate: Date, today: strin
     (select count(*)::int from ${platinaPlans} where ${platinaPlans.workspaceId} = ${workspaceId} and ${platinaPlans.createdAt} >= ${since}) as "plans24h",
     ((select count(*)::int from ${platinaPlanFeedback} where ${platinaPlanFeedback.workspaceId} = ${workspaceId})
       + (select count(*)::int from ${platinaOutcomes} where ${platinaOutcomes.workspaceId} = ${workspaceId} and ${platinaOutcomes.synthetic} = false)) as "outcomes",
-    (select count(*)::int from ${platinaAuditRuns} where ${platinaAuditRuns.workspaceId} = ${workspaceId} and ${platinaAuditRuns.status} in ('queued','running','validating')) as "runsActive"`;
+    (select count(*)::int from ${platinaAuditRuns} where ${platinaAuditRuns.workspaceId} = ${workspaceId} and ${platinaAuditRuns.status} in ('queued','running','validating')) as "runsActive",
+    ${fp(sql`${f.kind} = 'own_site'`, false)} as "ownSite", ${fp(sql`${f.kind} = 'own_site'`, true)} as "ownSite24h",
+    ${fp(sql`${f.kind} = 'lesson'`, false)} as "lessons", ${fp(sql`${f.kind} = 'lesson'`, true)} as "lessons24h",
+    (select count(*)::int from ${platinaCreatives} where ${platinaCreatives.workspaceId} = ${workspaceId}) as "creatives",
+    (select count(*)::int from ${platinaCreativeMetrics} where ${platinaCreativeMetrics.workspaceId} = ${workspaceId}) as "creativeMetrics",
+    (select count(*)::int from ${platinaCreativeMetrics} where ${platinaCreativeMetrics.workspaceId} = ${workspaceId} and ${platinaCreativeMetrics.createdAt} >= ${since}) as "creativeMetrics24h",
+    (select count(*)::int from ${platinaCreativeReviews} where ${platinaCreativeReviews.workspaceId} = ${workspaceId} and ${platinaCreativeReviews.status} = 'confirmed') as "reviewsConfirmed",
+    (select count(*)::int from ${platinaCreativeReviews} where ${platinaCreativeReviews.workspaceId} = ${workspaceId} and ${platinaCreativeReviews.confirmedAt} >= ${since}) as "reviewsConfirmed24h",
+    (select count(*)::int from ${platinaLearningEvents} where ${platinaLearningEvents.workspaceId} = ${workspaceId} and ${platinaLearningEvents.kind} in ('demote','promote')) as "backtracks",
+    (select count(*)::int from ${platinaLearningEvents} where ${platinaLearningEvents.workspaceId} = ${workspaceId} and ${platinaLearningEvents.kind} in ('demote','promote') and ${platinaLearningEvents.createdAt} >= ${since}) as "backtracks24h"`;
 }
 
 export type FlowCountsRow = Record<string, number>;

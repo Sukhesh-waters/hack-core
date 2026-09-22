@@ -17,6 +17,9 @@ import {
   type Campaign,
   type Proof,
 } from "@/lib/platina/opportunities";
+import { learningSeed } from "@/lib/platina/learning";
+import { learningState } from "@/lib/platina/learning-service";
+import { learnCampaigns, type LearnedCampaign } from "@/lib/platina/opportunity-learning";
 import { cn } from "@/lib/utils";
 import { createPlanAction } from "../plan/actions";
 
@@ -53,7 +56,8 @@ function ProofLinks({ proofs }: { proofs: Proof[] }) {
   );
 }
 
-function CampaignCard({ c, ws, clientId }: { c: Campaign; ws: string; clientId: string }) {
+function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; clientId: string }) {
+  const logHref = `/p/${ws}/results/new?${new URLSearchParams({ brand: clientId, opp: c.key, topic: c.creativeTopic })}`;
   return (
     <li className={card}>
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -62,6 +66,15 @@ function CampaignCard({ c, ws, clientId }: { c: Campaign; ws: string; clientId: 
           <span className={cn(chip, "border-border text-muted-foreground")}>
             {c.channel === "online" ? "Online" : "In person"}
           </span>
+          {c.learned.explore ? (
+            <span className={cn(chip, "border-border text-muted-foreground")} title="No results yet: kept in view so the loop keeps learning">
+              Trying something new
+            </span>
+          ) : c.learned.movement !== "none" ? (
+            <span className={cn(chip, "border-primary/40 text-primary")}>
+              {c.learned.movement === "up" ? "Raised by your results" : "Lowered by your results"}
+            </span>
+          ) : null}
           {c.timing ? (
             <span
               className={cn(
@@ -82,7 +95,17 @@ function CampaignCard({ c, ws, clientId }: { c: Campaign; ws: string; clientId: 
         ))}
       </ul>
       <ProofLinks proofs={c.proofs} />
-      <form action={createPlanAction} className="mt-3">
+      {c.learned.lines.length > 0 ? (
+        <div className="mt-2 rounded-md border border-border bg-muted/30 p-2 text-xs">
+          <p className="font-medium">Your results (first-party, kept apart from the public proof above)</p>
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {c.learned.lines.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <form action={createPlanAction} className="mt-3 flex flex-wrap items-center gap-3">
         <input type="hidden" name="workspaceId" value={ws} />
         <input type="hidden" name="brandId" value={clientId} />
         <input type="hidden" name="useCase" value={c.plan.useCase} />
@@ -97,6 +120,9 @@ function CampaignCard({ c, ws, clientId }: { c: Campaign; ws: string; clientId: 
         <PendingButton pendingLabel="Planning…">
           {c.plan.useCase === "event" ? "Plan backwards from the date" : "Plan this campaign"}
         </PendingButton>
+        <Link href={logHref} className="text-xs text-primary underline-offset-4 hover:underline">
+          Log a creative for it
+        </Link>
       </form>
     </li>
   );
@@ -141,9 +167,10 @@ export default async function OpportunitiesPage({
 
   const now = new Date();
   const since = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * 86_400_000);
-  const [competitors, signals] = await Promise.all([
+  const [competitors, signals, learning] = await Promise.all([
     listCompetitorsOf(params.ws, client.id),
     listClientScopeSignals(params.ws, client.id, since),
+    learningState(params.ws, client.id, now),
   ]);
 
   const input = {
@@ -165,8 +192,18 @@ export default async function OpportunitiesPage({
   const insights = buildInsights(input);
   const measured = insights.filter((i) => i.status === "ok");
   const thin = insights.filter((i) => i.status === "insufficient");
-  const campaigns = buildCampaigns(input);
-  const all = [...campaigns.events, ...campaigns.topics];
+  // Rule order first (C5), then the client's own confirmed results (C6).
+  const ruled = buildCampaigns(input);
+  const learnOptions = {
+    stats: learning.stats,
+    minN: learning.config.minN,
+    exploreShare: learning.config.exploreShare,
+  };
+  const campaigns = {
+    events: learnCampaigns(ruled.events, { ...learnOptions, seed: learningSeed(params.ws, now, `${client.id}:events`) }),
+    topics: learnCampaigns(ruled.topics, { ...learnOptions, seed: learningSeed(params.ws, now, `${client.id}:topics`) }),
+  };
+  const all: Campaign[] = [...campaigns.events, ...campaigns.topics];
   const clientPlans = plans.filter((p) => p.brandId === client.id).slice(0, 5);
   const posts = new Set(signals.filter((s) => s.signalKind === "interest").map((s) => s.sourceUrl)).size;
 
@@ -243,6 +280,25 @@ export default async function OpportunitiesPage({
       {/* 2. Campaigns */}
       <section aria-label="Campaigns to run" className="mt-10">
         <h2 className={heading}>2 · Campaigns to run</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {learning.results === 0 ? (
+            <>
+              Ordered by the rules below. Once you log creatives and confirm their reviews on{" "}
+              <Link href={`/p/${params.ws}/results?brand=${client.id}`} className="text-primary underline-offset-4 hover:underline">
+                Results
+              </Link>
+              , {client.name}&apos;s own results re-rank this list.
+            </>
+          ) : (
+            <>
+              Re-ranked by {learning.results} confirmed result{learning.results === 1 ? "" : "s"} of {client.name}&apos;s own (a
+              value needs {learning.config.minN} before it moves anything).{" "}
+              <Link href={`/p/${params.ws}/results?brand=${client.id}`} className="text-primary underline-offset-4 hover:underline">
+                See what they teach
+              </Link>
+            </>
+          )}
+        </p>
         <div className="mt-3 grid gap-6 lg:grid-cols-2">
           <div>
             <h3 className="text-sm font-medium">Events — in person and online</h3>

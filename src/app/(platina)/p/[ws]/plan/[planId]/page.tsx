@@ -6,6 +6,7 @@ import { PendingButton } from "@/components/platina/pending-button";
 import { PlanTimeline } from "@/components/platina/plan-timeline";
 import { PLAN_VERDICTS } from "@/db/platina-schema";
 import { getPlan, getPlanFeedback, listPlanRevisions } from "@/db/queries/platina";
+import { listCreativesForPlan } from "@/db/queries/platina-learning";
 import { isStale } from "@/lib/platina/plan/evidence";
 import { freshnessMessage } from "@/lib/platina/plan/freshness";
 import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
@@ -41,9 +42,10 @@ export default async function PlanDetailPage({
     getPlanFeedback(params.ws, params.planId),
   ]);
   if (!plan) notFound();
-  const [fresh, revisions] = await Promise.all([
+  const [fresh, revisions, creatives] = await Promise.all([
     readPlanFreshness({ workspaceId: params.ws, brandId: plan.brandId, createdAt: plan.createdAt }),
     listPlanRevisions(params.ws, plan.id),
+    listCreativesForPlan(params.ws, plan.id),
   ]);
   const doc = plan.plan;
 
@@ -135,6 +137,46 @@ export default async function PlanDetailPage({
 
       <PlanTimeline plan={doc} />
 
+      <section aria-label="Creatives and results" className="mt-6 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-medium">What was posted, and what it taught</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Log each piece you post against its phase. Its confirmed review traces back to the evidence the phase cited.
+        </p>
+        <ul className="mt-3 space-y-2 text-sm">
+          {doc.phases.map((phase) => {
+            const posted = creatives.filter((c) => c.phaseId === phase.id);
+            const logHref = `/p/${params.ws}/results/new?${new URLSearchParams({
+              plan: plan.id,
+              phase: phase.id,
+              ...(plan.brandId ? { brand: plan.brandId } : {}),
+            })}`;
+            return (
+              <li key={phase.id} className="flex flex-wrap items-baseline justify-between gap-2">
+                <span>
+                  <span className="font-medium">{phase.name}</span>
+                  <span className="text-muted-foreground"> · {phase.channel}</span>
+                  {posted.length > 0 ? (
+                    <span className="block text-xs">
+                      {posted.map((c, i) => (
+                        <span key={c.id}>
+                          {i > 0 ? ", " : ""}
+                          <Link href={`/p/${params.ws}/results/${c.id}`} className="text-primary underline-offset-4 hover:underline">
+                            {c.title}
+                          </Link>
+                        </span>
+                      ))}
+                    </span>
+                  ) : null}
+                </span>
+                <Link href={logHref} className="text-xs text-primary underline-offset-4 hover:underline">
+                  Log a creative
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
       <p className="mt-3 text-xs text-muted-foreground">
         {plan.lessonsUsed > 0
           ? `Built using ${plan.lessonsUsed} earlier result${plan.lessonsUsed === 1 ? "" : "s"} you recorded.`
@@ -151,7 +193,8 @@ export default async function PlanDetailPage({
         <section className="mt-6" aria-label="Evidence">
           <h2 className="text-sm font-medium">Evidence behind each phase</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Public market signals collected for this workspace. Older evidence is marked, not hidden.
+            Public market signals collected for this workspace, and the client&apos;s own data (its website and confirmed
+            results), each phase citing one kind only. Older evidence is marked, not hidden.
           </p>
           <ul className="mt-3 space-y-3">
             {doc.phases.map((phase) => {
@@ -167,7 +210,10 @@ export default async function PlanDetailPage({
                     <ul className="mt-2 space-y-2">
                       {cited.map((e) => (
                         <li key={e.id} className="text-xs">
-                          <span className="block">{e.content}</span>
+                          <span className="block">
+                            {e.plane === "A" ? <span className="mr-1 rounded border border-primary/40 px-1 text-primary">own data</span> : null}
+                            {e.content}
+                          </span>
                           <span className="text-muted-foreground">
                             {e.sourceUrl ? (
                               <a href={e.sourceUrl} className="underline underline-offset-2" rel="noreferrer" target="_blank">

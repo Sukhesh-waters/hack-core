@@ -9,6 +9,7 @@ describe("platina nav", () => {
       "Clients",
       "Opportunities",
       "Plan",
+      "Results",
       "Audits",
       "Findings",
       "Solutions",

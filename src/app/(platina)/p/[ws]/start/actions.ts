@@ -261,6 +261,13 @@ export async function approveClientSourcesAction(formData: FormData): Promise<vo
       jobsDown = true;
     }
   }
+  // The client's own website into first-party knowledge (C6 L1). Best-effort:
+  // the daily pass picks it up if the job runner is down.
+  if (brand.kind === "own_brand" && brand.homepageUrl && !jobsDown) {
+    await inngest
+      .send({ name: "platina/own-site.requested", data: { workspaceId: ws, brandId: brand.id } })
+      .catch(() => undefined);
+  }
 
   revalidatePath(`/p/${ws}`);
   revalidatePath(`/p/${ws}/brands`);

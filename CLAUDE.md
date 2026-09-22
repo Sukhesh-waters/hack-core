@@ -41,6 +41,16 @@
   `src/lib/scrape/firecrawl.ts` (allowlisted in the boundary test); docs keep
   the same Plane B rules (source=public, never embedded, never citable).
   InstaMedia's paste-a-URL knowledge ingest also uses it (first-party vault).
+  **Owner decision 2026-09-22 (own site + learning loop, plan C6):** a
+  client's OWN website may be crawled multi-page through Firecrawl
+  (map -> filter -> read, capped per day, then header-only change probes so
+  only changed pages are re-read); it is consented first-party (Plane A).
+  Competitor multi-page crawls stay Apify-only. The planner's learning loop
+  is a feedback loop plus bandit re-weighting (Thompson sampling) over the
+  workspace's own recorded results, min-N gated — not deep RL. Platina may
+  read post metrics from connected accounts through one read-only shared
+  call (`src/lib/connectors/metrics-read.ts`, allowlisted in the boundary
+  test); it never posts, schedules or writes through InstaMedia connectors.
   Platina code must not call InstaMedia
   ticket, Hub, SOP, content, calendar, campaign, or notification modules.
   `platina_campaigns.sop_run_id` and Platina alert actions `hub_message` / `ticket` /

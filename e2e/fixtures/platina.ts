@@ -22,6 +22,8 @@ export const PLATINA_ROUTES: { subPath: string; h1: string }[] = [
   // "Opportunities" or "Opportunities for <client>" (substring match).
   { subPath: "opportunities", h1: "Opportunities" },
   { subPath: "plan", h1: "Plan a campaign" },
+  { subPath: "results", h1: "Results" },
+  { subPath: "results/new", h1: "Log a creative" },
   { subPath: "audits", h1: "Audit sources" },
   { subPath: "findings", h1: "Findings" },
   { subPath: "solutions", h1: "Solutions" },

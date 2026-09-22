@@ -94,6 +94,14 @@ export function buildPlanPrompt(context: PlanContext): string {
       : "Lessons from this workspace's earlier plans. Reuse what worked, and do not repeat what failed unless you change the approach and say why in the message.",
     renderLessons("What worked before", context.worked),
     renderLessons("What failed before", context.failed),
+    ...((context.learnedPatterns?.length ?? 0) > 0
+      ? [
+          [
+            "What this client's own confirmed results say (first-party, measured against its usual post; use it to choose topic, channel, format, hook and day, never cite it as an evidence id):",
+            ...context.learnedPatterns!.map((l) => `- ${l}`),
+          ].join("\n"),
+        ]
+      : []),
     ...renderSituation(context),
     renderEvidenceBlock(
       "Public market evidence (collected from public sources; cite by id)",

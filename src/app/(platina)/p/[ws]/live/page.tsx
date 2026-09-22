@@ -32,6 +32,19 @@ function toCounts(row: Record<string, number>): FlowCounts {
     plans24h: n(row, "plans24h"),
     outcomes: n(row, "outcomes"),
     runsActive: n(row, "runsActive"),
+    learning: {
+      ownSite: n(row, "ownSite"),
+      ownSite24h: n(row, "ownSite24h"),
+      lessons: n(row, "lessons"),
+      lessons24h: n(row, "lessons24h"),
+      creatives: n(row, "creatives"),
+      metrics: n(row, "creativeMetrics"),
+      metrics24h: n(row, "creativeMetrics24h"),
+      reviewsConfirmed: n(row, "reviewsConfirmed"),
+      reviewsConfirmed24h: n(row, "reviewsConfirmed24h"),
+      backtracks: n(row, "backtracks"),
+      backtracks24h: n(row, "backtracks24h"),
+    },
   };
 }
 

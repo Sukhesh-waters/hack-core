@@ -29,6 +29,8 @@ import { platinaDivergenceScan } from "@/inngest/functions/platina/divergence-sc
 import { platinaBrandRefresh } from "@/inngest/functions/platina/brand-refresh";
 import { platinaInterestExtract } from "@/inngest/functions/platina/interest-extract";
 import { platinaEventExtract } from "@/inngest/functions/platina/event-extract";
+import { platinaOwnSite } from "@/inngest/functions/platina/own-site";
+import { platinaLearning } from "@/inngest/functions/platina/learning";
 
 const handler = serve({
   client: inngest,
@@ -61,6 +63,8 @@ const handler = serve({
     platinaBrandRefresh,
     platinaInterestExtract,
     platinaEventExtract,
+    platinaOwnSite,
+    platinaLearning,
   ],
 });
 
