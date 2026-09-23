@@ -416,7 +416,7 @@ spend hourly, and every paid run checks the budget first.
 
 | Slice | Status | Commit | Live proof |
 |---|---|---|---|
-| C8.0 stage 1 | not started | | |
+| C8.0 stage 1 | **done 2026-09-23** (F0.1-F0.7; F0.8 already existed; F0.9/F0.10 blocked on E3) | 3217379 + follow-up | Readiness: Cockpit, Live flow, Clients, Opportunities, Plan, Audits, Findings OK; Results empty (C8.5), Brand Gene thin (needs a person to confirm the profile). Profile set. 15 calendar shows added, 22+3 conference pages read; events 50 -> 71 (34 upcoming); ARABLAB LIVE now names Bruker, Shimadzu and Thermo Fisher on the exhibitor list. LinkedIn +15 posts, 5 competitor sites, 5 evidence-pack pages kept (2 dropped: SFDA page unreadable, 1 quote fixed and re-read). Own site 40 -> 156 of 300 read (758 passages wait for embeddings: Gemini free quota, O1). Spend today: Firecrawl ~190 credits, Apify ~$0.22. |
 | C7.3 | not started (T3.1 moved to F0.4) | | |
 | C8.0 stage 2 | not started | | |
 | C8.2 | not started | | |

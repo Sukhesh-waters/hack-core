@@ -8,6 +8,8 @@
  * --flows   client, competitors, linkedin, conferences, ads (comma list) or "all".
  * --own-site N   also read up to N queued pages of the client's own site
  *                (first-party, Firecrawl ~1 credit each); needs --client.
+ * --only "a,b"  only the sources whose name contains one of these words.
+ * --retry   allow a second seed run today for these sources.
  * --inline  run each source's collection in this process, one after another,
  *           with the code on disk (use when the job runner serves an older
  *           build). Follow-on jobs (analysis, interest, events) still go to
@@ -71,7 +73,14 @@ async function main() {
   ]);
   // A source with a run already waiting or running is left to that run.
   const busy = new Set(open.map((r) => r.specId));
-  const specs = allSpecs.filter((s) => !busy.has(s.id));
+  // --only "ASMS,HPLC": just the sources whose name contains one of these words.
+  const only = (arg("only") ?? "")
+    .split(",")
+    .map((w) => w.trim().toLowerCase())
+    .filter(Boolean);
+  const specs = allSpecs.filter(
+    (s) => !busy.has(s.id) && (only.length === 0 || only.some((w) => s.name.toLowerCase().includes(w))),
+  );
   for (const s of allSpecs.filter((x) => busy.has(x.id))) console.log(`  ~ ${s.name}: a run is already queued or running`);
   const kindOf = new Map(brands.map((b) => [b.id, b.kind]));
   const left = (name: string): number | null => {
@@ -126,16 +135,19 @@ async function main() {
   const { inngest } = await import("@/inngest/client");
   const today = new Date().toISOString().slice(0, 10);
   const runs: { runId: string; name: string }[] = [];
+  const retry = process.argv.includes("--retry");
   for (const item of plan.items) {
+    // One seed run per source per day; --retry allows one more (e.g. after a
+    // job runner on an older build degraded the first one).
     const runId = await q.createAuditRun({
       workspaceId: ws.id,
       specId: item.specId,
       trigger: "manual",
-      idempotencyKey: `seed:${today}:${item.specId}`,
+      idempotencyKey: `seed:${today}:${item.specId}${retry ? ":retry" : ""}`,
       configSnapshot: { ...snapshotRunConfig(config), seedPages: item.seedPages },
     });
     if (runId) runs.push({ runId, name: item.name });
-    else console.log(`  = ${item.name}: already force-run today`);
+    else console.log(`  = ${item.name}: already force-run today${retry ? " (and retried)" : " (--retry allows one more)"}`);
   }
   if (inline) {
     const { executeAuditRunNow } = await import("@/inngest/functions/platina/audit-run");
