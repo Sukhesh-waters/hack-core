@@ -89,10 +89,10 @@ export function IngestForm({
           <p className="text-sm text-destructive">{state.error}</p>
           {state.refusal?.url && !state.refusal.suggestion ? (
             <a
-              href={`/p/${workspaceId}/brands`}
+              href={`/p/${workspaceId}/competitors?add=${encodeURIComponent(state.refusal.url)}`}
               className="text-sm text-primary underline-offset-4 hover:underline"
             >
-              Track competitors and market sources in Platina
+              Track it as a competitor page instead →
             </a>
           ) : null}
         </div>

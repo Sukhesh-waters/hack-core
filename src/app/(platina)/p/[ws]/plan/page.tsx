@@ -28,7 +28,7 @@ const card = "rounded-lg border border-border bg-card p-4";
 export default async function PlanPage(
   props: {
     params: Promise<{ ws: string }>;
-    searchParams: Promise<{ error?: string; from?: string; brand?: string }>;
+    searchParams: Promise<{ error?: string; from?: string; brand?: string; goal?: string }>;
   }
 ) {
   const searchParams = await props.searchParams;
@@ -164,6 +164,7 @@ export default async function PlanPage(
                   name="goal"
                   required
                   maxLength={200}
+                  defaultValue={searchParams.goal?.slice(0, 200) ?? ""}
                   placeholder="Win back lapsed subscribers before the holidays"
                   className={input}
                 />

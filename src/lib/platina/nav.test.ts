@@ -9,6 +9,7 @@ describe("platina nav", () => {
       "/Cockpit",
       "Watch/Live flow",
       "Watch/Events",
+      "Watch/Competitors",
       "Watch/Clients",
       "Decide/Opportunities",
       "Decide/Plan",

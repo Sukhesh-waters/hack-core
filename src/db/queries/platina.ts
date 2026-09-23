@@ -3279,3 +3279,51 @@ export function openFindingsForUseCaseQuery(workspaceId: string, useCase: string
     .orderBy(desc(platinaFindings.createdAt))
     .limit(limit);
 }
+
+/** Collected documents per company and kind, with the newest (C8.2 competitor portal). */
+export function brandDocCountsQuery(workspaceId: string, brandIds: string[]) {
+  return db
+    .select({
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      n: count(),
+      newest: max(platinaSignalDocuments.fetchedAt),
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+      ),
+    )
+    .groupBy(platinaScanSpecs.brandId, platinaSignalDocuments.sourceKind);
+}
+
+/** Recent analysed findings with the company they are about (C8.2). */
+export function brandFindingsQuery(workspaceId: string, brandIds: string[], limit = 60) {
+  return db
+    .select({
+      brandId: platinaScanSpecs.brandId,
+      title: platinaFindings.title,
+      summary: platinaFindings.summary,
+      useCase: platinaFindings.useCase,
+      createdAt: platinaFindings.createdAt,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+    })
+    .from(platinaFindings)
+    .innerJoin(platinaSignalDocuments, eq(platinaFindings.signalDocumentId, platinaSignalDocuments.id))
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+        inArray(platinaFindings.status, ["new", "needs_decision", "validated"]),
+      ),
+    )
+    .orderBy(desc(platinaFindings.createdAt))
+    .limit(limit);
+}

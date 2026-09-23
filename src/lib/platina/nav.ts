@@ -17,6 +17,8 @@ export const PLATINA_NAV = [
   { slug: "live", label: "Live flow", group: "Watch" },
   // Where the market gathers, Gulf first (C7.3 / C8).
   { slug: "events", label: "Events", group: "Watch" },
+  // Competitors analysis - pattern layer (C8.2): public data, any link read on demand.
+  { slug: "competitors", label: "Competitors", group: "Watch" },
   { slug: "brands", label: "Clients", group: "Watch" },
   // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
   { slug: "opportunities", label: "Opportunities", group: "Decide" },

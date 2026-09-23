@@ -220,3 +220,11 @@ describe("momentum is robust to one viral post (live 2026-09-21)", () => {
     ]);
   });
 });
+
+describe("isGenericTopic (live 2026-09-23)", () => {
+  it("treats field words and generic endings as not a subject, real subjects as subjects", async () => {
+    const { isGenericTopic } = await import("./interest");
+    for (const t of ["analytical", "instruments", "analytical systems", "Lab", "solutions"]) expect(isGenericTopic(t), t).toBe(true);
+    for (const t of ["pfas analysis", "gc-ms", "mass spectrometry", "lab automation"]) expect(isGenericTopic(t), t).toBe(false);
+  });
+});

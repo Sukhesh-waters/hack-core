@@ -14,7 +14,7 @@
  * a topic says "not enough posts yet" and is never proposed as a campaign.
  */
 import { daysUntil, eventTiming, GCC_COUNTRIES } from "./events";
-import type { TopicMomentum } from "./interest";
+import { isGenericTopic, type TopicMomentum } from "./interest";
 
 /** Events closer than this are listed as short notice, ranked after the rest. */
 export const MIN_LEAD_DAYS = 21;
@@ -138,6 +138,7 @@ export function buildInsights(input: OpportunityInput): Insight[] {
   const names = new Map([[input.client.id, input.client.name], ...input.competitors.map((c) => [c.id, c.name] as [string, string])]);
   const own = new Set(input.client.topics);
   return input.momentum
+    .filter((m) => !isGenericTopic(m.topic))
     .filter((m) => m.signalKind === "interest")
     .map((m) => {
       const origin = own.has(m.topic) ? "client_topic" : "market_theme";
@@ -185,6 +186,7 @@ function topicCampaigns(input: OpportunityInput): Campaign[] {
   const own = new Set(input.client.topics);
   const pressure = input.momentum.filter((m) => m.signalKind === "pressure");
   return input.momentum
+    .filter((m) => !isGenericTopic(m.topic))
     .filter((m) => m.signalKind === "interest" && m.status === "ok")
     .map((m) => ({ m, value: m.recent ?? m.baseline ?? 0 }))
     // Above the typical post: the audience leans in on this subject.

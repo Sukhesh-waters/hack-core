@@ -45,6 +45,15 @@ export type InterestSignalInput = {
 // ---------------------------------------------------------------------------
 
 const TOPIC_STOPWORDS = new Set(["solutions", "services", "products", "software", "systems", "lab equipment", "supplies"]);
+/** A single field word, not a subject (live 2026-09-23: "analytical", "instruments" ranked as topics). */
+const FIELD_WORDS = new Set(["analytical", "analysis", "instrument", "instruments", "laboratory", "lab", "labs", "science", "sciences", "scientific", "research", "technology", "technologies", "chemistry", "innovation"]);
+
+/** Too generic to be a campaign subject: a field word, a stop word, or a generic ending ("analytical systems"). */
+export function isGenericTopic(topic: string): boolean {
+  const t = topic.toLowerCase().trim();
+  return FIELD_WORDS.has(t) || TOPIC_STOPWORDS.has(t) || GENERIC_TOPIC.test(t);
+}
+
 /**
  * Profile keywords are often marketing words, not subjects: live 2026-09-21
  * Waters' list gave "scientists", "leading provider" and "supplies", and 13

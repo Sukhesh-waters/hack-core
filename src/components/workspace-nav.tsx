@@ -79,6 +79,42 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 /** Renders workspace links with collapsible icon-only tooltips. */
+/**
+ * Pinned at the foot of the sidebar, always in view (owner request C8):
+ * the competitor portal and pattern layer. A plain link — the portal lives in
+ * Platina, which reads competitors' public pages; InstaMedia's knowledge base
+ * keeps only the client's own.
+ */
+export const COMPETITORS_BUTTON_LABEL = "Competitors analysis – pattern layer";
+
+function CompetitorsButton({ href, collapsed }: { href: string; collapsed: boolean }) {
+  const link = (
+    <Link
+      href={href}
+      data-testid="competitors-button"
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15",
+        collapsed && "justify-center px-2",
+      )}
+    >
+      <Radar className="h-4 w-4 shrink-0" aria-hidden />
+      {collapsed ? <span className="sr-only">{COMPETITORS_BUTTON_LABEL}</span> : <span className="leading-tight">{COMPETITORS_BUTTON_LABEL}</span>}
+    </Link>
+  );
+  return (
+    <div className="sticky bottom-0 mt-4 border-t border-border/60 bg-card/95 pb-1 pt-3 backdrop-blur">
+      {collapsed ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{link}</TooltipTrigger>
+          <TooltipContent side="right">{COMPETITORS_BUTTON_LABEL}</TooltipContent>
+        </Tooltip>
+      ) : (
+        link
+      )}
+    </div>
+  );
+}
+
 export function WorkspaceNav() {
   const pathname = usePathname();
   const { isCollapsed } = useAppShell();
@@ -240,6 +276,7 @@ export function WorkspaceNav() {
           );
         })}
       </div>
+      <CompetitorsButton href={`/p/${match[1]}/competitors`} collapsed={isCollapsed} />
     </TooltipProvider>
   );
 }
