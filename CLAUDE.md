@@ -51,6 +51,19 @@
   read post metrics from connected accounts through one read-only shared
   call (`src/lib/connectors/metrics-read.ts`, allowlisted in the boundary
   test); it never posts, schedules or writes through InstaMedia connectors.
+  **Owner decision 2026-09-22 (plan C7, D6/D9):** first-party knowledge
+  ingest (InstaMedia's knowledge base and Platina alike) accepts only the
+  client's OWN pages — an allowlist of the client's domains and social pages
+  (`client_identities`, checked by `src/lib/ingest/ownership.ts`). A
+  competitor's or any other company's page is refused there and tracked as
+  public (Plane B) instead. Every server-side fetch of a URL someone else
+  chose goes through `src/lib/net/safe-fetch.ts` (no private/internal
+  addresses, every redirect re-checked). These shared modules are allowlisted
+  in the boundary test, and these safety fixes may touch InstaMedia code.
+  No ad-account connections: ads insight comes from public ad libraries
+  (LinkedIn via Apify, Meta via Apify) as Plane B, and no code path writes to
+  or logs in to an ad account. No metric is ever synthesised: a number the
+  platform did not report is "not measured".
   Platina code must not call InstaMedia
   ticket, Hub, SOP, content, calendar, campaign, or notification modules.
   `platina_campaigns.sop_run_id` and Platina alert actions `hub_message` / `ticket` /

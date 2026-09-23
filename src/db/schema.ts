@@ -1497,6 +1497,42 @@ export const knowledgeChunks = pgTable(
   }),
 );
 
+/**
+ * C7.0 (owner decision D6, 2026-09-22): the client's OWN sites and social
+ * pages. First-party knowledge ingest is an allowlist over these rows — a
+ * pasted URL that matches none of them is someone else's page and belongs in
+ * the public layer (src/lib/ingest/ownership.ts). kind/value follow
+ * `Identity` there: domain "waters.com", linkedin "company/waters", or a
+ * lower-case social handle. source: "seed" (set up by us) or "confirmed" (a
+ * person said "it's ours" when ingesting).
+ */
+export const clientIdentities = pgTable(
+  "client_identities",
+  {
+    id: id(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    clientId: text("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    value: text("value").notNull(),
+    source: text("source").notNull().default("confirmed"),
+    addedById: text("added_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("client_identities_workspace_id_idx").on(table.workspaceId),
+    identityUnique: uniqueIndex("client_identities_unique").on(
+      table.workspaceId,
+      table.clientId,
+      table.kind,
+      table.value,
+    ),
+  }),
+);
+
 export const ideas = pgTable(
   "ideas",
   {

@@ -89,6 +89,12 @@ const ALLOWED_EXACT = new Set([
   // Owner decision 2026-09-22 (C6): read-only post metrics from connected
   // accounts. The one connector module Platina may import; it never writes.
   "@/lib/connectors/metrics-read",
+  // Owner decision 2026-09-22 (C7.0, D6): neutral ingest safety shared by
+  // both products — the SSRF-safe fetch, URL clean-up, and the "whose page
+  // is this?" check that keeps third-party pages out of first-party stores.
+  "@/lib/net/safe-fetch",
+  "@/lib/ingest/url",
+  "@/lib/ingest/ownership",
 
   "@/lib/utils",
   "@/inngest/client",

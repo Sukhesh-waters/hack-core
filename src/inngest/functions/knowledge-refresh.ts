@@ -3,6 +3,9 @@ import { db } from "@/db";
 import { knowledgeSources, knowledgeChunks } from "@/db/schema";
 import { eq, and, lt } from "drizzle-orm";
 import { STALE_AFTER_DAYS } from "@/lib/freshness";
+import { listClientIdentities } from "@/db/queries/client-identities";
+import { NOT_OWN_REASON, refreshAllowed } from "@/lib/ingest/guard";
+import { INGEST_ORPHAN_AFTER_MS, INTERRUPTED_REASON } from "@/lib/knowledge-ingest";
 
 /**
  * Knowledge refresh sweep. Runs daily at 03:00 UTC or on-demand.
@@ -54,8 +57,23 @@ export const knowledgeRefresh = inngest.createFunction(
         .limit(20); // cap per sweep to avoid timeout
     });
 
+    // C7.0: an ingest that died mid-request (dev restart, deploy) stays
+    // "pending" forever and people paste it again. Close it with a reason.
+    const interrupted = await step.run("close-interrupted", async () => {
+      const cutoff = new Date(Date.now() - INGEST_ORPHAN_AFTER_MS);
+      const conditions = [eq(knowledgeSources.status, "pending"), lt(knowledgeSources.createdAt, cutoff)];
+      if (requestedWorkspace) conditions.push(eq(knowledgeSources.workspaceId, requestedWorkspace));
+      const rows = await db
+        .update(knowledgeSources)
+        .set({ status: "failed", error: INTERRUPTED_REASON, updatedAt: new Date() })
+        .where(and(...conditions))
+        .returning({ id: knowledgeSources.id });
+      return rows.length;
+    });
+
     let refreshed = 0;
     let failed = 0;
+    let notOwn = 0;
 
     for (const source of staleSources) {
       const result = await step.run(`refresh-${source.id}`, async () => {
@@ -68,6 +86,17 @@ export const knowledgeRefresh = inngest.createFunction(
 
           if (!source.url) {
             return { status: "skipped" as const, reason: "no url" };
+          }
+
+          // C7.0 two-layer guard: a page that is not the client's own is
+          // never re-read into first-party knowledge.
+          const own = (await listClientIdentities(source.workspaceId, source.clientId)).map(({ kind, value }) => ({ kind, value }));
+          if (!refreshAllowed(source.url, own)) {
+            await db
+              .update(knowledgeSources)
+              .set({ status: "failed", error: NOT_OWN_REASON, updatedAt: new Date() })
+              .where(and(eq(knowledgeSources.workspaceId, source.workspaceId), eq(knowledgeSources.id, source.id)));
+            return { status: "not_own" as const };
           }
 
           // Background: our own (free) fetch first, Firecrawl only when that
@@ -138,8 +167,9 @@ export const knowledgeRefresh = inngest.createFunction(
 
       if (result.status === "refreshed") refreshed++;
       if (result.status === "failed") failed++;
+      if (result.status === "not_own") notOwn++;
     }
 
-    return { staleSources: staleSources.length, refreshed, failed };
+    return { staleSources: staleSources.length, refreshed, failed, notOwn, interrupted };
   },
 );

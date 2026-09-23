@@ -174,7 +174,7 @@ export function CampaignRow({
               {campaign.impressions !== undefined && campaign.impressions > 0 ? (
                 <div className="rounded-md border border-border bg-background/50 p-2.5 my-2">
                   <p className="font-mono text-[10px] text-brand-teal uppercase font-semibold">
-                    Live Meta Performance Metrics
+                    Meta performance (reported by Meta)
                   </p>
                   <div className="mt-1.5 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                     <div>
