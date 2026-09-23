@@ -25,7 +25,7 @@ export const WORKFLOW_STATE_COLORS = {
   rose: { chip: "bg-rose-400/15 text-rose-300", dot: "bg-rose-400" },
   emerald: { chip: "bg-emerald-400/15 text-emerald-300", dot: "bg-emerald-400" },
   violet: { chip: "bg-violet-400/15 text-violet-300", dot: "bg-violet-400" },
-  teal: { chip: "bg-teal-400/15 text-teal-300", dot: "bg-teal-400" },
+  teal: { chip: "bg-sky-400/15 text-sky-300", dot: "bg-sky-400" },
   zinc: { chip: "bg-zinc-400/15 text-zinc-300", dot: "bg-zinc-400" },
 } as const;
 

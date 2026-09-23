@@ -23,7 +23,7 @@ type Three = typeof import("three");
 
 /** Stage hues, tuned against the Platina light shell; the Brain takes the theme primary. */
 const STAGE_COLOR: Record<FlowStage, string> = {
-  sources: "#0f9d8a",
+  sources: "#00A1E0",
   collected: "#64748b",
   analysis: "#7c3aed",
   brain: "", // theme primary
@@ -32,7 +32,7 @@ const STAGE_COLOR: Record<FlowStage, string> = {
 };
 const KIND_COLOR: Record<BrainPoint["kind"], string> = {
   claim: "#7c3aed",
-  measured: "#0f9d8a",
+  measured: "#00A1E0",
   event: "#d97706",
 };
 const BURST_COLOR = "#f59e0b";

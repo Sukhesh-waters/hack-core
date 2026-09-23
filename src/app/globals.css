@@ -10,9 +10,16 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    /* brand teal #0d9488 */
-    --primary: 175 84% 32%;
-    --primary-foreground: 166 76% 97%;
+    /* Brand blue (owner decision D11, 2026-09-22: "mild blue, like the
+       Salesforce logo"). The logo blue itself (#00A1E0, --brand-sky) is too
+       light for text or white-on-blue (2.9:1), so text, links and buttons use
+       the deeper blue of the same family, #0176D3 (4.6:1 on white, AA). */
+    --primary: 207 99% 42%;
+    --primary-foreground: 0 0% 100%;
+    /* Accent for text/icons/borders (the legacy "brand-teal" utilities). */
+    --brand: 207 99% 42%;
+    /* Salesforce-logo blue: decorative only (fills, charts, highlights). */
+    --brand-sky: 197 100% 44%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 210 40% 96.1%;
@@ -23,7 +30,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 175 84% 32%;
+    --ring: 207 99% 42%;
     --radius: 0.75rem;
 
     /* Apple-style system font stacks */
@@ -39,9 +46,11 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 47.4% 6.5%;
     --popover-foreground: 210 40% 98%;
-    /* brand teal, brightened for dark surfaces */
-    --primary: 174 71% 45%;
-    --primary-foreground: 175 84% 10%;
+    /* Brand blue, brightened for dark surfaces (#1B96FF; dark text on it 5.8:1). */
+    --primary: 208 100% 55%;
+    --primary-foreground: 222 47% 8%;
+    --brand: 208 100% 55%;
+    --brand-sky: 197 100% 44%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -52,13 +61,11 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 174 71% 45%;
+    --ring: 208 100% 55%;
   }
 
-  /* Platina AI OS for Waters — executive blue/white system, scoped to /p so
-     InstaMedia's teal identity under /w is untouched. The owner-approved
-     design is a light report-first surface, so the scope pins light tokens
-     even under an OS dark preference. */
+  /* Platina AI OS — light, report-first blue/white system scoped to /p.
+     It pins light tokens even when the rest of the app is dark. */
   .platina-shell,
   .dark .platina-shell {
     --background: 0 0% 100%;
@@ -67,21 +74,23 @@
     --card-foreground: 215 45% 13%;
     --popover: 0 0% 100%;
     --popover-foreground: 215 45% 13%;
-    /* Waters blue #005EB8 */
-    --primary: 211 100% 36%;
+    /* Product blue (D11) — the shell no longer wears a client's colour. */
+    --primary: 207 99% 42%;
     --primary-foreground: 0 0% 100%;
-    /* pale blue section backgrounds and selected states */
-    --secondary: 210 100% 97%;
+    --brand: 207 99% 42%;
+    --brand-sky: 197 100% 44%;
+    /* pale blue section backgrounds and selected states (#EAF5FE family) */
+    --secondary: 207 91% 96%;
     --secondary-foreground: 215 55% 20%;
     --muted: 210 60% 96.5%;
     --muted-foreground: 215 18% 40%;
-    --accent: 210 100% 95%;
+    --accent: 208 100% 93%;
     --accent-foreground: 215 60% 22%;
     --destructive: 0 72% 45%;
     --destructive-foreground: 0 0% 100%;
     --border: 213 30% 88%;
     --input: 213 30% 84%;
-    --ring: 211 100% 36%;
+    --ring: 207 99% 42%;
   }
 }
 
@@ -135,12 +144,12 @@
   0%,
   100% {
     opacity: 0.4;
-    filter: drop-shadow(0 0 4px rgba(13, 148, 136, 0.4));
+    filter: drop-shadow(0 0 4px hsl(var(--brand) / 0.4));
   }
 
   50% {
     opacity: 0.9;
-    filter: drop-shadow(0 0 10px rgba(13, 148, 136, 0.8));
+    filter: drop-shadow(0 0 10px hsl(var(--brand) / 0.8));
   }
 }
 

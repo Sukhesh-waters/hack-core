@@ -75,7 +75,7 @@ export default async function HubPage() {
                 <Button
                   asChild
                   size="sm"
-                  className="rounded-full bg-brand-teal text-foreground hover:bg-brand-teal/90"
+                  className="rounded-full bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
                 >
                   <Link href={`/w/${workspace.id}/kb`}>
                     Enter <ArrowRight className="ml-1 h-3.5 w-3.5" />

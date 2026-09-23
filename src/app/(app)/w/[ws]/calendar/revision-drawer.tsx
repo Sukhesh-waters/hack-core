@@ -159,7 +159,7 @@ export function RevisionDrawer({
                     type="checkbox"
                     checked={chosen.has(field)}
                     onChange={() => toggle(revision.id, field)}
-                    className="mt-1 accent-teal-400"
+                    className="mt-1 accent-sky-400"
                   />
                   <span className="min-w-0 flex-1">
                     <span className="text-xs uppercase tracking-wide text-muted-foreground/70">

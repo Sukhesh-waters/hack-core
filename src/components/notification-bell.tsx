@@ -120,7 +120,7 @@ export function NotificationBell({ workspaceId }: { workspaceId: string }) {
       >
         <Bell className="size-5" aria-hidden />
         {unread > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-brand-teal px-1 text-xs font-medium text-slate-950">
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-brand-teal px-1 text-xs font-medium text-primary-foreground">
             {unread > 9 ? "9+" : unread}
           </span>
         ) : null}

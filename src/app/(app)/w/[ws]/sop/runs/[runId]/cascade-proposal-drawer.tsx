@@ -167,7 +167,7 @@ export function CascadeProposalDrawer({
             size="sm"
             onClick={handleApply}
             disabled={isPending}
-            className="rounded-full bg-brand-teal text-slate-950 hover:bg-brand-teal/90"
+            className="rounded-full bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
           >
             {isPending ? "Applying..." : "Apply Revised Schedule"}
           </Button>

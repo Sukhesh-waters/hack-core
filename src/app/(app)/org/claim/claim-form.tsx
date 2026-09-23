@@ -14,7 +14,7 @@ function SubmitButton() {
     <Button
       type="submit"
       disabled={pending}
-      className="w-full rounded-full bg-brand-teal text-foreground hover:bg-brand-teal/90"
+      className="w-full rounded-full bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
     >
       {pending ? "Claiming…" : "Claim organization"}
     </Button>

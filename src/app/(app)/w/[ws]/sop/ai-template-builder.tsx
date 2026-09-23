@@ -27,7 +27,7 @@ function GenerateButton() {
 function CommitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="sm" className="bg-brand-teal text-black hover:bg-brand-teal/90" disabled={pending}>
+    <Button type="submit" size="sm" className="bg-brand-teal text-primary-foreground hover:bg-brand-teal/90" disabled={pending}>
       {pending ? "Saving template..." : "Commit & Save Template"}
     </Button>
   );

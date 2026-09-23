@@ -8,7 +8,7 @@ export function PrintButton() {
       type="button"
       onClick={() => window.print()}
       size="sm"
-      className="bg-brand-teal text-black hover:bg-brand-teal/90"
+      className="bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
     >
       Print / Save as PDF
     </Button>

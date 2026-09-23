@@ -83,7 +83,7 @@ export default async function LiveFlowPage(props: { params: Promise<{ ws: string
           <span className="h-2 w-2 rounded-full bg-[#7c3aed]" /> debate claim
         </span>
         <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-[#0f9d8a]" /> measured interest
+          <span className="h-2 w-2 rounded-full bg-brand-sky" /> measured interest
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-[#d97706]" /> event

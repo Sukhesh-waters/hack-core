@@ -20,7 +20,14 @@ const config = {
       },
       colors: {
         brand: {
-          teal: "#0d9488",
+          // C7.9 (D11): the brand colour is a mild Salesforce-style blue, read
+          // from the theme so light and dark each get a readable shade.
+          // "teal" is the legacy name kept so 300+ existing utilities switch
+          // in one place; new code uses brand-blue (text/icons/borders) or
+          // brand-sky (the logo blue, decorative fills only).
+          teal: "hsl(var(--brand) / <alpha-value>)",
+          blue: "hsl(var(--brand) / <alpha-value>)",
+          sky: "hsl(var(--brand-sky) / <alpha-value>)",
           purple: "#8b5cf6",
           amber: "#f59e0b",
           success: "#10b981",

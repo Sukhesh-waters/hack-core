@@ -1,7 +1,7 @@
 import type { DriftNarrative } from "@/lib/drift";
 
 const NARRATIVE_COLOR: Record<DriftNarrative, string> = {
-  steady: "#0d9488", // brand-teal
+  steady: "#0176D3", // brand blue (C7.9)
   drifting: "#f59e0b", // brand-amber
   "needs attention": "#f87171", // red-400
 };
