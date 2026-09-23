@@ -15,6 +15,8 @@ export const PLATINA_NAV = [
   { slug: "", label: "Cockpit", group: "" },
   // The whole flow, live, in 3D (sources -> analysis -> Brain -> use).
   { slug: "live", label: "Live flow", group: "Watch" },
+  // Where the market gathers, Gulf first (C7.3 / C8).
+  { slug: "events", label: "Events", group: "Watch" },
   { slug: "brands", label: "Clients", group: "Watch" },
   // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
   { slug: "opportunities", label: "Opportunities", group: "Decide" },
