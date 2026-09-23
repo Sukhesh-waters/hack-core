@@ -686,6 +686,11 @@ export type PlatinaRunConfigSnapshot = {
   minBaselineN: number;
   contestedFloor: number;
   qualifiedFloor: number;
+  /**
+   * C8.0 force run: pages an operator granted this one run beyond the
+   * workspace daily cap (scripts/platina-force.ts). Absent on every other run.
+   */
+  seedPages?: number;
 };
 
 export const platinaAuditRuns = pgTable(

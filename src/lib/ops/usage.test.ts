@@ -38,7 +38,7 @@ describe("readFirecrawlUsage", () => {
         },
       }),
     );
-    expect(r).toMatchObject({ name: "Firecrawl", used: 0, cap: 1000, unit: "credits" });
+    expect(r).toMatchObject({ name: "Firecrawl", used: 0, cap: 1000, remaining: 1094, unit: "credits" });
     const spent = await readFirecrawlUsage(
       "k",
       reply(200, { data: { remainingCredits: 700, planCredits: 1000, billingPeriodStart: "2026-09-21T00:00:00Z", billingPeriodEnd: "2026-10-21T00:00:00Z" } }),

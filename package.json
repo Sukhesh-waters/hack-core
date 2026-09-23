@@ -16,7 +16,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "ops:check": "npx tsx scripts/ops-check.ts"
+    "ops:check": "npx tsx scripts/ops-check.ts",
+    "platina:readiness": "npx tsx scripts/readiness.ts",
+    "platina:force": "npx tsx scripts/platina-force.ts",
+    "platina:evidence": "npx tsx scripts/import-evidence-pack.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",

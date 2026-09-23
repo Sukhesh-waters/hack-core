@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseCited } from "./cited";
 import { buildDivergencePrompt, runDivergenceStage, type DivergenceDeps } from "./divergence";
-import { MIN_IDEATION_EVIDENCE, runIdeationStage, type IdeationDeps } from "./ideation";
+import { IDEATION_COOLDOWN_HOURS, MIN_IDEATION_EVIDENCE, runIdeationStage, sameDirection, type IdeationDeps } from "./ideation";
 
 const brand = [{ id: "b1", content: "We speak plainly and never overpromise." }];
 const rivals = [
@@ -145,6 +145,55 @@ describe("runIdeationStage", () => {
       useCase: "ideation",
       evidence: { brandChunkIds: [], brainChunkIds: ["c1", "c2"] },
     });
+  });
+
+  it("shows short labels and maps them back to the real ids (live 2026-09-23)", async () => {
+    let prompt = "";
+    const deps = ideationDeps({
+      propose: async (p) => {
+        prompt = p;
+        return reply([{ title: "Lead with proof", summary: "Patterns favour proof over promises.", brainChunkIds: ["P2", "[P1]", "c1"] }]);
+      },
+    });
+    await runIdeationStage(deps, "ws");
+    expect(prompt).toContain("[P1] Rival A");
+    expect(prompt).not.toContain("[c1]");
+    expect(deps.inserted[0]).toMatchObject({ evidence: { brainChunkIds: ["c2", "c1"] } });
+  });
+
+  it("still rejects a label that was not shown", async () => {
+    const deps = ideationDeps({
+      propose: async () => reply([{ title: "Made up", summary: "Cites a label past the list.", brainChunkIds: ["P9"] }]),
+    });
+    await expect(runIdeationStage(deps, "ws")).rejects.toThrow(/uncited|unknown/);
+  });
+
+  it("skips without a model call when directions were proposed within the cooldown (live 2026-09-23)", async () => {
+    const propose = vi.fn();
+    const now = new Date("2026-09-23T12:00:00Z");
+    const deps = ideationDeps({
+      propose,
+      now: () => now,
+      openDirections: async () => [{ title: "Thought leadership at ASMS", createdAt: new Date("2026-09-23T10:30:00Z") }],
+    });
+    const result = await runIdeationStage(deps, "ws");
+    expect(result).toEqual({ status: "skipped", reason: `directions were proposed 1 h ago; next round after ${IDEATION_COOLDOWN_HOURS} h` });
+    expect(propose).not.toHaveBeenCalled();
+  });
+
+  it("after the cooldown, a reworded open direction is not stored again", async () => {
+    const deps = ideationDeps({
+      now: () => new Date("2026-09-23T20:00:00Z"),
+      openDirections: async () => [{ title: "Lead with proof campaign", createdAt: new Date("2026-09-23T10:00:00Z") }],
+    });
+    expect(await runIdeationStage(deps, "ws")).toMatchObject({ status: "done", produced: 0 });
+    expect(deps.inserted).toEqual([]);
+  });
+
+  it("sameDirection: same words in new wording match, different topics do not", () => {
+    expect(sameDirection("Thought Leadership at 75th ASMS Conference (2027)", "Pre-event thought-leadership for ASMS conference 2027")).toBe(true);
+    expect(sameDirection("Enter the Chinese market via analytica China 2026", "China market entry campaign aligned with analytica China 2026")).toBe(true);
+    expect(sameDirection("PFAS testing webinar for Gulf water labs", "Exhibit at ARABLAB LIVE Dubai")).toBe(false);
   });
 
   it("rejects a direction that cites an unknown id", async () => {

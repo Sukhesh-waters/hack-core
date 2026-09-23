@@ -15,6 +15,7 @@ import {
   docCountForBrandsQuery,
   findingsForBrandsQuery,
   findingTitleExistsQuery,
+  openFindingsForUseCaseQuery,
   latestDocumentQuery,
   pagesTodayQuery,
   recentBrainEvidenceQuery,
@@ -277,6 +278,7 @@ describe("platina query isolation", () => {
       signalProvenanceQuery("ws_a", ["s1"]),
       latestDocumentQuery("ws_a"),
       findingTitleExistsQuery("ws_a", "brand_divergence", "t"),
+      openFindingsForUseCaseQuery("ws_a", "ideation"),
     ]) {
       const { sql, params } = q.toSQL();
       expect(sql).toContain('"workspace_id" =');

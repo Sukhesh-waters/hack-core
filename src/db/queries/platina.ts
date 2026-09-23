@@ -3263,3 +3263,19 @@ export function flowBrainSampleQuery(workspaceId: string, limit = 240) {
 export async function listFlowBrainSample(workspaceId: string, limit = 240) {
   return flowBrainSampleQuery(workspaceId, limit);
 }
+
+/** Open findings of one use case, newest first: ideation's cooldown and near-duplicate check. */
+export function openFindingsForUseCaseQuery(workspaceId: string, useCase: string, limit = 200) {
+  return db
+    .select({ title: platinaFindings.title, createdAt: platinaFindings.createdAt })
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.useCase, useCase),
+        inArray(platinaFindings.status, ["new", "needs_decision", "validated"]),
+      ),
+    )
+    .orderBy(desc(platinaFindings.createdAt))
+    .limit(limit);
+}

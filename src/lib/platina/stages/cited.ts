@@ -39,12 +39,38 @@ const responseSchema = z.object({ items: z.array(z.unknown()).nullable() });
 
 export type CitedItem = z.infer<typeof itemSchema>;
 
+/** Anything that answers "is this id citable" (a Set, or a label resolver). */
+type IdSet = Pick<ReadonlySet<string>, "has">;
+
 export type CitationRule = {
-  brand: Set<string>;
-  brain: Set<string>;
+  brand: IdSet;
+  brain: IdSet;
   /** Which lists must be non-empty for an item to stand. */
   require: { brand: boolean; brain: boolean };
 };
+
+/**
+ * Short citation labels (P1, P2, ...) in place of 36-character ids. Live
+ * 2026-09-23: six Waters runs degraded because a fallback model miscopied the
+ * UUIDs and every direction was rejected. `resolve` maps a label (or the real
+ * id, still accepted) back to the real id; anything else stays unknown.
+ */
+export function aliasRows(
+  rows: EvidenceRow[],
+  prefix: string,
+): { rows: EvidenceRow[]; resolve: (id: string) => string | null } {
+  const toReal = new Map<string, string>();
+  const aliased = rows.map((r, i) => {
+    const label = `${prefix}${i + 1}`;
+    toReal.set(label, r.id);
+    toReal.set(r.id, r.id);
+    return { id: label, content: r.content };
+  });
+  return {
+    rows: aliased,
+    resolve: (id) => toReal.get(id.trim().replace(/^\[|\]$/g, "").trim()) ?? null,
+  };
+}
 
 /** Renders rows as `[id] text` lines the model can cite verbatim. */
 export function renderEvidence(label: string, rows: EvidenceRow[]): string {

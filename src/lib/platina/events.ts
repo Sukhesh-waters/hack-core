@@ -135,6 +135,9 @@ const normalised = (s: string) =>
     .replace(/\\([|*_`#[\]()])/g, "$1")
     .replace(/[*_`|#]/g, " ")
     .replace(/[–—]/g, "-")
+    // Typographic quotes on the page vs straight ones in a quote (live 2026-09-23).
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
     .replace(/\s+/g, " ")
     .trim();
 

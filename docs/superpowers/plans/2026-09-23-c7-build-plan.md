@@ -6,6 +6,10 @@ names the files it touches and the test that is written **before** the code.
 
 Status: ready to start 2026-09-23. Nothing is built yet.
 
+> **Order superseded 2026-09-23 by `2026-09-23-c8-waters-live-intelligence.md`:** C8.0 (Waters data fill) first,
+> then C7.3, C8.2 (C7.2 + pattern layer), C8.4, C8.3 (C7.6), C8.5 (includes C7.8), C8.6 (C7.7), then C7.4/C7.5.
+> Task rows here stay valid; C8 adds to them.
+
 ## 1. How the work flows
 
 ### 1.1 Branches and PRs

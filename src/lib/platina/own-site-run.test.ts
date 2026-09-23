@@ -106,6 +106,18 @@ describe("runOwnSitePass", () => {
     expect(store.pages.filter((p) => p.status === "queued")).toHaveLength(7);
   });
 
+  it("an operator grant reads past the daily budget, and only as far as the grant (C8.0)", async () => {
+    const store = emptyStore();
+    const links = Array.from({ length: 10 }, (_, i) => ({ url: `https://www.waters.com/nextgen/us/en/products/p${i}.html` }));
+    const result = await runOwnSitePass(fakeDeps(store, {}, { links, dailyPages: 4 }), {
+      workspaceId: "ws",
+      brandId: "b1",
+      grantReads: 7,
+    });
+    expect(result).toMatchObject({ read: 7 });
+    expect(store.pages.filter((p) => p.status === "queued")).toHaveLength(4);
+  });
+
   it("a probe that says changed re-reads the page and replaces its chunks; same content is not re-embedded", async () => {
     const store = emptyStore();
     await runOwnSitePass(fakeDeps(store), { workspaceId: "ws", brandId: "b1" });

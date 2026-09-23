@@ -144,6 +144,11 @@ export async function runOwnSitePass(
     forceRemap?: boolean;
     /** Reads in this call (the job batches steps to stay inside a function timeout). */
     maxReads?: number;
+    /**
+     * Operator grant (C8.0 force run): read up to this many pages in this call
+     * whatever today's own-site page limit says. Never set by the daily job.
+     */
+    grantReads?: number;
   },
 ): Promise<OwnSitePassResult> {
   const { workspaceId, brandId } = input;
@@ -214,7 +219,8 @@ export async function runOwnSitePass(
   // 3. Read today's pages within the daily budget.
   const dayStart = startOfUtcDay(now);
   const readToday = pages.filter((p) => p.lastReadAt && p.lastReadAt.getTime() >= dayStart).length;
-  const budget = Math.max(0, limits.dailyPages - readToday);
+  const budget =
+    input.grantReads !== undefined ? Math.max(0, input.grantReads) : Math.max(0, limits.dailyPages - readToday);
   const toRead = pagesToRead(pages, Math.min(budget, input.maxReads ?? budget), now);
   const seen = new Set<string>();
   let read = 0;

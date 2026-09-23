@@ -57,6 +57,11 @@ describe("quotedIn", () => {
     expect(quotedIn("27-29 October 2026", page)).toBe(false);
     expect(quotedIn("ok", page)).toBe(false);
   });
+
+  it("treats typographic and straight quote marks as the same", () => {
+    const page = "one of the world’s largest “medical” exhibitions";
+    expect(quotedIn("the world's largest \"medical\" exhibitions", page)).toBe(true);
+  });
 });
 
 describe("countryOf / isGcc", () => {

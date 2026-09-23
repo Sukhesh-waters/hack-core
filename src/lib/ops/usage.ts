@@ -63,6 +63,7 @@ export async function readFirecrawlUsage(key: string | undefined, fetchImpl: Fet
       name,
       used: Math.max(0, d.planCredits - d.remainingCredits),
       cap: d.planCredits,
+      remaining: d.remainingCredits,
       unit: "credits",
       periodStart: new Date(d.billingPeriodStart),
       periodEnd: new Date(d.billingPeriodEnd),

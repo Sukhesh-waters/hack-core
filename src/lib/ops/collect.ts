@@ -12,6 +12,7 @@ import {
   draftReviewsCountQuery,
   embedFailuresSinceQuery,
   knowledgeSourcesWithUrlQuery,
+  pageFactsQuery,
   unembeddedBrainCountQuery,
 } from "@/db/queries/ops";
 import { listBrands, listEvents, listScanSpecs } from "@/db/queries/platina";
@@ -32,6 +33,7 @@ import {
   type OpsCheck,
   type SpendReading,
 } from "./checks";
+import { checkPagesHaveContent, pageReadiness } from "./readiness-pages";
 import { readApifyUsage, readFirecrawlUsage } from "./usage";
 
 const DAY = 86_400_000;
@@ -138,6 +140,12 @@ async function budgets(workspaceId: string, now: Date, account: SpendReading[]):
   return checkBudgets({ now, readings });
 }
 
+async function pagesContent(workspaceId: string): Promise<OpsCheck> {
+  const [facts] = await pageFactsQuery(workspaceId);
+  if (!facts) throw new Error("workspace not found");
+  return checkPagesHaveContent(pageReadiness(facts));
+}
+
 async function stuckRuns(workspaceId: string, now: Date): Promise<OpsCheck> {
   return checkStuckRuns({ now, running: await activeRunsQuery(workspaceId) });
 }
@@ -164,6 +172,7 @@ export async function runOpsChecks(
     ["learning", "Learning from results", () => learning(workspaceId, now)],
     ["budgets", "Budgets (projected to period end)", () => budgets(workspaceId, now, account)],
     ["stuck_runs", "Runs finishing", () => stuckRuns(workspaceId, now)],
+    ["pages_content", "Pages have content", () => pagesContent(workspaceId)],
   ];
   return Promise.all(
     gatherers.map(async ([id, label, gather]) => {

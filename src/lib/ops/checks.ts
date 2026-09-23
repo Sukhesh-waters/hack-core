@@ -229,6 +229,11 @@ export type SpendReading = {
   name: string;
   used: number;
   cap: number | null;
+  /**
+   * What the account says is left, when it says so. Can exceed cap - used:
+   * Firecrawl bonus credits (live 2026-09-23: 1060 left on a 1000 plan).
+   */
+  remaining?: number;
   unit: "usd" | "credits";
   periodStart: Date;
   periodEnd: Date;
@@ -261,7 +266,8 @@ export function checkBudgets(input: { now: Date; readings: SpendReading[] }): Op
       continue;
     }
     const share = r.used / r.cap;
-    parts.push(`${r.name}: ${fmt(r.used, r.unit)} of ${fmt(r.cap, r.unit)}, about ${fmt(projected, r.unit)} by ${r.periodEnd.toISOString().slice(0, 10)}`);
+    const left = r.remaining !== undefined && r.remaining > r.cap - r.used ? ` (${fmt(r.remaining, r.unit)} left, with bonus)` : "";
+    parts.push(`${r.name}: ${fmt(r.used, r.unit)} of ${fmt(r.cap, r.unit)}${left}, about ${fmt(projected, r.unit)} by ${r.periodEnd.toISOString().slice(0, 10)}`);
     if (share >= 1) worst = "down";
     else if ((share >= 0.8 || projected > r.cap) && worst !== "down") worst = "degraded";
   }
