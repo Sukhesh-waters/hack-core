@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbo",
+    "dev": "next dev -p 3000",
     "dev:all": "node scripts/dev-all.mjs",
     "dev:jobs": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
     "build": "next build",

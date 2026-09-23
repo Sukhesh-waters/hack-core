@@ -4,7 +4,11 @@ import {
   listImmediateMemberEmails,
 } from "@/db/queries/memberships";
 import { dueRemindersQuery, markReminderSent } from "@/db/queries/schedule";
-import { buildReminderEmail, reminderHorizon } from "@/lib/reminders";
+import {
+  buildReminderEmail,
+  isPermanentSendFailure,
+  reminderHorizon,
+} from "@/lib/reminders";
 import { resend } from "@/lib/resend";
 
 /**
@@ -12,6 +16,10 @@ import { resend } from "@/lib/resend";
  * with no reminder sent, email that workspace's members, stamp the row.
  * Per-row failures are logged and skipped — the sweep never dies mid-batch,
  * and unstamped rows are retried on the next tick.
+ *
+ * Retrying only helps a send that could still succeed, so a rejection that
+ * names the payload as unacceptable stamps the row instead: a permanently
+ * refused slot would otherwise be re-sent every 15 minutes forever.
  */
 export const contentReminder = inngest.createFunction(
   { id: "content-reminder", triggers: [{ cron: "*/15 * * * *" }] },
@@ -52,7 +60,15 @@ export const contentReminder = inngest.createFunction(
           html,
         });
         if (error) {
-          console.error(`reminder ${slot.id} send failed:`, error);
+          if (!isPermanentSendFailure(error)) {
+            console.error(`reminder ${slot.id} send failed, will retry:`, error);
+            return;
+          }
+          // Same stamp the no-recipients branch above uses: the column
+          // records that the sweep is finished with this slot, not that an
+          // email landed.
+          console.error(`reminder ${slot.id} rejected, giving up:`, error);
+          await markReminderSent(slot.id, new Date());
           return;
         }
         await markReminderSent(slot.id, new Date());

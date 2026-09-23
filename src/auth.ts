@@ -19,7 +19,19 @@ import { authConfig } from "@/auth.config";
 export const DEV_BYPASS_EMAIL = "dev@localhost.test";
 
 const providers: NextAuthConfig["providers"] = [
-  Google,
+  // Links a Google sign-in onto an existing user row that carries the same
+  // address, instead of refusing with OAuthAccountNotLinked. Owner-approved
+  // 2026-09-22: accounts predating Google sign-in were created by the Resend
+  // magic link, so they hold no Google `accounts` row and would otherwise be
+  // permanently locked out of this provider.
+  //
+  // What makes the linking safe is that every provider here establishes the
+  // address before it can be used to sign in: Google verifies it, the Resend
+  // magic link requires possession of the inbox, and the dev bypass is pinned
+  // to one literal non-routable address. Adding a provider that accepts an
+  // unverified email would turn this flag into an account-takeover path — the
+  // attacker signs up under someone else's address and inherits their user.
+  Google({ allowDangerousEmailAccountLinking: true }),
   Resend({
     from: process.env.EMAIL_FROM ?? "Platina AI OS <login@example.com>",
   }),
