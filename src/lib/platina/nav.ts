@@ -15,6 +15,8 @@ export const PLATINA_NAV = [
   { slug: "", label: "Cockpit", group: "" },
   // The whole flow, live, in 3D (sources -> analysis -> Brain -> use).
   { slug: "live", label: "Live flow", group: "Watch" },
+  // Everything learnt, connected, in 3D (C8.6).
+  { slug: "brain-map", label: "Brain map", group: "Watch" },
   // Where the market gathers, Gulf first (C7.3 / C8).
   { slug: "events", label: "Events", group: "Watch" },
   // Competitors analysis - pattern layer (C8.2): public data, any link read on demand.

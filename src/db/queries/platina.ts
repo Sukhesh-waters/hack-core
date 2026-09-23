@@ -3327,3 +3327,42 @@ export function brandFindingsQuery(workspaceId: string, brandIds: string[], limi
     .orderBy(desc(platinaFindings.createdAt))
     .limit(limit);
 }
+
+/** Active Brain insights for the 3D map (C8.6), newest first. */
+export function brainMapChunksQuery(workspaceId: string, limit = 220) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      agreementState: platinaBrainChunks.agreementState,
+      insightKey: platinaBrainChunks.insightKey,
+      sourceSignalIds: platinaBrainChunks.sourceSignalIds,
+      createdAt: platinaBrainChunks.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.status, "active")))
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+/** The company, kind and address behind collected documents (C8.6). */
+export function documentBrandsQuery(workspaceId: string, documentIds: string[]) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      title: platinaSignalDocuments.title,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaSignalDocuments.id, documentIds.length ? documentIds : ["-"]),
+      ),
+    );
+}

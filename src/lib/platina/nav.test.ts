@@ -8,6 +8,7 @@ describe("platina nav", () => {
     expect(PLATINA_NAV.map((s) => `${s.group}/${s.label}`)).toEqual([
       "/Cockpit",
       "Watch/Live flow",
+      "Watch/Brain map",
       "Watch/Events",
       "Watch/Competitors",
       "Watch/Clients",
