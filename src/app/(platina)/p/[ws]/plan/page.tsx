@@ -25,13 +25,14 @@ const input =
   "mt-1 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm";
 const card = "rounded-lg border border-border bg-card p-4";
 
-export default async function PlanPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string; from?: string; brand?: string };
-}) {
+export default async function PlanPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string; from?: string; brand?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [plans, findings, brands] = await Promise.all([
     listPlansWithVerdict(params.ws),
     listFindings(params.ws),

@@ -41,11 +41,12 @@ const RUN_STATUS_LABEL: Record<string, string> = {
  * every number and row traces to a real workspace-scoped query. No live
  * badge claim — the transport pill in the header reports the real state.
  */
-export default async function PlatinaCockpit({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function PlatinaCockpit(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [specs, receipts, campaigns, gates, runs, findings, deliveries, brands, latestPlans] =
     await Promise.all([
       listScanSpecs(params.ws),

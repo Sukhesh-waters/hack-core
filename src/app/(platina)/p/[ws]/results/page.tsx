@@ -31,13 +31,14 @@ const EVENT_LABEL: Record<string, string> = {
   promote: "Insight strengthened",
 };
 
-export default async function ResultsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { brand?: string; error?: string; imported?: string };
-}) {
+export default async function ResultsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ brand?: string; error?: string; imported?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const now = new Date();
   const brands = (await listBrands(params.ws)).filter((b) => b.kind === "own_brand");
   const brandId = brands.some((b) => b.id === searchParams.brand) ? searchParams.brand! : null;

@@ -36,11 +36,12 @@ function truncate(text: string, max: number): string {
     : trimmed;
 }
 
-export default async function ReportsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function ReportsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   // First-party only (two-layer rule) — every query filters
   // source="first_party" at the DB layer. A rolling 12-week window for the
   // trend; the min-N gate is applied on the workspace-wide total, not the

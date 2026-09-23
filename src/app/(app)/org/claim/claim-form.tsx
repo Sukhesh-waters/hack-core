@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +22,7 @@ function SubmitButton() {
 }
 
 export function ClaimOrgForm() {
-  const [state, formAction] = useFormState(claimOrg, undefined);
+  const [state, formAction] = useActionState(claimOrg, undefined);
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
 

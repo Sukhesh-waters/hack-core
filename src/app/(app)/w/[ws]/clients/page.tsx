@@ -10,11 +10,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Clients" };
 export const dynamic = "force-dynamic";
 
-export default async function ClientsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function ClientsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const rows = await listClients(params.ws);
 
   return (

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +45,7 @@ export function DraftEditor({
   });
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
-  const [state, formAction] = useFormState<RefineState, FormData>(
+  const [state, formAction] = useActionState<RefineState, FormData>(
     updateDraftSectionsAction,
     undefined,
   );

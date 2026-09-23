@@ -7,11 +7,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Team Hub" };
 export const dynamic = "force-dynamic";
 
-export default async function TeamHubPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function TeamHubPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const user = await requireUser();
   await requireMembership(params.ws, user.id);
   const data = await getTeamHubData(params.ws);

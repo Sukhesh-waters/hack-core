@@ -13,11 +13,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Ideation" };
 export const dynamic = "force-dynamic";
 
-export default async function IdeationPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function IdeationPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [clients, ideaRows] = await Promise.all([
     listClients(params.ws),
     listIdeas(params.ws, { limit: 18 }),

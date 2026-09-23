@@ -13,11 +13,12 @@ import { UploadForm } from "./upload-form";
 export const metadata = { title: "Asset Library" };
 export const dynamic = "force-dynamic";
 
-export default async function AssetsPage({
-  params,
-}: {
-  params: Promise<{ ws: string }> | { ws: string };
-}) {
+export default async function AssetsPage(
+  props: {
+    params: Promise<Promise<{ ws: string }> | { ws: string }>;
+  }
+) {
+  const params = await props.params;
   const resolvedParams = await Promise.resolve(params);
   const user = await requireUser();
   const membership = await requireMembership(resolvedParams.ws, user.id);

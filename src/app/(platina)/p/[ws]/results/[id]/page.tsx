@@ -27,13 +27,14 @@ const NUMBER_INPUTS = [
 ] as const;
 const VERDICT_TEXT = { worked: "Worked", mixed: "Mixed", failed: "Failed" } as const;
 
-export default async function CreativePage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; id: string };
-  searchParams: { error?: string; added?: string; saved?: string; confirmed?: string; demoted?: string; promoted?: string };
-}) {
+export default async function CreativePage(
+  props: {
+    params: Promise<{ ws: string; id: string }>;
+    searchParams: Promise<{ error?: string; added?: string; saved?: string; confirmed?: string; demoted?: string; promoted?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const creative = await getCreative(params.ws, params.id);
   if (!creative) notFound();
   const [metrics, review, config, brand, plan, evidence] = await Promise.all([

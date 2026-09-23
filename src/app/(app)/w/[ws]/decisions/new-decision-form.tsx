@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createDecisionAction, type DecisionActionState } from "./actions";
@@ -33,7 +33,7 @@ export function NewDecisionForm({
   postsByClientId: Record<string, EvidencePostOption[]>;
   insights: InsightOption[];
 }) {
-  const [state, formAction] = useFormState<DecisionActionState, FormData>(
+  const [state, formAction] = useActionState<DecisionActionState, FormData>(
     createDecisionAction,
     undefined,
   );

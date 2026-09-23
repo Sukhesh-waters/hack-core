@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { GlassCard } from "@/components/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,12 +34,12 @@ function CommitButton() {
 }
 
 export function AiTemplateBuilder({ workspaceId }: { workspaceId: string }) {
-  const [genState, genFormAction] = useFormState<
+  const [genState, genFormAction] = useActionState<
     GenerateTemplateActionState,
     FormData
   >(generateTemplateFromProseAction, {});
 
-  const [commitState, commitFormAction] = useFormState<
+  const [commitState, commitFormAction] = useActionState<
     SopActionState,
     FormData
   >(commitGeneratedTemplateAction, undefined);

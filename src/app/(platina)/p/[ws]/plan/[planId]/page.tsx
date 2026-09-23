@@ -30,13 +30,14 @@ const UNGROUNDED_REASON: Record<string, string> = {
     "Nothing has been collected for this client and its competitors yet, so there was no evidence to use.",
 };
 
-export default async function PlanDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; planId: string };
-  searchParams: { error?: string; saved?: string };
-}) {
+export default async function PlanDetailPage(
+  props: {
+    params: Promise<{ ws: string; planId: string }>;
+    searchParams: Promise<{ error?: string; saved?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [plan, feedback] = await Promise.all([
     getPlan(params.ws, params.planId),
     getPlanFeedback(params.ws, params.planId),

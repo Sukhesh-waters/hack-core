@@ -23,11 +23,12 @@ const DRIFT_NARRATIVE_COLOR: Record<string, string> = {
   "needs attention": "text-destructive",
 };
 
-export default async function OverviewPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function OverviewPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const data = await getOverviewData(params.ws);
   const base = `/w/${params.ws}`;
 

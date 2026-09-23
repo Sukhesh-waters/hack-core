@@ -11,13 +11,14 @@ export const metadata = { title: "Add a client" };
 const input =
   "mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm";
 
-export default async function StartPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function StartPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const brands = (await listBrands(params.ws)).filter(
     (b) => b.kind === "own_brand",
   );

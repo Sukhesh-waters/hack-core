@@ -23,11 +23,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Draft" };
 export const dynamic = "force-dynamic";
 
-export default async function DraftPage({
-  params,
-}: {
-  params: { ws: string; contentId: string };
-}) {
+export default async function DraftPage(
+  props: {
+    params: Promise<{ ws: string; contentId: string }>;
+  }
+) {
+  const params = await props.params;
   const row = await getContentById(params.ws, params.contentId);
   if (!row) notFound();
   const [brandProfile, thread, members, attachments] = await Promise.all([

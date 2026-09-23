@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +21,7 @@ function SubmitButton() {
 }
 
 export function EmailForm({ callbackUrl }: { callbackUrl: string }) {
-  const [state, formAction] = useFormState(signInWithEmail, undefined);
+  const [state, formAction] = useActionState(signInWithEmail, undefined);
 
   return (
     <form action={formAction} className="space-y-3">

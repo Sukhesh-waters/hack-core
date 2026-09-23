@@ -16,13 +16,14 @@ import {
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina admin — claims" };
 
-export default async function AdminClaimsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { copy?: string; error?: string };
-}) {
+export default async function AdminClaimsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ copy?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [rules, allRules, standard] = await Promise.all([
     listActiveClaimsRules(params.ws),
     claimsRulesQuery(params.ws),

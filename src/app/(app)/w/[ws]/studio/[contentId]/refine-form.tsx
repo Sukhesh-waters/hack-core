@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { refineDraftAction, type RefineState } from "./actions";
@@ -21,7 +22,7 @@ export function RefineForm({
   workspaceId: string;
   contentId: string;
 }) {
-  const [state, formAction] = useFormState<RefineState, FormData>(
+  const [state, formAction] = useActionState<RefineState, FormData>(
     refineDraftAction,
     undefined,
   );

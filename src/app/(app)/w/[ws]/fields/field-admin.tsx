@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useMemo, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/glass-card";
@@ -63,7 +63,7 @@ function DetachControl({
   fieldId: string;
   subjectType: CustomFieldSubject;
 }) {
-  const [state, formAction] = useFormState<FieldAdminState, FormData>(
+  const [state, formAction] = useActionState<FieldAdminState, FormData>(
     unassignFieldAction,
     undefined,
   );
@@ -89,7 +89,7 @@ function AttachExistingField({
   subjectType: CustomFieldSubject;
   candidates: LibraryField[];
 }) {
-  const [state, formAction] = useFormState<FieldAdminState, FormData>(
+  const [state, formAction] = useActionState<FieldAdminState, FormData>(
     assignFieldAction,
     undefined,
   );
@@ -131,7 +131,7 @@ function ArchiveControl({
   workspaceId: string;
   fieldId: string;
 }) {
-  const [state, formAction] = useFormState<FieldAdminState, FormData>(
+  const [state, formAction] = useActionState<FieldAdminState, FormData>(
     archiveFieldAction,
     undefined,
   );
@@ -148,7 +148,7 @@ function ArchiveControl({
 }
 
 function CreateFieldForm({ workspaceId }: { workspaceId: string }) {
-  const [state, formAction] = useFormState<FieldAdminState, FormData>(
+  const [state, formAction] = useActionState<FieldAdminState, FormData>(
     createFieldAction,
     undefined,
   );

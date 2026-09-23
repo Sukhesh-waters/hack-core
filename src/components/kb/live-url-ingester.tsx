@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { CheckCircle2, Globe, Loader2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +40,7 @@ export function LiveUrlIngester({
   defaultClientId?: string;
 }) {
   const [clientId, setClientId] = useState(defaultClientId ?? clients[0]?.id ?? "");
-  const [state, formAction] = useFormState<IngestState, FormData>(ingestKnowledgeUrl, undefined);
+  const [state, formAction] = useActionState<IngestState, FormData>(ingestKnowledgeUrl, undefined);
   const clientName = clients.find((c) => c.id === clientId)?.name ?? "this client";
 
   return (

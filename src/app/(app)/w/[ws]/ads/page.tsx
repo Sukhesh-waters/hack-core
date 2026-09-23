@@ -10,11 +10,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Ads Management" };
 export const dynamic = "force-dynamic";
 
-export default async function AdsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function AdsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [campaigns, competitorAds] = await Promise.all([
     listCampaigns(params.ws),
     recentCompetitorAds(params.ws, 5),

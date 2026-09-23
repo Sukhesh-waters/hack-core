@@ -14,13 +14,14 @@ const HOOKS = ["question", "stat", "proof", "story", "offer", "how-to", "news"];
 
 const field = "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
-export default async function NewCreativePage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { brand?: string; plan?: string; phase?: string; opp?: string; topic?: string; error?: string };
-}) {
+export default async function NewCreativePage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ brand?: string; plan?: string; phase?: string; opp?: string; topic?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [brands, plan] = await Promise.all([
     listBrands(params.ws),
     searchParams.plan ? getPlan(params.ws, searchParams.plan) : Promise.resolve(null),

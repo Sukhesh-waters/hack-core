@@ -13,11 +13,12 @@ import { nextStepChipText } from "@/lib/plan/next-step";
 export const metadata = { title: "Plan & Validate" };
 export const dynamic = "force-dynamic";
 
-export default async function PlanPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function PlanPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   // Must resolve — and reject — before anything below runs. loadContentWorkflow
   // lazily SEEDS work_types/workflows on first read for this workspace id; the
   // workspace layout also guards this route, but its check runs concurrently

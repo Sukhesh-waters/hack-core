@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { addTicketCommentAction, type TicketState } from "../actions";
@@ -28,7 +28,7 @@ export function CommentForm({
 }) {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
-  const [state, formAction] = useFormState<TicketState, FormData>(
+  const [state, formAction] = useActionState<TicketState, FormData>(
     async (prev, formData) => {
       const result = await addTicketCommentAction(prev, formData);
       if (!result?.error) formRef.current?.reset();

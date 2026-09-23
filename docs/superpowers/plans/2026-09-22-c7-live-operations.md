@@ -555,5 +555,5 @@ and turns amber at 80%. The Gemini free embedding quota is the third limit (O1).
 | Slice | Status |
 |---|---|
 | C7.0 a-f | **built 2026-09-23** on `fix/c7-0-leaks`: ownership guard + own-sites list, safe fetch on every URL reader, URL clean-up and duplicate check, interrupted-ingest sweep, `/kb` box rewired to the guarded ingest (old scraper deleted), Meta sync can no longer invent numbers. Live: Waters' knowledge base cleaned (4 other-company sources = 42 passages, 8 dead rows removed, backed up); 25 own passages remain incl. BD Biosciences. No invented ads rows existed (all 4 campaigns were 0), so no reset or `campaigns` migration was needed. Migration 0084 (`client_identities`) applied. Unit 2,577 green; browser spec `e2e/knowledge-guard.spec.ts` passes. |
-| C7.0 g | Next 15, next |
+| C7.0 g | **built 2026-09-23** on `chore/next-15`: Next 15.5.26 + React 19; async `params`/`searchParams` codemod (80 files); `useFormState` -> `useActionState` (53 files); `next.config.mjs` cleaned. Unit 2,577 green, typecheck and lint clean, production build passes, all 12 browser specs pass. `npm audit --omit=dev`: no critical (left: Next's bundled postcss, build-time only, fixed only in Next 16). |
 | C7.1-C7.9 | not started |

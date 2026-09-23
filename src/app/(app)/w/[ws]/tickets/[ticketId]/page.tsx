@@ -53,11 +53,12 @@ async function resolveLinkedObject(
   return row ? { id: row.id, label: row.name } : null;
 }
 
-export default async function TicketDetailPage({
-  params,
-}: {
-  params: { ws: string; ticketId: string };
-}) {
+export default async function TicketDetailPage(
+  props: {
+    params: Promise<{ ws: string; ticketId: string }>;
+  }
+) {
+  const params = await props.params;
   const ticket = await getTicket(params.ws, params.ticketId);
   if (!ticket) notFound();
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useTransition, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,11 +72,11 @@ export function PlanCard({
   const [statusError, setStatusError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const [editState, editAction] = useFormState<PlanState, FormData>(
+  const [editState, editAction] = useActionState<PlanState, FormData>(
     editIdeaAction,
     undefined,
   );
-  const [rejectState, rejectActionFn] = useFormState<PlanState, FormData>(
+  const [rejectState, rejectActionFn] = useActionState<PlanState, FormData>(
     rejectIdeaAction,
     undefined,
   );

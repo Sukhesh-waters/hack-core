@@ -18,11 +18,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Decisions" };
 export const dynamic = "force-dynamic";
 
-export default async function DecisionsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function DecisionsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [clients, decisionRows, insightRows] = await Promise.all([
     listClients(params.ws),
     listDecisions(params.ws),

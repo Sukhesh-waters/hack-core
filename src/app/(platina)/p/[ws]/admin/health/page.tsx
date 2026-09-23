@@ -53,13 +53,14 @@ function CheckRow({ check }: { check: HealthCheck }) {
   );
 }
 
-export default async function HealthPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { probe?: string };
-}) {
+export default async function HealthPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ probe?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const runProbe = searchParams.probe === "1";
   // The provider check makes two short paid AI calls, so it only runs on request.
   const [core, providers] = await Promise.all([

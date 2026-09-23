@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,7 +111,7 @@ export function CampaignWizard({
   const [step, setStep] = useState(0);
   const [data, setData] = useState<WizardData>(INITIAL);
   const [stepError, setStepError] = useState<string | null>(null);
-  const [state, formAction] = useFormState<CreateCampaignState, FormData>(
+  const [state, formAction] = useActionState<CreateCampaignState, FormData>(
     createCampaignWithApproval,
     undefined,
   );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -165,11 +165,11 @@ function StepRow({
   canEdit: boolean;
   onEdit: () => void;
 }) {
-  const [deleteState, deleteAction] = useFormState<SopActionState, FormData>(
+  const [deleteState, deleteAction] = useActionState<SopActionState, FormData>(
     deleteStepAction,
     undefined,
   );
-  const [moveState, moveAction] = useFormState<SopActionState, FormData>(
+  const [moveState, moveAction] = useActionState<SopActionState, FormData>(
     moveStepAction,
     undefined,
   );
@@ -306,7 +306,7 @@ function StepForm({
   onDone?: () => void;
 }) {
   const isEdit = step !== null;
-  const [state, formAction] = useFormState<SopActionState, FormData>(
+  const [state, formAction] = useActionState<SopActionState, FormData>(
     isEdit ? updateStepAction : addStepAction,
     undefined,
   );

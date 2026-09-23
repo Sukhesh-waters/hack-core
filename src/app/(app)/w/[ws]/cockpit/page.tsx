@@ -29,11 +29,12 @@ function usd(value: number) {
   return `$${value.toFixed(value < 0.1 ? 4 : 2)}`;
 }
 
-export default async function CockpitPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function CockpitPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const ws = params.ws;
   const now = new Date();
   const today = dayStart(now);

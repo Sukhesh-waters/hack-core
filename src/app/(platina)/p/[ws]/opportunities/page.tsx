@@ -134,13 +134,14 @@ function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; cli
  * in person, with proof) -> plans -> creative, collapsed at the bottom.
  * Reads stored signals and events only — no model call on page load.
  */
-export default async function OpportunitiesPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { client?: string; error?: string };
-}) {
+export default async function OpportunitiesPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ client?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   // Two database rounds, not four: everything that does not depend on the
   // chosen client first, then the client's competitors and signals together.
   const [brands, events, participants, plans] = await Promise.all([

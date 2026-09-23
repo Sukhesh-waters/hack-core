@@ -21,11 +21,12 @@ export const metadata = { title: "Production" };
 export const dynamic = "force-dynamic";
 
 
-export default async function ProductionPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function ProductionPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [rows, clients, workflow] = await Promise.all([
     listContentByState(params.ws),
     listClients(params.ws),

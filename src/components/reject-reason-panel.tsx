@@ -12,7 +12,7 @@ import { GlassCard } from "@/components/glass-card";
  * Only the shell is shared. The two callers submit differently — IdeaCard
  * drives a manual startTransition + server-action call and shows its own
  * "Rejecting…" busy label; PlanCard uses a real `<form action={...}>` with
- * useFormState/useFormStatus for progressive enhancement. Rather than force
+ * useActionState/useFormStatus for progressive enhancement. Rather than force
  * one submission mechanism on both (a bigger change than this duplication
  * warrants), the confirm control is a `children` slot each caller fills with
  * whatever it already uses.

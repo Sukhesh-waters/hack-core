@@ -11,11 +11,12 @@ import { EmailForm } from "./email-form";
 
 export const metadata = { title: "Sign in" };
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: { sent?: string; error?: string; callbackUrl?: string };
-}) {
+export default async function LoginPage(
+  props: {
+    searchParams: Promise<{ sent?: string; error?: string; callbackUrl?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const callbackUrl = safeCallbackUrl(searchParams.callbackUrl);
   const session = await auth();
   if (session?.user) redirect(callbackUrl);

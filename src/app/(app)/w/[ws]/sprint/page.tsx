@@ -10,11 +10,12 @@ import { Sparkles, Calendar, ChevronRight, Rocket } from "lucide-react";
 export const metadata = { title: "Campaign Sprints | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
-export default async function SprintIndexPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function SprintIndexPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   await requireUser();
   const [clientsList, sprints, templates] = await Promise.all([
     listClients(params.ws),

@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,7 +49,7 @@ export function DocEditor(
   const action =
     props.mode === "create" ? createWorkspaceDocAction : updateWorkspaceDocAction;
 
-  const [state, formAction] = useFormState<DocState, FormData>(
+  const [state, formAction] = useActionState<DocState, FormData>(
     async (prev, formData) => {
       const result = await action(prev, formData);
       if (!result?.error) {

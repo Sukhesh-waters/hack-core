@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { sendReportAction, type SendReportState } from "./actions";
@@ -42,7 +42,7 @@ export function ReportComposer({
 }) {
   const [body, setBody] = useState(initialDraft);
   const [audience, setAudience] = useState<"team" | "client">("team");
-  const [state, formAction] = useFormState<SendReportState, FormData>(
+  const [state, formAction] = useActionState<SendReportState, FormData>(
     sendReportAction,
     undefined,
   );

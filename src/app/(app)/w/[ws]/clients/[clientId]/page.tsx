@@ -36,11 +36,12 @@ const CAMPAIGN_STATUS_STYLE: Record<string, string> = {
   draft: "border-border text-muted-foreground/70",
 };
 
-export default async function ClientDetailPage({
-  params,
-}: {
-  params: { ws: string; clientId: string };
-}) {
+export default async function ClientDetailPage(
+  props: {
+    params: Promise<{ ws: string; clientId: string }>;
+  }
+) {
+  const params = await props.params;
   const client = await getClientById(params.ws, params.clientId);
   if (!client) notFound();
 

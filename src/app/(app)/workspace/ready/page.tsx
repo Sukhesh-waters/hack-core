@@ -11,11 +11,12 @@ import { Button } from "@/components/ui/button";
 export const metadata = { title: "Workspace ready" };
 export const dynamic = "force-dynamic";
 
-export default async function WorkspaceReadyPage({
-  searchParams,
-}: {
-  searchParams: { ws?: string };
-}) {
+export default async function WorkspaceReadyPage(
+  props: {
+    searchParams: Promise<{ ws?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const user = await requireUser();
   if (!searchParams.ws) redirect("/hub");
 

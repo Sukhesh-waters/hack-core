@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ingestKnowledgeUrl, type IngestState } from "./knowledge-actions";
@@ -28,7 +28,7 @@ export function IngestForm({
   siteAvailable?: boolean;
 }) {
   const [wholeSite, setWholeSite] = useState(siteAvailable);
-  const [state, formAction] = useFormState<IngestState, FormData>(
+  const [state, formAction] = useActionState<IngestState, FormData>(
     ingestKnowledgeUrl,
     undefined,
   );

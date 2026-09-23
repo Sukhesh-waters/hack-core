@@ -46,13 +46,14 @@ const ago = (d: Date | null, now: Date) => {
   return `${Math.floor(m / 1440)} d ago`;
 };
 
-export default async function BrandPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; id: string };
-  searchParams: { error?: string; started?: string; analysing?: string; reading?: string };
-}) {
+export default async function BrandPage(
+  props: {
+    params: Promise<{ ws: string; id: string }>;
+    searchParams: Promise<{ error?: string; started?: string; analysing?: string; reading?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const brand = await getBrand(params.ws, params.id);
   if (!brand) notFound();
   const now = new Date();

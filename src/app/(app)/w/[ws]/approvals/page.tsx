@@ -20,11 +20,12 @@ function formatDue(date: Date) {
   });
 }
 
-export default async function ApprovalsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function ApprovalsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [queue, gates] = await Promise.all([
     listApprovalQueue(params.ws),
     listPendingApprovalGates(params.ws),

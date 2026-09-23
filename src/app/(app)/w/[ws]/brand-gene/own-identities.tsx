@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { describeIdentity } from "@/lib/ingest/ownership";
@@ -31,7 +32,7 @@ export function OwnIdentities({
   clientName: string;
   identities: ClientIdentityRow[];
 }) {
-  const [state, formAction] = useFormState<IdentityState, FormData>(addOwnIdentityAction, undefined);
+  const [state, formAction] = useActionState<IdentityState, FormData>(addOwnIdentityAction, undefined);
   return (
     <div className="mt-4 rounded-lg border border-border p-4">
       <p className="text-sm font-medium">{clientName}&apos;s own sites and pages</p>

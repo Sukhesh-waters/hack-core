@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useRef, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createTicketAction, type TicketState } from "../actions";
@@ -30,7 +30,7 @@ export function AddSubtaskForm({
   parentTicketId: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
-  const [state, formAction] = useFormState<TicketState, FormData>(
+  const [state, formAction] = useActionState<TicketState, FormData>(
     async (prev, formData) => {
       const result = await createTicketAction(prev, formData);
       if (!result?.error) formRef.current?.reset();

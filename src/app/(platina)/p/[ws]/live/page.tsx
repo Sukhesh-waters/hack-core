@@ -56,7 +56,8 @@ const kindOf = (key: string | null): BrainPoint["kind"] =>
  * count plus the newest Brain vectors; the header's live signal refreshes it
  * and the scene fires a burst along the edges that just carried new data.
  */
-export default async function LiveFlowPage({ params }: { params: { ws: string } }) {
+export default async function LiveFlowPage(props: { params: Promise<{ ws: string }> }) {
+  const params = await props.params;
   const now = new Date();
   const [row, sample] = await Promise.all([getFlowCounts(params.ws, now), listFlowBrainSample(params.ws)]);
   const counts = toCounts(row);

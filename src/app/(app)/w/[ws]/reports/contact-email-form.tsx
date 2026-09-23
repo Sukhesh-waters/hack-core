@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -26,7 +27,7 @@ export function ContactEmailForm({
   clientId: string;
   contactEmail: string | null;
 }) {
-  const [state, formAction] = useFormState<UpdateContactEmailState, FormData>(
+  const [state, formAction] = useActionState<UpdateContactEmailState, FormData>(
     updateClientContactEmailAction,
     undefined,
   );

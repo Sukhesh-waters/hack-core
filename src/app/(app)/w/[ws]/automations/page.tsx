@@ -11,11 +11,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Automations" };
 export const dynamic = "force-dynamic";
 
-export default async function AutomationsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function AutomationsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [rules, members] = await Promise.all([
     listAutomationRules(params.ws),
     listWorkspaceMembers(params.ws),

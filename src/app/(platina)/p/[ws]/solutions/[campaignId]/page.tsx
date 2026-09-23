@@ -46,13 +46,14 @@ const GATE_LABEL: Record<string, string> = {
   publish: "Ready for external execution",
 };
 
-export default async function SolutionDetailPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; campaignId: string };
-  searchParams: { tab?: string; error?: string };
-}) {
+export default async function SolutionDetailPage(
+  props: {
+    params: Promise<{ ws: string; campaignId: string }>;
+    searchParams: Promise<{ tab?: string; error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const { ws, campaignId } = params;
   const campaign = await getCampaign(ws, campaignId);
   if (!campaign) notFound();

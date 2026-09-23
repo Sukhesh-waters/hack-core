@@ -3,7 +3,8 @@ import { PageShell } from "@/components/page-shell";
 
 export const metadata = { title: "New client" };
 
-export default function NewClientPage({ params }: { params: { ws: string } }) {
+export default async function NewClientPage(props: { params: Promise<{ ws: string }> }) {
+  const params = await props.params;
   return (
     <PageShell width="app">
       <p className="label-mono text-brand-teal">Client intake</p>

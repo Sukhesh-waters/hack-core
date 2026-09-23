@@ -6,11 +6,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "New campaign" };
 export const dynamic = "force-dynamic";
 
-export default async function NewCampaignPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function NewCampaignPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const clientsList = await listClients(params.ws);
 
   if (clientsList.length === 0) {

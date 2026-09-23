@@ -1,6 +1,6 @@
 "use client";
 
-import { useFormState } from "react-dom";
+import { useActionState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/glass-card";
@@ -56,11 +56,11 @@ export function AccountCard({
   workspaceId: string;
   account: AccountView;
 }) {
-  const [syncState, syncFormAction] = useFormState<
+  const [syncState, syncFormAction] = useActionState<
     AccountsActionState,
     FormData
   >(syncAccount, undefined);
-  const [, disconnectFormAction] = useFormState<AccountsActionState, FormData>(
+  const [, disconnectFormAction] = useActionState<AccountsActionState, FormData>(
     disconnectAccount,
     undefined,
   );

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createTemplateAction, type SopActionState } from "./actions";
@@ -16,7 +16,7 @@ function SubmitButton() {
 }
 
 export function NewTemplateForm({ workspaceId }: { workspaceId: string }) {
-  const [state, formAction] = useFormState<SopActionState, FormData>(
+  const [state, formAction] = useActionState<SopActionState, FormData>(
     createTemplateAction,
     undefined,
   );

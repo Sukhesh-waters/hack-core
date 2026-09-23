@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
@@ -107,7 +107,7 @@ export function RunBoard({
 }) {
   const router = useRouter();
   const [showReanchor, setShowReanchor] = useState(false);
-  const [reanchorState, reanchorAction] = useFormState<
+  const [reanchorState, reanchorAction] = useActionState<
     SopActionState,
     FormData
   >(reanchorRunAction, undefined);
@@ -396,7 +396,6 @@ export function RunBoard({
         </GlassCard>
       ) : null}
 
-
       <div className="mt-6 space-y-3">
         {steps.map((step) => {
           // Only steps that are actually still holding this one up — a
@@ -466,27 +465,27 @@ function StepCard({
   isProposingCascade: string | null;
   onTriggerCascade: (stepId: string) => Promise<void>;
 }) {
-  const [moveState, moveAction] = useFormState<SopActionState, FormData>(
+  const [moveState, moveAction] = useActionState<SopActionState, FormData>(
     step.status === "ready" ? startStepAction : completeStepAction,
     undefined,
   );
-  const [skipState, skipAction] = useFormState<SopActionState, FormData>(
+  const [skipState, skipAction] = useActionState<SopActionState, FormData>(
     skipStepAction,
     undefined,
   );
-  const [assignState, assignAction] = useFormState<SopActionState, FormData>(
+  const [assignState, assignAction] = useActionState<SopActionState, FormData>(
     assignStepAction,
     undefined,
   );
-  const [materialiseState, materialiseAction] = useFormState<
+  const [materialiseState, materialiseAction] = useActionState<
     SopActionState,
     FormData
   >(materialiseStepAction, undefined);
-  const [rescheduleState, rescheduleAction] = useFormState<
+  const [rescheduleState, rescheduleAction] = useActionState<
     SopActionState,
     FormData
   >(rescheduleDownstreamAction, undefined);
-  const [suggestState, suggestAction] = useFormState<
+  const [suggestState, suggestAction] = useActionState<
     SuggestionActionState,
     FormData
   >(suggestNextActionAction, {});
@@ -499,7 +498,6 @@ function StepCard({
       <input type="hidden" name="stepId" value={step.id} />
     </>
   );
-
 
   return (
     <GlassCard className="p-5">
@@ -646,7 +644,6 @@ function StepCard({
                     </div>
                   ) : null}
                 </div>
-
 
         <div className="flex shrink-0 flex-col items-end gap-2">
           <Badge variant="outline" className={STATUS_CHIP[step.status]}>

@@ -1,7 +1,8 @@
 "use client";
 
+import { useActionState } from "react";
 import Link from "next/link";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -64,7 +65,7 @@ export function CampaignRow({
   workspaceId: string;
   campaign: CampaignRowView;
 }) {
-  const [state, formAction] = useFormState<ToggleCampaignState, FormData>(
+  const [state, formAction] = useActionState<ToggleCampaignState, FormData>(
     toggleCampaignAction,
     undefined,
   );

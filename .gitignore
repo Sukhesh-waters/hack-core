@@ -49,3 +49,4 @@ next-env.d.ts
 
 # C7.0 data-operation backups (may hold client content)
 backups/
+dev-server.log

@@ -45,13 +45,14 @@ const FRESHNESS_LABEL = {
   unknown: "No data yet",
 } as const;
 
-export default async function AuditsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function AuditsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const specs = await listScanSpecs(params.ws);
   const runs = await listAuditRuns(params.ws, 10);
   const specName = new Map(specs.map((s) => [s.id, s.name]));

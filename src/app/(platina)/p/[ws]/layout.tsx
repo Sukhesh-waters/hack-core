@@ -7,13 +7,18 @@ import { PlatinaHeader } from "@/components/platina/header";
 import { PlatinaSidebar } from "@/components/platina/sidebar";
 import { platinaTopicToken } from "@/lib/platina/realtime-server";
 
-export default async function PlatinaWorkspaceLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: { ws: string };
-}) {
+export default async function PlatinaWorkspaceLayout(
+  props: {
+    children: React.ReactNode;
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
+
+  const {
+    children
+  } = props;
+
   const user = await requireUser();
   try {
     await requireMembership(params.ws, user.id);
