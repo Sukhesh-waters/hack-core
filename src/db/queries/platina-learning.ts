@@ -3,7 +3,7 @@
  * Every query filters workspace_id explicitly (app-layer isolation; see
  * CLAUDE.md) and platina-learning.test.ts asserts it in the generated SQL.
  */
-import { and, asc, cosineDistance, desc, eq, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, cosineDistance, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   PLATINA_EMBEDDING_MODEL_VERSION,
@@ -578,4 +578,38 @@ export function creativesForPlanQuery(workspaceId: string, planId: string) {
 
 export async function listCreativesForPlan(workspaceId: string, planId: string) {
   return creativesForPlanQuery(workspaceId, planId);
+}
+
+/**
+ * First-party passages that contain any of these words (C8.4 brief). The
+ * fallback when a passage has no embedding yet (the free embedding quota
+ * leaves a backlog): the words still find it. Longest passages first.
+ */
+export function keywordFirstPartyChunksQuery(
+  workspaceId: string,
+  words: string[],
+  options: { brandId?: string | null; limit?: number } = {},
+) {
+  const terms = words.filter((w) => w.length >= 3).slice(0, 6);
+  const match = terms.length
+    ? or(...terms.map((w) => ilike(platinaFirstPartyChunks.content, `%${w.replace(/[%_\\]/g, "")}%`)))
+    : sql`false`;
+  return db
+    .select({
+      id: platinaFirstPartyChunks.id,
+      content: platinaFirstPartyChunks.content,
+      sourceUrl: platinaFirstPartyChunks.sourceUrl,
+      title: platinaFirstPartyChunks.title,
+    })
+    .from(platinaFirstPartyChunks)
+    .where(
+      and(
+        eq(platinaFirstPartyChunks.workspaceId, workspaceId),
+        isNull(platinaFirstPartyChunks.supersededAt),
+        ...(options.brandId ? [eq(platinaFirstPartyChunks.brandId, options.brandId)] : []),
+        match,
+      ),
+    )
+    .orderBy(desc(sql`length(${platinaFirstPartyChunks.content})`))
+    .limit(options.limit ?? 6);
 }

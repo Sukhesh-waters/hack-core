@@ -1,25 +1,12 @@
 import Link from "next/link";
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
+import { OpportunityBrief } from "@/components/platina/opportunity-brief";
 import { PendingButton } from "@/components/platina/pending-button";
-import {
-  listBrands,
-  listClientScopeSignals,
-  listCompetitorsOf,
-  listEvents,
-  listPlansWithVerdict,
-  listWorkspaceEventParticipants,
-} from "@/db/queries/platina";
-import { BASELINE_DAYS, clientTopics, RECENT_DAYS, topicMomentum } from "@/lib/platina/interest";
-import {
-  buildCampaigns,
-  buildInsights,
-  type Campaign,
-  type Proof,
-} from "@/lib/platina/opportunities";
-import { learningSeed } from "@/lib/platina/learning";
-import { learningState } from "@/lib/platina/learning-service";
-import { learnCampaigns, type LearnedCampaign } from "@/lib/platina/opportunity-learning";
+import { BASELINE_DAYS, RECENT_DAYS } from "@/lib/platina/interest";
+import { type Campaign, type Proof } from "@/lib/platina/opportunities";
+import { loadOpportunities } from "@/lib/platina/opportunities-load";
+import { type LearnedCampaign } from "@/lib/platina/opportunity-learning";
 import { cn } from "@/lib/utils";
 import { createPlanAction } from "../plan/actions";
 
@@ -89,6 +76,26 @@ function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; cli
           ) : null}
         </span>
       </div>
+      {c.place || c.dates || c.startBy ? (
+        <p className="mt-1 text-xs text-foreground">
+          {[c.dates, c.place].filter(Boolean).join(" · ")}
+          {c.startBy ? (
+            <span className={cn("ml-2 font-medium", c.startBy === "now" ? "text-brand-amber" : "text-primary")}>
+              {c.startBy === "now" ? "Start preparing now" : `Start preparing by ${c.startBy}`}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+      {c.factors.length > 0 ? (
+        <dl className="mt-2 flex flex-wrap gap-1.5" aria-label="What this rank rests on">
+          {c.factors.map((f) => (
+            <div key={f.label} className="rounded border border-border px-1.5 py-0.5 text-[11px]">
+              <dt className="inline text-muted-foreground">{f.label}: </dt>
+              <dd className="inline font-medium">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-muted-foreground">
         {c.why.map((w) => (
           <li key={w}>{w}</li>
@@ -124,6 +131,7 @@ function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; cli
           Log a creative for it
         </Link>
       </form>
+      <OpportunityBrief ws={ws} clientId={clientId} opportunityKey={c.key} />
     </li>
   );
 }
@@ -142,18 +150,11 @@ export default async function OpportunitiesPage(
 ) {
   const searchParams = await props.searchParams;
   const params = await props.params;
-  // Two database rounds, not four: everything that does not depend on the
-  // chosen client first, then the client's competitors and signals together.
-  const [brands, events, participants, plans] = await Promise.all([
-    listBrands(params.ws),
-    listEvents(params.ws),
-    listWorkspaceEventParticipants(params.ws),
-    listPlansWithVerdict(params.ws),
-  ]);
-  const clients = brands.filter((b) => b.kind === "own_brand");
-  const client = clients.find((c) => c.id === searchParams.client) ?? clients[0];
+  // One loader shared with the AI brief route, so both see the same campaigns.
+  const data = await loadOpportunities(params.ws, searchParams.client);
+  const { clients, client } = data;
 
-  if (!client) {
+  if (!client || !data.campaigns) {
     return (
       <PlatinaPage eyebrow="Campaign intelligence" title="Opportunities">
         <p className="text-sm text-muted-foreground">
@@ -166,46 +167,11 @@ export default async function OpportunitiesPage(
     );
   }
 
-  const now = new Date();
-  const since = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * 86_400_000);
-  const [competitors, signals, learning] = await Promise.all([
-    listCompetitorsOf(params.ws, client.id),
-    listClientScopeSignals(params.ws, client.id, since),
-    learningState(params.ws, client.id, now),
-  ]);
-
-  const input = {
-    client: {
-      id: client.id,
-      name: client.name,
-      region: client.region ?? null,
-      topics: clientTopics(client.profile ?? null, client.name),
-    },
-    competitors: competitors.map((c) => ({ id: c.id, name: c.name })),
-    momentum: topicMomentum(signals, now),
-    proofOwner: new Map(signals.map((s) => [s.sourceUrl, s.brandId])),
-    events: events.map((e) => ({
-      ...e,
-      participants: participants.filter((p) => p.eventId === e.id),
-    })),
-    now,
-  };
-  const insights = buildInsights(input);
+  const { competitors, signals, learning, insights, campaigns } = data;
   const measured = insights.filter((i) => i.status === "ok");
   const thin = insights.filter((i) => i.status === "insufficient");
-  // Rule order first (C5), then the client's own confirmed results (C6).
-  const ruled = buildCampaigns(input);
-  const learnOptions = {
-    stats: learning.stats,
-    minN: learning.config.minN,
-    exploreShare: learning.config.exploreShare,
-  };
-  const campaigns = {
-    events: learnCampaigns(ruled.events, { ...learnOptions, seed: learningSeed(params.ws, now, `${client.id}:events`) }),
-    topics: learnCampaigns(ruled.topics, { ...learnOptions, seed: learningSeed(params.ws, now, `${client.id}:topics`) }),
-  };
   const all: Campaign[] = [...campaigns.events, ...campaigns.topics];
-  const clientPlans = plans.filter((p) => p.brandId === client.id).slice(0, 5);
+  const clientPlans = data.plans.slice(0, 5);
   const posts = new Set(signals.filter((s) => s.signalKind === "interest").map((s) => s.sourceUrl)).size;
 
   return (

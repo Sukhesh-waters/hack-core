@@ -51,7 +51,23 @@ export type Campaign = {
   plan: PlanStart;
   /** Seed for on-demand creative drafting. */
   creativeTopic: string;
+  /** Where and when, as stated on the source (events only). */
+  place?: string | null;
+  dates?: string | null;
+  /** The last day to start preparing, counted back from the event (events only). */
+  startBy?: string | null;
+  /** The measured facts behind the rank, shown as they are (never a model number). */
+  factors: { label: string; value: string }[];
 };
+
+/** Days of preparation a campaign needs before its date, by channel (C8.4). */
+export const LEAD_TIME_DAYS = { in_person: 42, online: 14 } as const;
+
+/** The last day to start: the date minus the lead time, or "now" when that has passed. */
+export function startByDate(startsOn: string, channel: "in_person" | "online", now: Date): string {
+  const due = new Date(`${startsOn}T00:00:00Z`).getTime() - LEAD_TIME_DAYS[channel] * 86_400_000;
+  return due <= now.getTime() ? "now" : new Date(due).toISOString().slice(0, 10);
+}
 
 export type OpportunityEvent = {
   id: string;
@@ -208,6 +224,12 @@ function topicCampaigns(input: OpportunityInput): Campaign[] {
           ),
         },
         creativeTopic: `${input.client.name}: ${m.topic}`,
+        factors: [
+          { label: "Engagement", value: `${fmt(value)}× typical` },
+          { label: "Posts", value: String(m.n) },
+          { label: "On the client's site", value: own.has(m.topic) ? "yes" : "no" },
+          { label: "Competitor ads", value: String(pressure.filter((x) => x.topic === m.topic).length) },
+        ],
       } satisfies Campaign;
     });
 }
@@ -293,6 +315,15 @@ function eventCampaigns(input: OpportunityInput): Campaign[] {
       creativeTopic: rivalHosted
         ? `${input.client.name} online counter to ${e.name}`
         : `${input.client.name} at ${e.name}`,
+      place: online ? "online" : (e.location ?? e.country ?? null),
+      dates: e.dateText ?? (e.endsOn && e.endsOn !== e.startsOn ? `${e.startsOn} to ${e.endsOn}` : e.startsOn),
+      startBy: startByDate(e.startsOn!, online ? "online" : "in_person", input.now),
+      factors: [
+        { label: "Days to prepare", value: String(days) },
+        { label: "Region", value: atHome ? `home (${e.country})` : (e.country ?? "not stated") },
+        { label: "Competitors there", value: String(rivals.length) },
+        { label: "Format", value: online ? "online" : "in person" },
+      ],
     } satisfies Campaign;
   });
 }

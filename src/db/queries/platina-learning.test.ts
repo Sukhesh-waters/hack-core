@@ -11,6 +11,7 @@ import {
   firstPartyChunkCountsQuery,
   ownSiteClientsQuery,
   ownSitePagesQuery,
+  keywordFirstPartyChunksQuery,
   similarFirstPartyChunksQuery,
 } from "./platina-learning";
 
@@ -26,6 +27,15 @@ describe("C6 queries filter workspace_id in the generated SQL", () => {
     expect(sql).toContain('"platina_brands"."workspace_id" =');
     expect(sql).toContain('"platina_brands"."kind" =');
     expect(params).toEqual(expect.arrayContaining(["ws_a", "own_brand", "active"]));
+  });
+
+  it("keywordFirstPartyChunksQuery: workspace, live passages, client scope, bound words (C8.4)", () => {
+    const { sql, params } = keywordFirstPartyChunksQuery("ws_a", ["pfas", "lc", "water"], { brandId: "b1" }).toSQL();
+    expect(sql).toContain('"platina_first_party_chunks"."workspace_id" = ');
+    expect(sql).toContain("superseded_at");
+    expect(sql).toContain("ilike");
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "b1", "%pfas%", "%water%"]));
+    expect(params).not.toContain("%lc%");
   });
 
   it("similarFirstPartyChunksQuery: workspace, live, current embedding model, optional client scope", () => {

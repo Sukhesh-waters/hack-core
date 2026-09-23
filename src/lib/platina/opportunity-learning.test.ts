@@ -15,6 +15,7 @@ const campaign = (topic: string): Campaign => ({
   timing: null,
   plan: { useCase: "client", goal: topic },
   creativeTopic: topic,
+  factors: [],
 });
 
 const confirmed = (topic: string, verdict: LearnedResult["verdict"], n: number): LearnedResult[] =>
