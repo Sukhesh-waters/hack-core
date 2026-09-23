@@ -81,12 +81,19 @@ describe("fetchViaWaters on a keyword ad search", () => {
     expect(outcome.docs[0].body).toContain("Alliance iS Bio HPLC");
   });
 
-  it("when none of the advertisers is the brand, says exactly that", async () => {
+  it("when none of the advertisers is the brand, that is an answer (0 active ads), not a failure", async () => {
+    // C7.1 found it live: counted as a failure, the daily Waters ad-library
+    // source looked due again at once and ran 6 paid times in 30 minutes.
     vi.stubEnv("APIFY_TOKEN", "t");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ({ ok: true, json: async () => [ad("Peony Cruises", "Sail the waters", "3")] })),
     );
-    await expect(fetchViaWaters(spec)).rejects.toThrow(/no active ads by an advertiser named "Waters"/);
+    const outcome = await fetchViaWaters(spec);
+    expect(outcome.docs).toEqual([]);
+    expect(outcome.failures).toEqual([]);
+    expect(outcome.empty).toEqual([
+      { target: SEARCH, reason: 'no active ads by an advertiser named "Waters" (other advertisers matching the word were ignored)' },
+    ]);
   });
 });

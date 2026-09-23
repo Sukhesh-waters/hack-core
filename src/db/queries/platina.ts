@@ -960,7 +960,7 @@ export async function listAlertRules(workspaceId: string) {
 export async function insertAlertRule(input: {
   workspaceId: string;
   name: string;
-  source?: "outcome" | "finding" | "approval" | "run";
+  source?: "outcome" | "finding" | "approval" | "run" | "ops";
   conditions: { field: string; op: "gt" | "lt" | "eq" | "gte" | "lte"; value: number | string }[];
   severity: "info" | "warning" | "critical";
 }) {

@@ -57,10 +57,11 @@ export const adLibraryScan = inngest.createFunction(
 
       try {
         const response = await fetch(
-          `https://api.apify.com/v2/acts/${slug}/run-sync-get-dataset-items?token=${token}`,
+          `https://api.apify.com/v2/acts/${slug}/run-sync-get-dataset-items`,
           {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            // The token travels in a header, never the URL (URLs end up in logs).
+            headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
             body: JSON.stringify(input),
           },
         );

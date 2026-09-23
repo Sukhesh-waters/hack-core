@@ -49,7 +49,7 @@ export function evaluateAlert(input: {
  * Min-N applies to outcome metrics only — queue counts are operational
  * facts, not samples.
  */
-export type AlertSource = "outcome" | "finding" | "approval" | "run";
+export type AlertSource = "outcome" | "finding" | "approval" | "run" | "ops";
 
 export const ALERT_SOURCE_FIELDS: Record<AlertSource, string[]> = {
   outcome: [
@@ -62,6 +62,8 @@ export const ALERT_SOURCE_FIELDS: Record<AlertSource, string[]> = {
   finding: ["openDecisions"],
   approval: ["pendingReceipts", "draftSolutions"],
   run: ["failedRuns"],
+  // C7.1: how many ops-board checks are red / amber in the latest run.
+  ops: ["redChecks", "amberChecks"],
 };
 
 export function isAlertSource(value: string): value is AlertSource {

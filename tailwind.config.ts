@@ -1,4 +1,7 @@
 import type { Config } from "tailwindcss";
+// An import, not require(): on Node 22+ Next 15 can load this file as an ES
+// module, where require is not defined (the dev server crashed on /login).
+import animate from "tailwindcss-animate";
 
 const config = {
   darkMode: ["class"],
@@ -77,7 +80,7 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [animate],
 } satisfies Config;
 
 export default config;

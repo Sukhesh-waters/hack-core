@@ -9,6 +9,7 @@ import {
   listOutcomes,
   markAlertRuleDelivered,
 } from "@/db/queries/platina";
+import { latestOpsChecks } from "@/db/queries/platina-ops";
 import {
   deliveryDecision,
   evaluateAlert,
@@ -27,7 +28,9 @@ import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 export const platinaAlertSweep = inngest.createFunction(
   {
     id: "platina-alert-sweep",
-    triggers: [{ cron: "0 * * * *" }],
+    // The ops job sends the event right after a check turns red, so that
+    // alert arrives at once instead of at the next hour.
+    triggers: [{ cron: "0 * * * *" }, { event: "platina/alerts.sweep.requested" }],
   },
   async ({ step }) => {
     const rules = await step.run("list-rules", () => listActiveAlertRules());
@@ -76,6 +79,22 @@ export const platinaAlertSweep = inngest.createFunction(
           const pending = await countPendingReceipts(rule.workspaceId);
           return evaluateAlert({
             record: { pendingReceipts: pending },
+            conditions: rule.conditions,
+            severity: rule.severity,
+            actions: rule.actions,
+            sampleSize: 1,
+            minN: 1,
+          });
+        }
+        if (source === "ops") {
+          // C7.1: the latest ops-board run. An operational fact, no min-N.
+          const checks = await latestOpsChecks(rule.workspaceId);
+          if (checks.length === 0) return null;
+          return evaluateAlert({
+            record: {
+              redChecks: checks.filter((c) => c.status === "down").length,
+              amberChecks: checks.filter((c) => c.status === "degraded").length,
+            },
             conditions: rule.conditions,
             severity: rule.severity,
             actions: rule.actions,

@@ -16,6 +16,9 @@ import {
   isTerminal,
   type RunStatus,
 } from "./run-status";
+import { DAILY_CAP_REASON, SOURCE_CAP_REASON } from "./fetch/budget";
+
+const CAP_REASONS = new Set([DAILY_CAP_REASON, SOURCE_CAP_REASON]);
 
 export type AuditRunRecord = {
   id: string;
@@ -233,6 +236,23 @@ export async function executeAuditRun(
       stageErrors.push(`${stage} failed: ${reason}`);
       stageNotes.push(`${stage}: failed (${reason})`);
     }
+  }
+
+  // A spend cap is a pause, not a failure (C7.1): the source was not tried,
+  // so its success/failure record and cadence stay as they were, and the
+  // run says why it stopped. Tomorrow's allowance picks it up.
+  if (fetchFailed && CAP_REASONS.has(fetchFailed)) {
+    await deps.transition({
+      workspaceId,
+      runId,
+      from: ["running"],
+      to: "degraded",
+      message: "Paused by the daily collection cap",
+      degradedReason: fetchFailed,
+      counters,
+    });
+    await deps.broadcast(workspaceId, runId);
+    return { outcome: "degraded", reason: fetchFailed, counters };
   }
 
   if (run.specId) {

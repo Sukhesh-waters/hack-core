@@ -1521,3 +1521,35 @@ export const platinaC6ScopedTables = {
   platinaCreativeReviews,
   platinaLearningEvents,
 } as const;
+
+// ---------------------------------------------------------------------------
+// C7.1 ops board: one row per check per run, kept for the 7-day history.
+// Written by the ops job (lib/ops), read by Admin -> Health.
+// ---------------------------------------------------------------------------
+
+export const platinaOpsChecks = pgTable(
+  "platina_ops_checks",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    /** lib/ops/checks.ts check id: knowledge_ownership, own_site, budgets, ... */
+    checkId: text("check_id").notNull(),
+    label: text("label").notNull(),
+    /** ok | degraded | down | not_configured */
+    status: text("status").notNull(),
+    detail: text("detail").notNull(),
+    remedy: text("remedy"),
+    value: jsonb("value").$type<Record<string, number | string | null>>(),
+    /** One id per run, so a board shows one consistent set. */
+    runId: text("run_id").notNull(),
+    checkedAt: timestamp("checked_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_ops_checks_workspace_id_idx").on(table.workspaceId),
+    historyIdx: index("platina_ops_checks_ws_check_at_idx").on(table.workspaceId, table.checkId, table.checkedAt),
+  }),
+);
+
+export const platinaC7ScopedTables = {
+  platinaOpsChecks,
+} as const;

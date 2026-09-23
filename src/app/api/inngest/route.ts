@@ -31,6 +31,7 @@ import { platinaInterestExtract } from "@/inngest/functions/platina/interest-ext
 import { platinaEventExtract } from "@/inngest/functions/platina/event-extract";
 import { platinaOwnSite } from "@/inngest/functions/platina/own-site";
 import { platinaLearning } from "@/inngest/functions/platina/learning";
+import { opsCheck } from "@/inngest/functions/ops-check";
 
 const handler = serve({
   client: inngest,
@@ -65,6 +66,7 @@ const handler = serve({
     platinaEventExtract,
     platinaOwnSite,
     platinaLearning,
+    opsCheck,
   ],
 });
 

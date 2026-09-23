@@ -56,12 +56,13 @@ async function runActor<T>(
   if (!token) throw new ApifyError("APIFY_TOKEN is not set");
 
   const slug = resolveActorSlug(key);
-  const url = `${BASE_URL}/${slug}/run-sync-get-dataset-items?token=${token}`;
+  const url = `${BASE_URL}/${slug}/run-sync-get-dataset-items`;
 
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // The token travels in a header, never the URL (URLs end up in logs).
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(input),
     });
     if (!response.ok) {

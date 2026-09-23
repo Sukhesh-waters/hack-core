@@ -166,7 +166,11 @@ describe("fetchViaWaters — Apify account limits", () => {
     const fetchMock = mockApify([{ url: "https://example.com/page", markdown: "hello world", metadata: { title: "t" } }]);
     vi.stubGlobal("fetch", fetchMock);
     await fetchViaWaters(spec("competitor_site"));
-    expect(String(fetchMock.mock.calls[0][0])).toContain("&memory=1024");
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("?memory=1024");
+    // The token travels in the Authorization header, never the URL.
+    expect(String(url)).not.toContain("token=");
+    expect(new Headers(init.headers).get("authorization")).toMatch(/^Bearer /);
   });
 
   it("explains a 402 as an account limit (memory or usage), not a problem with the site", async () => {

@@ -8,6 +8,7 @@ describe("platina workspace isolation", () => {
     for (const [name, table] of Object.entries({
       ...platina.platinaWorkspaceScopedTables,
       ...platina.platinaC6ScopedTables,
+      ...platina.platinaC7ScopedTables,
     })) {
       const columns = getTableColumns(table);
       expect(columns.workspaceId, `${name} is missing workspaceId`).toBeDefined();
@@ -21,6 +22,7 @@ describe("platina workspace isolation", () => {
     for (const [name, table] of Object.entries({
       ...platina.platinaWorkspaceScopedTables,
       ...platina.platinaC6ScopedTables,
+      ...platina.platinaC7ScopedTables,
     })) {
       const { indexes } = getTableConfig(table);
       const hasWorkspaceIndex = indexes.some((idx) =>

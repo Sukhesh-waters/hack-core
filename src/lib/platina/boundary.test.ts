@@ -70,6 +70,7 @@ const ALLOWED_EXACT = new Set([
   "@/db/platina-schema",
   "@/db/queries/platina",
   "@/db/queries/platina-learning", // C6 own-site + learning loop queries
+  "@/db/queries/platina-ops", // C7.1 ops board rows (read by Admin -> Health)
   "@/db/queries/memberships",
   "@/db/queries/workspaces", // identity enumeration for cron fan-out
   "@/lib/permissions",

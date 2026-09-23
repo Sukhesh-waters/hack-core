@@ -45,6 +45,8 @@ export type FetchOutcome = {
   picked?: { target: string; urls: string[] }[];
   /** Picked pages that could not be read (a note, not a failure). */
   skippedPages?: { url: string; reason: string }[];
+  /** Targets that answered "nothing there" (an ad search with no ads by the brand): a result, not a failure. */
+  empty?: { target: string; reason: string }[];
   docs: RawSignalDoc[];
   failures: FetchFailure[];
 };

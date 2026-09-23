@@ -219,6 +219,8 @@ export const platinaAuditRun = inngest.createFunction(
                 ...(outcome.skippedPages ?? []).map(
                   (p) => `${p.url}: not read (${p.reason})`,
                 ),
+                // Searched and found nothing: an answer, recorded as a note.
+                ...(outcome.empty ?? []).map((e) => `${e.target}: ${e.reason}`),
               ],
             };
           },

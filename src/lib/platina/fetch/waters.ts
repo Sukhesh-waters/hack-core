@@ -72,12 +72,13 @@ async function runActor(
 ): Promise<Record<string, unknown>[]> {
   const token = process.env.APIFY_TOKEN;
   if (!token) throw new Error("APIFY_TOKEN is not set");
-  const memory = memoryMb ? `&memory=${memoryMb}` : "";
+  const memory = memoryMb ? `?memory=${memoryMb}` : "";
   const res = await fetch(
-    `${APIFY_BASE}/${actorSlug}/run-sync-get-dataset-items?token=${token}${memory}`,
+    `${APIFY_BASE}/${actorSlug}/run-sync-get-dataset-items${memory}`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      // The token travels in a header, never the URL (URLs end up in logs).
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(input),
       signal: AbortSignal.timeout(240_000),
     },
@@ -211,6 +212,7 @@ export async function fetchViaWaters(
   const fallbacks: NonNullable<FetchOutcome["fallbacks"]> = [];
   const picked: NonNullable<FetchOutcome["picked"]> = [];
   const skippedPages: NonNullable<FetchOutcome["skippedPages"]> = [];
+  const empty: NonNullable<FetchOutcome["empty"]> = [];
   let remaining = spec.pageBudget;
   let pagesFetched = 0;
 
@@ -339,12 +341,17 @@ export async function fetchViaWaters(
     }
     if (mapped.length === 0) {
       const searched = target.kind === "ad_library" ? adSearchTerm(target.value) : null;
-      failures.push({
-        target: target.value,
-        error: searched
-          ? `no active ads by an advertiser named "${searched}" (other advertisers matching the word were ignored)`
-          : "actor returned no usable items",
-      });
+      if (searched) {
+        // The search ran and the brand has no active ads: an answer, not a
+        // failure. Counted as a failure, a daily source looks due again at
+        // once and re-runs a paid actor every few minutes (C7.1, live).
+        empty.push({
+          target: target.value,
+          reason: `no active ads by an advertiser named "${searched}" (other advertisers matching the word were ignored)`,
+        });
+      } else {
+        failures.push({ target: target.value, error: "actor returned no usable items" });
+      }
     }
     docs.push(...mapped);
   }
@@ -354,7 +361,7 @@ export async function fetchViaWaters(
       `every target failed: ${failures.map((f) => `${f.target} (${f.error})`).join("; ")}`,
     );
   }
-  return { docs, failures, pages: pagesFetched, escalated, fallbacks, picked, skippedPages };
+  return { docs, failures, pages: pagesFetched, escalated, fallbacks, picked, skippedPages, empty };
 }
 
 export function registerWatersAdapter() {

@@ -151,6 +151,22 @@ describe("executeAuditRun", () => {
     expect(store.contradictions).toHaveLength(0);
   });
 
+  it("a spend cap is a pause, not a failure: degraded with the reason, the source's record untouched", async () => {
+    // C7.1 found it live: capped conference sources read as "failing" on the
+    // ops board, and a failure backs the source's cadence off.
+    for (const reason of ["daily collection cap reached", "daily page limit for this source reached"]) {
+      const store = makeStore(makeRun(), async () => {
+        throw new Error(reason);
+      });
+      const outcome = await executeAuditRun(makeDeps(store), "ws-1", "run-1");
+      expect(outcome).toMatchObject({ outcome: "degraded", reason });
+      expect(store.run.status).toBe("degraded");
+      expect(store.transitions.at(-1)).toMatchObject({ to: "degraded", degradedReason: reason });
+      expect(store.specOutcomes).toEqual([]);
+      expect(store.contradictions).toHaveLength(0);
+    }
+  });
+
   it("marks degraded when the run has no source attached", async () => {
     const store = makeStore(makeRun({ specId: null }));
     const outcome = await executeAuditRun(makeDeps(store), "ws-1", "run-1");
