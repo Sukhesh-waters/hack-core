@@ -133,7 +133,7 @@ export default async function CompetitorsPage(props: {
   const client = brands.find((b) => b.kind === "own_brand" && b.status === "active");
   if (!client) {
     return (
-      <PlatinaPage eyebrow="Watch" title="Competitors analysis – pattern layer">
+      <PlatinaPage eyebrow="Watch" title="Competitors analysis – pattern layer" back={{ ws, fallback: `/w/${ws}` }}>
         <p className="text-sm text-muted-foreground">
           Add a client first.{" "}
           <Link href={`/p/${ws}/start`} className="text-primary underline-offset-4 hover:underline">
@@ -178,6 +178,8 @@ export default async function CompetitorsPage(props: {
     <PlatinaPage
       eyebrow="Watch · public data"
       title="Competitors analysis – pattern layer"
+      // Opened from the InstaMedia sidebar button: Back returns there.
+      back={{ ws, fallback: `/w/${ws}` }}
       description={`What ${client.name}'s competitors publish, how it lands with their audience, where they will be, and the patterns across the market. Public pages and posts only — kept apart from ${client.name}'s own knowledge.`}
     >
       <PlatinaFormError message={sp.error} />

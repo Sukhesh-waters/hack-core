@@ -92,6 +92,15 @@ function CompetitorsButton({ href, collapsed }: { href: string; collapsed: boole
     <Link
       href={href}
       data-testid="competitors-button"
+      // Remember this page, so Back on the competitors page returns here.
+      onClick={() => {
+        try {
+          // Same key as BackButton (components/platina/back-button.tsx).
+          window.sessionStorage.setItem("platina:back", window.location.pathname + window.location.search);
+        } catch {
+          // Storage blocked: Back falls back to the workspace home.
+        }
+      }}
       className={cn(
         "flex items-center gap-2.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/15",
         collapsed && "justify-center px-2",
