@@ -3,7 +3,7 @@
  * Every query filters workspace_id explicitly (app-layer isolation; see
  * CLAUDE.md) and platina-learning.test.ts asserts it in the generated SQL.
  */
-import { and, asc, cosineDistance, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, cosineDistance, desc, eq, gte, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   PLATINA_EMBEDDING_MODEL_VERSION,
@@ -14,7 +14,14 @@ import {
   platinaCreatives,
   platinaFirstPartyChunks,
   platinaLearningEvents,
+  platinaLearningSnapshots,
   platinaOwnSitePages,
+  platinaSuggestionEvents,
+  platinaSuggestions,
+  type SuggestionEventKind,
+  type SuggestionFeatures,
+  type SuggestionInput,
+  type SuggestionKind,
   type CreativeStatus,
   type FirstPartyChunkKind,
   type OwnSitePageStatus,
@@ -612,4 +619,205 @@ export function keywordFirstPartyChunksQuery(
     )
     .orderBy(desc(sql`length(${platinaFirstPartyChunks.content})`))
     .limit(options.limit ?? 6);
+}
+
+// ---------------------------------------------------------------------------
+// C8.5 suggestion ledger and monthly consolidation
+// ---------------------------------------------------------------------------
+
+export type SuggestionRow = typeof platinaSuggestions.$inferSelect;
+
+/** Records a suggestion once per (kind, subject, inputs); returns its id either way. */
+export async function recordSuggestionRow(input: {
+  workspaceId: string;
+  brandId: string | null;
+  kind: SuggestionKind;
+  subjectKey: string;
+  inputHash: string;
+  title: string;
+  body: Record<string, unknown>;
+  inputs: SuggestionInput[];
+  features: SuggestionFeatures;
+  factors: Record<string, number | string>;
+  weightsVersion: string;
+  model?: string | null;
+  promptVersion?: string | null;
+  explore: boolean;
+}): Promise<{ id: string; created: boolean }> {
+  const [row] = await db.insert(platinaSuggestions).values(input).onConflictDoNothing().returning({ id: platinaSuggestions.id });
+  if (row) return { id: row.id, created: true };
+  const [existing] = await db
+    .select({ id: platinaSuggestions.id })
+    .from(platinaSuggestions)
+    .where(
+      and(
+        eq(platinaSuggestions.workspaceId, input.workspaceId),
+        eq(platinaSuggestions.kind, input.kind),
+        eq(platinaSuggestions.subjectKey, input.subjectKey),
+        eq(platinaSuggestions.inputHash, input.inputHash),
+      ),
+    );
+  return { id: existing.id, created: false };
+}
+
+/** One event per suggestion, kind and day ("shown" is counted once a day). */
+export async function recordSuggestionEventRow(input: {
+  workspaceId: string;
+  suggestionId: string;
+  kind: SuggestionEventKind;
+  reason?: string | null;
+  reward?: number | null;
+  actorId?: string | null;
+  detail?: Record<string, unknown>;
+  day: string;
+}): Promise<boolean> {
+  const inserted = await db
+    .insert(platinaSuggestionEvents)
+    .values({ ...input, detail: input.detail ?? {} })
+    .onConflictDoNothing()
+    .returning({ id: platinaSuggestionEvents.id });
+  return inserted.length > 0;
+}
+
+export async function setSuggestionStatus(workspaceId: string, id: string, status: string) {
+  await db
+    .update(platinaSuggestions)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(platinaSuggestions.workspaceId, workspaceId), eq(platinaSuggestions.id, id)));
+}
+
+export function suggestionsQuery(workspaceId: string, opts: { kind?: string; status?: string; limit?: number } = {}) {
+  return db
+    .select()
+    .from(platinaSuggestions)
+    .where(
+      and(
+        eq(platinaSuggestions.workspaceId, workspaceId),
+        opts.kind ? eq(platinaSuggestions.kind, opts.kind as SuggestionKind) : undefined,
+        opts.status ? eq(platinaSuggestions.status, opts.status) : undefined,
+      ),
+    )
+    .orderBy(desc(platinaSuggestions.createdAt))
+    .limit(opts.limit ?? 500);
+}
+
+export function suggestionByIdQuery(workspaceId: string, id: string) {
+  return db
+    .select()
+    .from(platinaSuggestions)
+    .where(and(eq(platinaSuggestions.workspaceId, workspaceId), eq(platinaSuggestions.id, id)));
+}
+
+/** Newest records per subject (opportunity cards' keys), for their buttons. */
+export function latestSuggestionsForSubjectsQuery(workspaceId: string, kind: SuggestionKind, subjectKeys: string[]) {
+  return db
+    .select()
+    .from(platinaSuggestions)
+    .where(
+      and(
+        eq(platinaSuggestions.workspaceId, workspaceId),
+        eq(platinaSuggestions.kind, kind),
+        inArray(platinaSuggestions.subjectKey, subjectKeys.length > 0 ? subjectKeys : ["__none__"]),
+      ),
+    )
+    .orderBy(desc(platinaSuggestions.createdAt));
+}
+
+export function suggestionEventsQuery(workspaceId: string, suggestionId?: string) {
+  return db
+    .select()
+    .from(platinaSuggestionEvents)
+    .where(
+      and(
+        eq(platinaSuggestionEvents.workspaceId, workspaceId),
+        suggestionId ? eq(platinaSuggestionEvents.suggestionId, suggestionId) : undefined,
+      ),
+    )
+    .orderBy(asc(platinaSuggestionEvents.createdAt));
+}
+
+/** Ideas recorded since a moment (the idea engine's daily cap). */
+export async function countIdeasSince(workspaceId: string, since: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(platinaSuggestions)
+    .where(
+      and(
+        eq(platinaSuggestions.workspaceId, workspaceId),
+        eq(platinaSuggestions.kind, "idea"),
+        gte(platinaSuggestions.createdAt, since),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+export function learningSnapshotsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaLearningSnapshots)
+    .where(eq(platinaLearningSnapshots.workspaceId, workspaceId))
+    .orderBy(desc(platinaLearningSnapshots.month));
+}
+
+/** Idempotent per month: a second consolidation of the same month writes nothing. */
+export async function insertLearningSnapshot(input: {
+  workspaceId: string;
+  month: string;
+  weights: Record<string, unknown>;
+  digest: Record<string, unknown>;
+}): Promise<boolean> {
+  const rows = await db.insert(platinaLearningSnapshots).values(input).onConflictDoNothing().returning({ id: platinaLearningSnapshots.id });
+  return rows.length > 0;
+}
+
+/** Brain insights the consolidation may merge or retire: debate and idea insights (measured ones supersede themselves). */
+export function consolidatableBrainQuery(workspaceId: string) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      status: platinaBrainChunks.status,
+      absorbedChunkIds: platinaBrainChunks.absorbedChunkIds,
+      lastRetrievedAt: platinaBrainChunks.lastRetrievedAt,
+      createdAt: platinaBrainChunks.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        isNull(platinaBrainChunks.insightKey),
+        inArray(platinaBrainChunks.status, ["active", "archived"]),
+      ),
+    );
+}
+
+/** A merge: the survivor absorbs the others, which are superseded (kept, never deleted). */
+export async function mergeBrainChunks(workspaceId: string, keepId: string, absorbIds: string[], priorAbsorbed: string[]) {
+  if (absorbIds.length === 0) return;
+  await db.transaction(async (tx) => {
+    await tx
+      .update(platinaBrainChunks)
+      .set({ absorbedChunkIds: [...new Set([...priorAbsorbed, ...absorbIds])] })
+      .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.id, keepId)));
+    await tx
+      .update(platinaBrainChunks)
+      .set({ status: "superseded" })
+      .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), inArray(platinaBrainChunks.id, absorbIds)));
+  });
+}
+
+/** Retire (active -> archived) or restore (archived -> active) Brain insights; nothing else moves. */
+export async function setBrainChunksStatus(workspaceId: string, ids: string[], status: "active" | "archived") {
+  if (ids.length === 0) return;
+  await db
+    .update(platinaBrainChunks)
+    .set({ status })
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        inArray(platinaBrainChunks.id, ids),
+        eq(platinaBrainChunks.status, status === "active" ? "archived" : "active"),
+      ),
+    );
 }

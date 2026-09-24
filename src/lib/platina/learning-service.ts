@@ -23,6 +23,7 @@ import {
 } from "@/db/queries/platina-learning";
 import { routeAI } from "@/lib/ai/router";
 import { EMBED_BATCH, embedText, embedTexts } from "./embed";
+import { REWARD } from "./learning";
 import { learningConfig } from "./learning-read";
 import { broadcastPlatinaSignal } from "./realtime-server";
 import {
@@ -39,6 +40,7 @@ import {
   suggestVerdict,
   type MetricSnapshot,
 } from "./review";
+import { recordSubjectDecision } from "./suggestions-record";
 import { DEMOTED_CONFIDENCE_FLOOR } from "./writeback";
 
 export {
@@ -271,6 +273,16 @@ export async function confirmReview(workspaceId: string, input: ConfirmInput): P
       detail: { creative: creative.title, insight: evidenceText.get(id) ?? null, reason: "a confirmed win rested on it" },
     })),
   ]);
+  // C8.5: the result flows back to the suggestion the creative answered, so
+  // the ledger credits that suggestion's inputs and features (best-effort).
+  if (creative.opportunityKey) {
+    await recordSubjectDecision(workspaceId, "opportunity", creative.opportunityKey, {
+      kind: "result",
+      reward: REWARD[input.verdict],
+      actorId: input.userId,
+      detail: { creativeId: creative.id, reviewId: review.id, verdict: input.verdict },
+    });
+  }
   await broadcastPlatinaSignal(workspaceId, "results", review.id);
   if (plan.demote.length + plan.promote.length > 0) await broadcastPlatinaSignal(workspaceId, "insights");
   return { confirmed: true, demoted: plan.demote.length, promoted: plan.promote.length, lesson: true };

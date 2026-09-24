@@ -13,6 +13,12 @@ import {
   ownSitePagesQuery,
   keywordFirstPartyChunksQuery,
   similarFirstPartyChunksQuery,
+  consolidatableBrainQuery,
+  latestSuggestionsForSubjectsQuery,
+  learningSnapshotsQuery,
+  suggestionByIdQuery,
+  suggestionEventsQuery,
+  suggestionsQuery,
 } from "./platina-learning";
 
 describe("C6 queries filter workspace_id in the generated SQL", () => {
@@ -87,5 +93,26 @@ describe("C6 learning-loop queries filter workspace_id", () => {
     const { sql, params } = promoteBrainChunkQuery("ws_a", "chunk1", 0.05, 0.95).toSQL();
     expect(sql).toContain('"status" =');
     expect(params).toContain("active");
+  });
+});
+
+describe("C8.5 ledger queries filter workspace_id in the generated SQL", () => {
+  it.each([
+    ["suggestionsQuery", suggestionsQuery("ws_a", { kind: "idea", status: "open" })],
+    ["suggestionByIdQuery", suggestionByIdQuery("ws_a", "s1")],
+    ["latestSuggestionsForSubjectsQuery", latestSuggestionsForSubjectsQuery("ws_a", "opportunity", ["event:x"])],
+    ["suggestionEventsQuery", suggestionEventsQuery("ws_a", "s1")],
+    ["learningSnapshotsQuery", learningSnapshotsQuery("ws_a")],
+    ["consolidatableBrainQuery", consolidatableBrainQuery("ws_a")],
+  ] as const)("%s", (_name, query) => {
+    const { sql, params } = query.toSQL();
+    expect(sql).toMatch(/"workspace_id" = /);
+    expect(params).toContain("ws_a");
+  });
+
+  it("the consolidation only reads unkeyed (debate and idea) insights, active or archived", () => {
+    const { sql, params } = consolidatableBrainQuery("ws_a").toSQL();
+    expect(sql).toContain('"insight_key" is null');
+    expect(params).toEqual(expect.arrayContaining(["active", "archived"]));
   });
 });

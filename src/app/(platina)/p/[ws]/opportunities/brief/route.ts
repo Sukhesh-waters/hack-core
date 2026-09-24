@@ -13,6 +13,8 @@ import {
   publicFacts,
   searchWords,
 } from "@/lib/platina/opportunity-brief";
+import { normaliseWeights } from "@/lib/platina/suggestions";
+import { recordSuggestion } from "@/lib/platina/suggestions-record";
 
 export const dynamic = "force-dynamic";
 
@@ -85,7 +87,41 @@ export async function POST(request: Request, props: { params: Promise<{ ws: stri
           "Checked every citation",
           `${brief.whyNow.length + brief.fit.length + (brief.salesAngle ? 1 : 0)} lines kept${brief.dropped ? `, ${brief.dropped} dropped (wrong evidence list, no citation, or a number not in the evidence)` : ""}; public and first-party kept apart`,
         );
-        send({ type: "brief", brief, campaign: { title: campaign.title, startBy: campaign.startBy ?? null } });
+        // C8.5: the brief goes into the suggestion ledger with the evidence it cited.
+        const cited = [...brief.whyNow, ...brief.fit, ...(brief.salesAngle ? [brief.salesAngle] : [])].flatMap((l) => l.cites);
+        const refOf = (c: (typeof cited)[number]) =>
+          c.plane === "A" ? `own:${c.url ?? c.id}` : c.url ? `url:${c.url}` : `fact:${campaign.key}:${c.id}`;
+        // Several facts can share one proof URL: one input per source.
+        const unique = [...new Map(cited.map((c) => [refOf(c), c])).values()];
+        const suggestionId = await recordSuggestion(ws, client.id, {
+          kind: "brief",
+          subjectKey: campaign.key,
+          title: `Brief: ${campaign.title}`,
+          body: {
+            goal: brief.goal,
+            audience: brief.audience,
+            whyNow: brief.whyNow.map((l) => l.text),
+            fit: brief.fit.map((l) => l.text),
+            salesAngle: brief.salesAngle?.text ?? null,
+            steps: brief.steps,
+          },
+          inputs: normaliseWeights(
+            unique.map((c) => ({
+              ref: refOf(c),
+              plane: c.plane,
+              label: c.text.slice(0, 160),
+              url: c.url,
+              weight: 1,
+            })),
+          ),
+          features: { topic: campaign.source === "topic" ? campaign.creativeTopic.toLowerCase() : null, channel: campaign.channel, event: campaign.source === "event" ? campaign.key : null },
+          factors: {},
+          explore: false,
+          weightsVersion: "rules",
+          model: null,
+          promptVersion: "opportunity-brief-v1",
+        });
+        send({ type: "brief", brief, suggestionId, campaign: { title: campaign.title, startBy: campaign.startBy ?? null } });
       } catch (error) {
         send({ type: "error", message: error instanceof Error ? error.message : "the brief could not be written" });
       } finally {

@@ -16,6 +16,7 @@ import { actionErrorMessage } from "@/lib/action-errors";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { briefSchema } from "@/lib/platina/plan/brief";
 import { runPlanFlow } from "@/lib/platina/plan/flow";
+import { recordSubjectDecision } from "@/lib/platina/suggestions-record";
 import {
   briefFromClient,
   briefFromEvent,
@@ -135,6 +136,12 @@ export async function createPlanAction(formData: FormData): Promise<void> {
       back(ws, "plan", "Not enough context to plan yet.");
     }
     planId = result.output.planId;
+    // C8.5: a plan started from an opportunity card is a decision on that
+    // suggestion in the ledger (best-effort; never blocks the plan).
+    const opportunityKey = String(formData.get("opportunityKey") ?? "");
+    if (opportunityKey) {
+      await recordSubjectDecision(ws, "opportunity", opportunityKey, { kind: "planned", actorId: user.id, detail: { planId } });
+    }
   } catch (error) {
     // redirect() throws a control-flow error; let it through untouched.
     if (isRedirect(error)) throw error;

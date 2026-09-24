@@ -1,13 +1,18 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { OpportunityBrief } from "@/components/platina/opportunity-brief";
 import { PendingButton } from "@/components/platina/pending-button";
+import { SuggestionFeedback } from "@/components/platina/suggestion-feedback";
 import { BASELINE_DAYS, RECENT_DAYS } from "@/lib/platina/interest";
 import { type Campaign, type Proof } from "@/lib/platina/opportunities";
 import { loadOpportunities } from "@/lib/platina/opportunities-load";
 import { type LearnedCampaign } from "@/lib/platina/opportunity-learning";
+import { campaignSuggestion } from "@/lib/platina/suggestions";
+import { recordShown } from "@/lib/platina/suggestions-record";
 import { cn } from "@/lib/utils";
+import { suggestionFeedbackAction } from "../learning/actions";
 import { createPlanAction } from "../plan/actions";
 
 export const dynamic = "force-dynamic";
@@ -116,6 +121,7 @@ function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; cli
         <input type="hidden" name="workspaceId" value={ws} />
         <input type="hidden" name="brandId" value={clientId} />
         <input type="hidden" name="useCase" value={c.plan.useCase} />
+        <input type="hidden" name="opportunityKey" value={c.key} />
         {c.plan.useCase === "event" ? (
           <>
             <input type="hidden" name="eventName" value={c.plan.eventName} />
@@ -132,6 +138,13 @@ function CampaignCard({ c, ws, clientId }: { c: LearnedCampaign; ws: string; cli
         </Link>
       </form>
       <OpportunityBrief ws={ws} clientId={clientId} opportunityKey={c.key} />
+      <SuggestionFeedback
+        action={suggestionFeedbackAction}
+        ws={ws}
+        back={`/p/${ws}/opportunities`}
+        subjectKey={c.key}
+        inputs={campaignSuggestion(c, null, "rules").inputs}
+      />
     </li>
   );
 }
@@ -168,6 +181,11 @@ export default async function OpportunitiesPage(
   }
 
   const { competitors, signals, learning, insights, campaigns } = data;
+  // C8.5: every card shown goes into the suggestion ledger, after the page is
+  // sent (never slows or breaks it), once per inputs and once a day as "shown".
+  const weightsVersion = learning.stats.some((st) => st.status === "ok") ? `learning:${new Date().toISOString().slice(0, 10)}` : "rules";
+  const shown = [...campaigns.events, ...campaigns.topics].map((c) => campaignSuggestion(c, client.region ?? null, weightsVersion));
+  after(() => recordShown(params.ws, client.id, shown));
   const measured = insights.filter((i) => i.status === "ok");
   const thin = insights.filter((i) => i.status === "insufficient");
   const all: Campaign[] = [...campaigns.events, ...campaigns.topics];

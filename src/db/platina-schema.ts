@@ -83,6 +83,9 @@ export const platinaBrainStatus = pgEnum("platina_brain_status", [
   // A measured market insight replaced by a newer measurement (C5): kept for
   // history, excluded from retrieval like a demoted chunk.
   "superseded",
+  // Retired by the monthly consolidation (C8.5): past its window, unused and
+  // low in trust. Excluded from retrieval; restorable from the Learning page.
+  "archived",
 ]);
 
 export const platinaRunTrigger = pgEnum("platina_run_trigger", [
@@ -1557,4 +1560,122 @@ export const platinaOpsChecks = pgTable(
 
 export const platinaC7ScopedTables = {
   platinaOpsChecks,
+} as const;
+
+// ---------------------------------------------------------------------------
+// C8.5 learning engine: every suggestion the product makes, what people did
+// with it, and the monthly consolidation. The ledger is the source of truth:
+// trust and feature weights are computed from it (with a half-life), so any
+// suggestion can be traced from its inputs to the credit it sent back.
+// ---------------------------------------------------------------------------
+
+export const SUGGESTION_KINDS = ["opportunity", "brief", "idea"] as const;
+export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
+
+/** One input a suggestion used, with its plane and how much it weighed. */
+export type SuggestionInput = {
+  /** "brain:<chunkId>", "doc:<signalDocId>", "own:<firstPartyChunkId>", "event:<id>", "pattern:<feature>:<value>" */
+  ref: string;
+  plane: "A" | "B" | "C";
+  label: string;
+  url?: string | null;
+  /** Share of the suggestion this input carried; the inputs of one suggestion sum to 1. */
+  weight: number;
+};
+
+export type SuggestionFeatures = Partial<Record<"topic" | "channel" | "region" | "event" | "timing" | "format" | "hook" | "trigger", string | null>>;
+
+export const platinaSuggestions = pgTable(
+  "platina_suggestions",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    /** The client it was made for. */
+    brandId: text("brand_id"),
+    kind: text("kind").$type<SuggestionKind>().notNull(),
+    /** What it is about: "event:<key>", "topic:<name>", "trigger:<key>". */
+    subjectKey: text("subject_key").notNull(),
+    /** Hash of the inputs: the same inputs never record the same suggestion twice. */
+    inputHash: text("input_hash").notNull(),
+    title: text("title").notNull(),
+    body: jsonb("body").$type<Record<string, unknown>>().notNull().default({}),
+    inputs: jsonb("inputs").$type<SuggestionInput[]>().notNull().default([]),
+    features: jsonb("features").$type<SuggestionFeatures>().notNull().default({}),
+    factors: jsonb("factors").$type<Record<string, number | string>>().notNull().default({}),
+    /** "rules" or "learning:<YYYY-MM>" (the snapshot whose weights ranked it). */
+    weightsVersion: text("weights_version").notNull().default("rules"),
+    model: text("model"),
+    promptVersion: text("prompt_version"),
+    /** Tried something new on purpose (the explore share), labelled so on the page. */
+    explore: boolean("explore").notNull().default(false),
+    /** open | accepted | planned | dismissed */
+    status: text("status").notNull().default("open"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_suggestions_workspace_id_idx").on(table.workspaceId),
+    subjectIdx: index("platina_suggestions_ws_subject_idx").on(table.workspaceId, table.subjectKey),
+    recordedUnique: uniqueIndex("platina_suggestions_recorded_unique").on(
+      table.workspaceId,
+      table.kind,
+      table.subjectKey,
+      table.inputHash,
+    ),
+  }),
+);
+
+export const SUGGESTION_EVENT_KINDS = ["shown", "opened", "accepted", "planned", "dismissed", "result"] as const;
+export type SuggestionEventKind = (typeof SUGGESTION_EVENT_KINDS)[number];
+export const DISMISS_REASONS = ["not_relevant", "wrong_fact", "already_doing", "bad_timing"] as const;
+export type DismissReason = (typeof DISMISS_REASONS)[number];
+
+export const platinaSuggestionEvents = pgTable(
+  "platina_suggestion_events",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    suggestionId: text("suggestion_id")
+      .notNull()
+      .references(() => platinaSuggestions.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<SuggestionEventKind>().notNull(),
+    /** A dismissal's reason; "wrong_fact" names the input in `detail.ref`. */
+    reason: text("reason"),
+    /** 0..1 for a result (worked 1, mixed 0.5, failed 0); null for decisions. */
+    reward: real("reward"),
+    /** UTC day, so "shown" is counted once a day. */
+    day: text("day").notNull(),
+    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    detail: jsonb("detail").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_suggestion_events_workspace_id_idx").on(table.workspaceId),
+    suggestionIdx: index("platina_suggestion_events_suggestion_idx").on(table.workspaceId, table.suggestionId),
+    oncePerDay: uniqueIndex("platina_suggestion_events_once_per_day").on(table.suggestionId, table.kind, table.day),
+  }),
+);
+
+/** The monthly consolidation: what it changed and the weights of that month. */
+export const platinaLearningSnapshots = pgTable(
+  "platina_learning_snapshots",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    /** "YYYY-MM" */
+    month: text("month").notNull(),
+    weights: jsonb("weights").$type<Record<string, unknown>>().notNull().default({}),
+    digest: jsonb("digest").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_learning_snapshots_workspace_id_idx").on(table.workspaceId),
+    monthUnique: uniqueIndex("platina_learning_snapshots_month_unique").on(table.workspaceId, table.month),
+  }),
+);
+
+export const platinaC8ScopedTables = {
+  platinaSuggestions,
+  platinaSuggestionEvents,
+  platinaLearningSnapshots,
 } as const;

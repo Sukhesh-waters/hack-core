@@ -21,12 +21,16 @@ export const PLATINA_NAV = [
   { slug: "events", label: "Events", group: "Watch" },
   // Competitors analysis - pattern layer (C8.2): public data, any link read on demand.
   { slug: "competitors", label: "Competitors", group: "Watch" },
+  // What they advertise, from the public ad libraries (C8.3): activity, not performance.
+  { slug: "ads", label: "Ads", group: "Watch" },
   { slug: "brands", label: "Clients", group: "Watch" },
   // Campaign intelligence (C5): interest -> campaigns -> plan -> creative.
   { slug: "opportunities", label: "Opportunities", group: "Decide" },
   { slug: "plan", label: "Plan", group: "Decide" },
   // C6 learning loop: creatives, their numbers, reviews, what they teach.
   { slug: "results", label: "Results", group: "Learn" },
+  // C8.5 learning engine: triggered ideas, what worked, the traceable ledger, monthly digest.
+  { slug: "learning", label: "Learning", group: "Learn" },
   { slug: "outcomes", label: "Outcomes", group: "Learn" },
   { slug: "audits", label: "Audits", group: "Review" },
   { slug: "findings", label: "Findings", group: "Review" },
