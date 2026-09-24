@@ -417,10 +417,10 @@ spend hourly, and every paid run checks the budget first.
 | Slice | Status | Commit | Live proof |
 |---|---|---|---|
 | C8.0 stage 1 | **done 2026-09-23** (F0.1-F0.7; F0.8 already existed; F0.9/F0.10 blocked on E3) | 3217379 + follow-up | Readiness: Cockpit, Live flow, Clients, Opportunities, Plan, Audits, Findings OK; Results empty (C8.5), Brand Gene thin (needs a person to confirm the profile). Profile set. 15 calendar shows added, 22+3 conference pages read; events 50 -> 71 (34 upcoming); ARABLAB LIVE now names Bruker, Shimadzu and Thermo Fisher on the exhibitor list. LinkedIn +15 posts, 5 competitor sites, 5 evidence-pack pages kept (2 dropped: SFDA page unreadable, 1 quote fixed and re-read). Own site 40 -> 156 of 300 read (758 passages wait for embeddings: Gemini free quota, O1). Spend today: Firecrawl ~190 credits, Apify ~$0.22. |
-| C7.3 | not started (T3.1 moved to F0.4) | | |
+| C7.3 | **showcase done 2026-09-23** (Events radar) | ab24642 | ARABLAB countdown with 3 competitors on the exhibitor list; Gulf-first map and lists. |
 | C8.0 stage 2 | not started | | |
-| C8.2 | not started | | |
-| C8.4 | not started | | |
-| C8.3 | not started | | |
-| C8.5 | not started | | |
-| C8.6 | not started | | |
+| C8.2 | **showcase done 2026-09-23** | a70e9c2 | Competitors portal, pattern layer (LC-MS/MS, PFAS white space), any link read now, InstaMedia sidebar button. |
+| C8.4 | **showcase done 2026-09-23** (start-by dates, factors, streamed AI brief) | daa179a | ARABLAB brief cited Waters HPLC-MS, UPLC glycan, SEC pages. |
+| C8.3 | **done 2026-09-24** (LinkedIn Ad Library in the collector; T6.1-T6.11 in simplified form: no landing-page reads, no ad snapshots table: a re-read is a new snapshot document) | aa0393f | 146 ads across 6 companies ($0.52 Apify); 7 competitor pushes (Bruker digital workflows: 8 new ads in 30 days), 5 ad white-space subjects (only Shimadzu advertises liquid chromatography); no region gap called because 1 Waters ad was shown in the Gulf; 5 ad insights in the Brain. |
+| C8.5 | **done 2026-09-24** (ledger, credit, public lane, idea engine, consolidation, Learning page; T85.8 ops line not built) | df70047 | 5 ARABLAB ideas cite real Waters pages (MALS detector, Xevo TQ Absolute XR IVD, AI in GMP); 13 opportunities recorded (idempotent); public lane: mass spectrometry 7 of 12 posts beat Waters typical post, Xevo 1 of 6; no pattern past the threshold yet (honest); consolidation dry run finds 6 repeated insights (merge threshold 0.30 set from live data), not applied (left for the owner). |
+| C8.6 | **showcase done 2026-09-23** | 12b3eaa | 422 nodes, 636 links on Waters data. |
