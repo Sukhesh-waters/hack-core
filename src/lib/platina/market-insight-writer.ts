@@ -96,6 +96,18 @@ export function writeClientInsights(
   }));
 }
 
+/**
+ * Ad-library detections for one client (C8.3): pushes, region gaps, ad white
+ * space, long runners. Their own prefix, so a detection that no longer holds
+ * is retired without touching interest or pressure insights.
+ */
+export function writeAdInsights(
+  deps: InsightWriterDeps,
+  input: { workspaceId: string; clientId: string; insights: MarketInsight[] },
+): Promise<InsightWriteResult> {
+  return apply(deps, input.workspaceId, `ads:${input.clientId}:`, input.insights);
+}
+
 /** Upcoming-event insights for a workspace. */
 export function writeEventInsights(
   deps: InsightWriterDeps,

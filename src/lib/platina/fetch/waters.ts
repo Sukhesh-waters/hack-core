@@ -19,7 +19,10 @@
  */
 import type { PlatinaScanTarget } from "@/db/platina-schema";
 import {
+  adSearchTerm,
+  advertiserMatches,
   effectivePages,
+  isLinkedInAdLibrary,
   isSocialKind,
   mapSocialItem,
   parseSocialRef,
@@ -125,24 +128,8 @@ function mapPageItem(
   };
 }
 
-/** The `q` of an Ad Library search URL, or null for a page-id URL. */
-export function adSearchTerm(url: string): string | null {
-  try {
-    const q = new URL(url).searchParams.get("q");
-    return q && q.trim() ? q.trim() : null;
-  } catch {
-    return null;
-  }
-}
 
-/** "Waters" matches "Waters Corporation", "Waters India"; not "Kauai Waters Tours". */
-export function advertiserMatches(pageName: string, searched: string): boolean {
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const page = norm(pageName);
-  const term = norm(searched);
-  if (!page || !term) return false;
-  return page === term || page.startsWith(`${term} `);
-}
+export { adSearchTerm, advertiserMatches } from "./actors";
 
 /**
  * The ad's words. Meta's snapshot carries the primary text as
@@ -170,10 +157,61 @@ export function adText(snapshot: Record<string, unknown>): string {
   return [...new Set(parts)].join("\n\n");
 }
 
+/**
+ * One LinkedIn Ad Library ad (C8.3). Kept only when its advertiser is the one
+ * searched for (the library's search is fuzzy). A re-read that finds a new
+ * end date or impression range is a new snapshot document; the ad itself is
+ * identified by its library URL.
+ */
+export function mapLinkedInAdItem(
+  item: Record<string, unknown>,
+  target: PlatinaScanTarget,
+): RawSignalDoc | null {
+  if (typeof item.error === "string" || typeof item.errorDescription === "string") return null;
+  const advertiser = typeof item.advertiserName === "string" ? item.advertiserName : "";
+  const searched = adSearchTerm(target.value);
+  if (searched && !advertiserMatches(advertiser, searched)) return null;
+  const libraryUrl = typeof item.adLibraryUrl === "string" ? item.adLibraryUrl : "";
+  if (!libraryUrl) return null;
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "");
+  const body = [str(item.headline), str(item.body)].filter(Boolean).join("\n\n");
+  if (!body) return null;
+  const availability = (item.availability ?? {}) as Record<string, unknown>;
+  const canonical = canonicalizeUrl(libraryUrl);
+  const raw = {
+    platform: "linkedin",
+    adId: item.adId,
+    adLibraryUrl: libraryUrl,
+    advertiserName: advertiser,
+    headline: item.headline,
+    body: item.body,
+    ctas: item.ctas,
+    clickUrl: item.clickUrl,
+    format: item.format,
+    imageUrl: item.imageUrl,
+    availability: { start: availability.start, end: availability.end },
+    impressions: item.impressions,
+    impressionsPerCountry: item.impressionsPerCountry,
+    targeting: item.targeting,
+    paidBy: item.paidBy,
+  };
+  return {
+    sourceUrl: target.value,
+    canonicalUrl: canonical,
+    title: `LinkedIn ad · ${advertiser}`,
+    body,
+    adapter: "apify",
+    sourceKind: target.kind,
+    contentHash: contentHash(canonical, `${body}|${str(availability.end)}|${str(item.impressions)}`),
+    raw,
+  };
+}
+
 function mapAdItem(
   item: Record<string, unknown>,
   target: PlatinaScanTarget,
 ): RawSignalDoc | null {
+  if (isLinkedInAdLibrary(target.value)) return mapLinkedInAdItem(item, target);
   // The actor emits an { error } item on failure — never a document.
   if (typeof item.error === "string") return null;
   const pageName = typeof item.page_name === "string" ? item.page_name : "";

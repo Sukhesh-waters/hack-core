@@ -10,7 +10,7 @@ import {
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { extractInterestForClient, type InterestExtractDeps } from "@/lib/platina/interest-extract";
 import { assignTopics } from "@/lib/platina/interest-topics";
-import { syncClientInsights } from "@/lib/platina/market-insight-sync";
+import { syncAdInsights, syncClientInsights } from "@/lib/platina/market-insight-sync";
 
 const deps: InterestExtractDeps = {
   getClient: async (ws, id) => {
@@ -51,7 +51,9 @@ export const platinaInterestExtract = inngest.createFunction(
       const insights = await step.run(`insights-${data.brandId}`, () =>
         syncClientInsights(data.workspaceId!, data.brandId!),
       );
-      return { extracted, insights };
+      // Ad-library detections (C8.3) read the subjects the pass just gave the ads.
+      const ads = await step.run(`ads-${data.brandId}`, () => syncAdInsights(data.workspaceId!, data.brandId!));
+      return { extracted, insights, ads };
     }
     // Daily sweep: every client in every workspace.
     const workspaceIds = await step.run("list-workspaces", () => listAllWorkspaceIds());
@@ -66,6 +68,7 @@ export const platinaInterestExtract = inngest.createFunction(
         );
         if (result.status === "done") done += 1;
         await step.run(`insights-${clientId}`, () => syncClientInsights(ws, clientId));
+        await step.run(`ads-${clientId}`, () => syncAdInsights(ws, clientId));
       }
     }
     return { clients: done };

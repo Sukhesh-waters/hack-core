@@ -17,7 +17,15 @@ import {
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { embedText } from "./embed";
 import { BASELINE_DAYS, RECENT_DAYS, topicMomentum } from "./interest";
-import { writeClientInsights, writeEventInsights, type InsightWriterDeps, type InsightWriteResult } from "./market-insight-writer";
+import { adInsights } from "./ads-view";
+import { loadAdsView } from "./ads-load";
+import {
+  writeAdInsights,
+  writeClientInsights,
+  writeEventInsights,
+  type InsightWriterDeps,
+  type InsightWriteResult,
+} from "./market-insight-writer";
 
 /**
  * After the writes commit: tell open pages the Brain changed (signal only).
@@ -97,6 +105,23 @@ export async function syncEventInsights(workspaceId: string, now: Date = new Dat
           .map((p) => ({ brandId: p.brandId, evidence: p.evidence, documentId: p.documentId })),
       })),
     }),
+  );
+  return announce(workspaceId, result);
+}
+
+/**
+ * Ad-library detections into the Brain (C8.3 T6.11). Runs after the interest
+ * pass has given the ads their subjects, and after an ads sweep.
+ */
+export async function syncAdInsights(
+  workspaceId: string,
+  clientId: string,
+  now: Date = new Date(),
+): Promise<InsightWriteResult | { status: "not_a_client" }> {
+  const loaded = await loadAdsView(workspaceId, now, clientId);
+  if (!loaded) return { status: "not_a_client" };
+  const result = await runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
+    writeAdInsights(deps, { workspaceId, clientId: loaded.client.id, insights: adInsights(loaded.client, loaded.view, now) }),
   );
   return announce(workspaceId, result);
 }

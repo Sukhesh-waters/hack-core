@@ -46,7 +46,7 @@ export type InterestSignalInput = {
 
 const TOPIC_STOPWORDS = new Set(["solutions", "services", "products", "software", "systems", "lab equipment", "supplies"]);
 /** A single field word, not a subject (live 2026-09-23: "analytical", "instruments" ranked as topics). */
-const FIELD_WORDS = new Set(["analytical", "analysis", "instrument", "instruments", "laboratory", "lab", "labs", "science", "sciences", "scientific", "research", "technology", "technologies", "chemistry", "innovation"]);
+const FIELD_WORDS = new Set(["analytical", "analysis", "regulated", "instrument", "instruments", "laboratory", "lab", "labs", "science", "sciences", "scientific", "research", "technology", "technologies", "chemistry", "innovation"]);
 
 /** Too generic to be a campaign subject: a field word, a stop word, or a generic ending ("analytical systems"). */
 export function isGenericTopic(topic: string): boolean {
@@ -188,6 +188,8 @@ export function adPressureSignals(
     sourceUrl: string;
     body: string;
     startedAt: Date | null;
+    /** Last day it ran, when the library says (LinkedIn); open-ended otherwise. */
+    endedAt?: Date | null;
     countries: string[];
   }[],
   topicsOf: (ad: { id: string; body: string }) => string[],
@@ -197,7 +199,11 @@ export function adPressureSignals(
   const out: InterestSignalInput[] = [];
   for (const ad of ads) {
     if (!ad.startedAt) continue;
-    const days = Math.max(0, Math.round((now.getTime() - ad.startedAt.getTime()) / DAY));
+    const span = (until: Date) => Math.round((until.getTime() - ad.startedAt!.getTime()) / DAY);
+    // With a known last day both ends count (shown on one day = 1 day).
+    const days = ad.endedAt
+      ? Math.max(1, span(ad.endedAt.getTime() < now.getTime() ? ad.endedAt : now) + 1)
+      : Math.max(0, span(now));
     for (const topic of topicsOf(ad)) {
       for (const region of ad.countries.length > 0 ? ad.countries : ["global"]) {
         out.push({

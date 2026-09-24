@@ -187,7 +187,7 @@ export default async function CompetitorsPage(props: {
           <input type="hidden" name="workspaceId" value={ws} />
           <label className="min-w-[18rem] flex-1 text-sm">
             <span className="text-xs text-muted-foreground">
-              Any competitor link: a page, a news release, a LinkedIn company page, an event page, a Meta ad-library search
+              Any competitor link: a page, a news release, a LinkedIn company page, an event page, a LinkedIn or Meta ad-library search
             </span>
             <input
               name="url"

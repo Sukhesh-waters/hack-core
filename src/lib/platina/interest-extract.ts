@@ -12,7 +12,8 @@ import {
   type InterestSignalInput,
   type SocialDoc,
 } from "./interest";
-import { adSearchTerm, advertiserMatches } from "./fetch/waters";
+import { countryCode } from "./countries";
+import { adSearchTerm, advertiserMatches } from "./fetch/actors";
 
 /** How far back a pass reads collected documents. */
 export const INTEREST_LOOKBACK_DAYS = 120;
@@ -57,9 +58,17 @@ export function channelOf(sourceUrl: string): string {
   return "web";
 }
 
-/** An ad's start: unix seconds (`start_date`) or "YYYY-MM-DD hh:mm:ss". */
+const isoDay = (v: unknown): Date | null =>
+  typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? new Date(`${v}T00:00:00Z`) : null;
+
+/**
+ * An ad's start: LinkedIn's `availability.start` ("YYYY-MM-DD"), Meta's unix
+ * seconds (`start_date`) or "YYYY-MM-DD hh:mm:ss".
+ */
 export function adStartedAt(raw: unknown): Date | null {
   const r = (raw ?? {}) as Record<string, unknown>;
+  const linkedIn = isoDay((r.availability as Record<string, unknown> | undefined)?.start);
+  if (linkedIn) return linkedIn;
   if (typeof r.start_date === "number" && r.start_date > 0) return new Date(r.start_date * 1000);
   const formatted = typeof r.start_date_formatted === "string" ? r.start_date_formatted : null;
   if (formatted && !Number.isNaN(Date.parse(formatted.replace(" ", "T") + "Z"))) {
@@ -68,8 +77,25 @@ export function adStartedAt(raw: unknown): Date | null {
   return null;
 }
 
+/** The last day an ad ran (LinkedIn `availability.end`); null when the library does not say. */
+export function adEndedAt(raw: unknown): Date | null {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return isoDay((r.availability as Record<string, unknown> | undefined)?.end);
+}
+
+/**
+ * ISO countries an ad reached: LinkedIn's `impressionsPerCountry` (names,
+ * the countries it was actually shown in) or Meta's
+ * `targeted_or_reached_countries` (codes).
+ */
 export function adCountries(raw: unknown): string[] {
   const r = (raw ?? {}) as Record<string, unknown>;
+  if (Array.isArray(r.impressionsPerCountry)) {
+    const codes = (r.impressionsPerCountry as { country?: unknown }[])
+      .map((c) => (typeof c?.country === "string" ? countryCode(c.country) : null))
+      .filter((c): c is string => c !== null);
+    return [...new Set(codes)];
+  }
   const list = Array.isArray(r.targeted_or_reached_countries) ? r.targeted_or_reached_countries : [];
   return list.filter((c): c is string => typeof c === "string" && /^[A-Z]{2}$/.test(c));
 }
@@ -78,7 +104,8 @@ export function adCountries(raw: unknown): string[] {
 export function isBrandsOwnItem(d: InterestSourceDoc): boolean {
   if (d.sourceKind !== "ad_library") return true;
   const searched = adSearchTerm(d.sourceUrl);
-  const page = (d.raw as { page_name?: unknown } | null)?.page_name;
+  const r = (d.raw ?? {}) as { page_name?: unknown; advertiserName?: unknown };
+  const page = r.page_name ?? r.advertiserName;
   return !searched || (typeof page === "string" && advertiserMatches(page, searched));
 }
 
@@ -101,7 +128,15 @@ export async function extractInterestForClient(
   const since = new Date(now.getTime() - INTEREST_LOOKBACK_DAYS * 86_400_000);
   // Ads stored before the advertiser filter existed (2026-09-21: charter boats
   // for "Waters") must not count as the brand's activity — nor cost a model call.
-  const docs = (await deps.listDocs(input.workspaceId, brandIds, since)).filter(isBrandsOwnItem);
+  // A re-read ad is a new snapshot document of the same ad (C8.3): one per ad
+  // is measured, so it costs one topic call and counts once.
+  const seenAds = new Set<string>();
+  const docs = (await deps.listDocs(input.workspaceId, brandIds, since)).filter(isBrandsOwnItem).filter((d) => {
+    if (d.sourceKind !== "ad_library" || !d.canonicalUrl) return true;
+    if (seenAds.has(d.canonicalUrl)) return false;
+    seenAds.add(d.canonicalUrl);
+    return true;
+  });
   if (docs.length === 0) return { status: "skipped", reason: "no posts or ads collected yet" };
 
   const known = deps.listKnownTopics ? await deps.listKnownTopics(input.workspaceId, brandIds, since) : [];
@@ -122,24 +157,32 @@ export async function extractInterestForClient(
     );
   }
 
-  const ads = docs.filter((d) => d.sourceKind === "ad_library");
-  rows.push(
-    ...adPressureSignals(
-      input.workspaceId,
-      ads.map((d) => ({
-        id: d.id,
-        brandId: d.brandId,
-        canonicalUrl: d.canonicalUrl,
-        sourceUrl: d.sourceUrl,
-        body: d.body,
-        startedAt: adStartedAt(d.raw),
-        countries: adCountries(d.raw),
-      })),
-      (ad) => topicsById.get(ad.id) ?? [],
-      "meta_ads",
-      now,
-    ),
-  );
+  const byAdChannel = new Map<string, InterestSourceDoc[]>();
+  for (const d of docs.filter((x) => x.sourceKind === "ad_library")) {
+    // meta_ads or linkedin_ads, from the library the ad was read from.
+    const channel = channelOf(d.sourceUrl) === "web" ? "meta_ads" : channelOf(d.sourceUrl);
+    byAdChannel.set(channel, [...(byAdChannel.get(channel) ?? []), d]);
+  }
+  for (const [channel, ads] of byAdChannel) {
+    rows.push(
+      ...adPressureSignals(
+        input.workspaceId,
+        ads.map((d) => ({
+          id: d.id,
+          brandId: d.brandId,
+          canonicalUrl: d.canonicalUrl,
+          sourceUrl: d.sourceUrl,
+          body: d.body,
+          startedAt: adStartedAt(d.raw),
+          endedAt: adEndedAt(d.raw),
+          countries: adCountries(d.raw),
+        })),
+        (ad) => topicsById.get(ad.id) ?? [],
+        channel,
+        now,
+      ),
+    );
+  }
 
   const inserted = await deps.insert(rows);
   return { status: "done", topics, docs: docs.length, signals: rows.length, inserted };

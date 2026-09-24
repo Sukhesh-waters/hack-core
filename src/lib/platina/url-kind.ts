@@ -3,17 +3,19 @@
  *
  *   linkedin.com/company/<slug>      -> their LinkedIn posts (Apify)
  *   facebook.com/ads/library/?q=...  -> the Meta ad library (Apify)
+ *   linkedin.com/ad-library/search?accountOwner=... -> the LinkedIn Ad Library (Apify, C8.3)
  *   a page on an event / expo site   -> a conference page (Firecrawl)
  *   /news, /press, /media pages      -> a press release (Firecrawl)
  *   any other web page               -> a competitor page (Firecrawl, 1 page)
  *
  * Refused with a reason instead of guessed: a single LinkedIn post (paste the
- * company page), the LinkedIn Ad Library (ads slice C8.3), private or
+ * company page), an Ad Library link without an advertiser, private or
  * non-web addresses. Which company it belongs to is decided by the site or
  * the LinkedIn page when a known brand owns it, else by the person's choice.
  */
 import type { PlatinaScanTarget } from "@/db/platina-schema";
 import { normaliseIngestUrl, registrableDomain } from "@/lib/ingest/url";
+import { advertiserMatches } from "./fetch/actors";
 
 export type UrlKind =
   | { ok: true; kind: PlatinaScanTarget["kind"]; value: string; label: string; reader: "Firecrawl" | "Apify"; host: string | null }
@@ -34,7 +36,10 @@ export function classifyUrl(raw: string): UrlKind {
       return { ok: true, kind: "social_posts", value: `linkedin:@${company[2].toLowerCase()}`, label: "LinkedIn posts", reader: "Apify", host: null };
     }
     if (/^\/ad-library/i.test(u.pathname)) {
-      return { ok: false, reason: "The LinkedIn Ad Library comes with the Ads page (next slice); paste the company's LinkedIn page for now." };
+      if (!u.searchParams.get("accountOwner")?.trim()) {
+        return { ok: false, reason: "Search the LinkedIn Ad Library by advertiser first, then paste that search (its link has ?accountOwner=...)." };
+      }
+      return { ok: true, kind: "ad_library", value: url, label: "LinkedIn ad library", reader: "Apify", host: null };
     }
     return { ok: false, reason: "That is a single LinkedIn post or profile. Paste the company page (linkedin.com/company/...) to follow all its posts." };
   }
@@ -62,6 +67,12 @@ export function ownerOf(
   if (kind.kind === "social_posts") {
     const slug = kind.value.replace(/^linkedin:@/, "");
     return brands.find((b) => b.handles?.linkedin?.replace(/^@/, "").toLowerCase() === slug) ?? null;
+  }
+  if (kind.kind === "ad_library") {
+    // The advertiser searched for: "Thermo Fisher Scientific" belongs to "Thermo Fisher".
+    const params = new URL(kind.value).searchParams;
+    const searched = params.get("accountOwner") ?? params.get("q");
+    return searched ? (brands.find((b) => advertiserMatches(searched, b.name)) ?? null) : null;
   }
   if (!kind.host) return null;
   return (

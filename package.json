@@ -19,7 +19,9 @@
     "ops:check": "npx tsx scripts/ops-check.ts",
     "platina:readiness": "npx tsx scripts/readiness.ts",
     "platina:force": "npx tsx scripts/platina-force.ts",
-    "platina:evidence": "npx tsx scripts/import-evidence-pack.ts"
+    "platina:evidence": "npx tsx scripts/import-evidence-pack.ts",
+    "platina:ads-sweep": "npx tsx --conditions=react-server scripts/platina-ads-sweep.ts",
+    "platina:learning": "npx tsx --conditions=react-server scripts/platina-learning.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",

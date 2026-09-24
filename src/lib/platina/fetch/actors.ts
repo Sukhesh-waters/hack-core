@@ -32,6 +32,51 @@ export type SocialPlatform = "instagram" | "tiktok" | "linkedin";
  * pages only — a person's profile is not a market signal and is not collected.
  */
 export const LINKEDIN_POSTS_ACTOR = "harvestapi~linkedin-company-posts";
+
+/**
+ * LinkedIn Ad Library (C8.3, live-verified 2026-09-24): $0.004 an ad with
+ * details — run dates, impression range, share of impressions per country,
+ * targeting, landing page. The library's advertiser search is fuzzy
+ * ("Waters" returns water utilities), so the search holds the advertiser's
+ * exact LinkedIn name and the mapper keeps only that advertiser's ads.
+ */
+export const LINKEDIN_AD_LIBRARY_ACTOR = "silva95gustavo~linkedin-ad-library-scraper";
+
+/** The `q` of an Ad Library search URL, or null for a page-id URL. */
+export function adSearchTerm(url: string): string | null {
+  try {
+    const params = new URL(url).searchParams;
+    // Meta searches by ?q=; the LinkedIn Ad Library by ?accountOwner=.
+    const q = params.get("q") ?? params.get("accountOwner");
+    return q && q.trim() ? q.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "Waters" matches "Waters Corporation", "Waters India"; not "Kauai Waters Tours". */
+export function advertiserMatches(pageName: string, searched: string): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const page = norm(pageName);
+  const term = norm(searched);
+  if (!page || !term) return false;
+  return page === term || page.startsWith(`${term} `);
+}
+
+/** A LinkedIn Ad Library search or detail URL. */
+export function isLinkedInAdLibrary(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.hostname.replace(/^www\./, "") === "linkedin.com" && u.pathname.startsWith("/ad-library");
+  } catch {
+    return false;
+  }
+}
+
+/** The LinkedIn Ad Library search for one advertiser's ads. */
+export function linkedInAdSearchUrl(advertiser: string): string {
+  return `https://www.linkedin.com/ad-library/search?accountOwner=${encodeURIComponent(advertiser.trim())}`;
+}
 export type SocialRef = { platform: SocialPlatform; handle: string };
 
 export const isSocialKind = (kind: PlatinaScanTarget["kind"]) =>
@@ -113,6 +158,14 @@ export function planTarget(target: PlatinaScanTarget, pages: number): ActorPlan 
         memoryMb: target.renderJs ? PLAYWRIGHT_MEMORY_MB : CHEERIO_MEMORY_MB,
       };
     case "ad_library":
+      if (isLinkedInAdLibrary(target.value)) {
+        return {
+          actor: LINKEDIN_AD_LIBRARY_ACTOR,
+          // One ad = one page of budget; details carry the dates and countries.
+          input: { startUrls: [{ url: target.value }], resultsLimit: Math.max(1, pages), skipDetails: false },
+          memoryMb: CHEERIO_MEMORY_MB,
+        };
+      }
       return {
         actor: AD_LIBRARY,
         input: {

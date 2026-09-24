@@ -5,7 +5,11 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ApprovedScanSpec } from "./registry";
-import { adSearchTerm, adText, advertiserMatches, fetchViaWaters } from "./waters";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { adCountries, adEndedAt, adStartedAt } from "../interest-extract";
+import { LINKEDIN_AD_LIBRARY_ACTOR, linkedInAdSearchUrl, planTarget } from "./actors";
+import { adSearchTerm, adText, advertiserMatches, fetchViaWaters, mapLinkedInAdItem } from "./waters";
 
 const SEARCH =
   "https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&search_type=keyword_unordered&media_type=all&q=Waters";
@@ -95,5 +99,56 @@ describe("fetchViaWaters on a keyword ad search", () => {
     expect(outcome.empty).toEqual([
       { target: SEARCH, reason: 'no active ads by an advertiser named "Waters" (other advertisers matching the word were ignored)' },
     ]);
+  });
+});
+
+describe("LinkedIn Ad Library (C8.3)", () => {
+  const LI_SEARCH = "https://www.linkedin.com/ad-library/search?accountOwner=Waters%20Corporation";
+  const live = JSON.parse(
+    readFileSync(join(__dirname, "fixtures", "linkedin-ad-library-detail-live-2026-09-24.json"), "utf8"),
+  ) as Record<string, unknown>[];
+  const spec: ApprovedScanSpec = {
+    id: "s2",
+    workspaceId: "w1",
+    status: "approved",
+    targets: [{ kind: "ad_library", value: LI_SEARCH, maxPages: 20 }],
+  };
+
+  it("plans the LinkedIn actor with details, one ad per page of budget", () => {
+    const plan = planTarget({ kind: "ad_library", value: LI_SEARCH }, 20);
+    expect(plan.actor).toBe(LINKEDIN_AD_LIBRARY_ACTOR);
+    expect(plan.input).toEqual({ startUrls: [{ url: LI_SEARCH }], resultsLimit: 20, skipDetails: false });
+    expect(adSearchTerm(LI_SEARCH)).toBe("Waters Corporation");
+    expect(linkedInAdSearchUrl("Thermo Fisher Scientific")).toBe(
+      "https://www.linkedin.com/ad-library/search?accountOwner=Thermo%20Fisher%20Scientific",
+    );
+  });
+
+  it("keeps only the searched advertiser's ads, keyed by their library URL, with dates and countries", async () => {
+    vi.stubEnv("APIFY_TOKEN", "t");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => [...live, { ...live[0], adId: "9", adLibraryUrl: "https://www.linkedin.com/ad-library/detail/9", advertiserName: "Kumulus Water" }],
+      })),
+    );
+    const outcome = await fetchViaWaters(spec);
+    expect(outcome.docs).toHaveLength(2);
+    const [first] = outcome.docs;
+    expect(first.canonicalUrl).toContain("linkedin.com/ad-library/detail/1559183094");
+    expect(first.body).toContain("GLP-1 aggregation");
+    expect(adStartedAt(first.raw)?.toISOString().slice(0, 10)).toBe("2026-09-10");
+    expect(adEndedAt(first.raw)?.toISOString().slice(0, 10)).toBe("2026-09-11");
+    expect(adCountries(first.raw)).toEqual(["US", "DE", "GB", "CH"]);
+    expect(adCountries(outcome.docs[1].raw)).toContain("KR");
+  });
+
+  it("a re-read with a new end date is a new snapshot of the same ad", () => {
+    const target = spec.targets[0];
+    const a = mapLinkedInAdItem(live[0], target)!;
+    const b = mapLinkedInAdItem({ ...live[0], availability: { start: "2026-09-10", end: "2026-09-20" } }, target)!;
+    expect(a.canonicalUrl).toBe(b.canonicalUrl);
+    expect(a.contentHash).not.toBe(b.contentHash);
   });
 });

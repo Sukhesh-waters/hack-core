@@ -2923,6 +2923,46 @@ export function interestSourceDocsQuery(
     );
 }
 
+/** Stored ad-library snapshots for these brands (C8.3 Ads page). */
+export function adDocumentsQuery(workspaceId: string, brandIds: string[], since: Date) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      canonicalUrl: platinaSignalDocuments.canonicalUrl,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+      body: platinaSignalDocuments.body,
+      raw: platinaSignalDocuments.raw,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaScanSpecs.id, platinaSignalDocuments.scanSpecId))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        eq(platinaSignalDocuments.sourceKind, "ad_library"),
+        gte(platinaSignalDocuments.fetchedAt, since),
+      ),
+    );
+}
+
+/** Subjects the interest pass gave each ad, by the ad's URL (its pressure signals). */
+export function adTopicsQuery(workspaceId: string, brandIds: string[]) {
+  return db
+    .selectDistinct({ sourceUrl: platinaInterestSignals.sourceUrl, topic: platinaInterestSignals.topic })
+    .from(platinaInterestSignals)
+    .where(
+      and(
+        eq(platinaInterestSignals.workspaceId, workspaceId),
+        inArray(platinaInterestSignals.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        eq(platinaInterestSignals.signalKind, "pressure"),
+        inArray(platinaInterestSignals.channel, ["linkedin_ads", "meta_ads"]),
+      ),
+    );
+}
+
 export async function listInterestSourceDocs(workspaceId: string, brandIds: string[], since: Date) {
   return interestSourceDocsQuery(workspaceId, brandIds, since);
 }

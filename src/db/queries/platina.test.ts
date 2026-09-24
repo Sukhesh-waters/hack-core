@@ -16,6 +16,8 @@ import {
   findingsForBrandsQuery,
   findingTitleExistsQuery,
   openFindingsForUseCaseQuery,
+  adDocumentsQuery,
+  adTopicsQuery,
   brandDocCountsQuery,
   brandFindingsQuery,
   brainMapChunksQuery,
@@ -287,6 +289,8 @@ describe("platina query isolation", () => {
       brandFindingsQuery("ws_a", ["b1"]),
       brainMapChunksQuery("ws_a"),
       documentBrandsQuery("ws_a", ["d1"]),
+      adDocumentsQuery("ws_a", ["b1"], new Date("2026-09-01T00:00:00Z")),
+      adTopicsQuery("ws_a", ["b1"]),
     ]) {
       const { sql, params } = q.toSQL();
       expect(sql).toContain('"workspace_id" =');
