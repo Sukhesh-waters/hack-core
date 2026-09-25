@@ -193,19 +193,22 @@ describe("routeAI chat", () => {
   });
 });
 
+// Ladders per tier x workload live in orchestration.ts (LADDERS); these calls
+// carry no workload, so they read the interactive ladders:
+//   fast: groq -> gemini -> nvidia -> bedrock; quality: bedrock -> gemini -> groq -> nvidia.
 describe("ladder construction (pure)", () => {
   const all = () => true;
 
   it("puts the preferred provider first and keeps the rest behind it", () => {
     expect(
       buildLadder({ tier: "fast", prefer: "gemini", configured: all, cooling: () => false }),
-    ).toEqual(["gemini", "groq", "bedrock"]);
+    ).toEqual(["gemini", "groq", "nvidia", "bedrock"]);
   });
 
   it("drops avoided providers — independence is not negotiable", () => {
     expect(
       buildLadder({ tier: "fast", avoid: ["groq"], configured: all, cooling: () => false }),
-    ).toEqual(["gemini", "bedrock"]);
+    ).toEqual(["gemini", "nvidia", "bedrock"]);
   });
 
   it("drops unconfigured providers", () => {
@@ -215,7 +218,7 @@ describe("ladder construction (pure)", () => {
         configured: (p) => p !== "bedrock",
         cooling: () => false,
       }),
-    ).toEqual(["gemini", "groq"]);
+    ).toEqual(["gemini", "groq", "nvidia"]);
   });
 
   it("moves a cooling provider to the back rather than removing it", () => {
@@ -225,7 +228,7 @@ describe("ladder construction (pure)", () => {
         configured: all,
         cooling: (p) => p === "groq",
       }),
-    ).toEqual(["gemini", "bedrock", "groq"]);
+    ).toEqual(["gemini", "nvidia", "bedrock", "groq"]);
   });
 
   it("never returns an empty ladder while any provider is configured", () => {

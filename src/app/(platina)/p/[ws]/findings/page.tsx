@@ -49,13 +49,14 @@ const TABS: { key: string; label: string; statuses: FindingStatus[] }[] = [
   },
 ];
 
-export default async function FindingsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string; status?: string; useCase?: string };
-}) {
+export default async function FindingsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string; status?: string; useCase?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [findings, hypotheses, transcripts] = await Promise.all([
     listFindings(params.ws),
     listBrainChunks(params.ws),

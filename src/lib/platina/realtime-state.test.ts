@@ -54,3 +54,29 @@ describe("nextLiveState", () => {
     );
   });
 });
+
+describe("refresh policy", () => {
+  it("polls slowly while live, fast without realtime, never while hidden", async () => {
+    const { pollIntervalMs, POLL_WHILE_LIVE_MS, POLL_WITHOUT_LIVE_MS } = await import("./realtime-state");
+    expect(pollIntervalMs("live", true)).toBe(POLL_WHILE_LIVE_MS);
+    expect(pollIntervalMs("polling", true)).toBe(POLL_WITHOUT_LIVE_MS);
+    expect(pollIntervalMs("reconnecting", true)).toBe(POLL_WITHOUT_LIVE_MS);
+    expect(pollIntervalMs("live", false)).toBeNull();
+    expect(POLL_WHILE_LIVE_MS).toBeGreaterThan(POLL_WITHOUT_LIVE_MS);
+  });
+
+  it("catches up on return only when something was missed or the data is old", async () => {
+    const { refreshOnVisible } = await import("./realtime-state");
+    expect(refreshOnVisible({ state: "live", missedSignal: true, msSinceLastRefresh: 1_000 })).toBe(true);
+    expect(refreshOnVisible({ state: "live", missedSignal: false, msSinceLastRefresh: 5_000 })).toBe(false);
+    expect(refreshOnVisible({ state: "polling", missedSignal: false, msSinceLastRefresh: 25_000 })).toBe(true);
+  });
+});
+
+describe("the e2e convergence window still proves realtime", () => {
+  it("is shorter than the safety poll while live", async () => {
+    const { POLL_WHILE_LIVE_MS } = await import("./realtime-state");
+    // e2e/platina/realtime-convergence.spec.ts waits 25 s.
+    expect(POLL_WHILE_LIVE_MS).toBeGreaterThan(25_000 * 4);
+  });
+});

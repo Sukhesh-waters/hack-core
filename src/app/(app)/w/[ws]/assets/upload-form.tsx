@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,7 @@ export function UploadForm({
   workspaceId: string;
   clients: { id: string; name: string }[];
 }) {
-  const [state, formAction] = useFormState<UploadAssetState, FormData>(
+  const [state, formAction] = useActionState<UploadAssetState, FormData>(
     uploadAssetAction,
     undefined,
   );

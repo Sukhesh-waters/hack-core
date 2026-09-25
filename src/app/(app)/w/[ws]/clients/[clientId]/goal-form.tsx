@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createClientGoalAction, type ClientGoalActionState } from "./actions";
@@ -22,7 +22,7 @@ export function GoalForm({
   workspaceId: string;
   clientId: string;
 }) {
-  const [state, formAction] = useFormState<ClientGoalActionState, FormData>(
+  const [state, formAction] = useActionState<ClientGoalActionState, FormData>(
     createClientGoalAction,
     undefined,
   );

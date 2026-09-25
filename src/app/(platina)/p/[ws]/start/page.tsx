@@ -11,13 +11,14 @@ export const metadata = { title: "Add a client" };
 const input =
   "mt-1 w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm";
 
-export default async function StartPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function StartPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const brands = (await listBrands(params.ws)).filter(
     (b) => b.kind === "own_brand",
   );
@@ -49,6 +50,14 @@ export default async function StartPage({
             <input name="tiktok" placeholder="@acme" className={input} />
           </label>
         </div>
+        <label className="text-xs font-medium">
+          LinkedIn company page (optional)
+          <input
+            name="linkedin"
+            placeholder="linkedin.com/company/acme"
+            className={input}
+          />
+        </label>
         <label className="text-xs font-medium">
           Region (optional)
           <input name="region" placeholder="North America" className={input} />

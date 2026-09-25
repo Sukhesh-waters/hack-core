@@ -70,6 +70,17 @@ describe("budgetForRun", () => {
     expect(out.reason).toBe(DAILY_CAP_REASON);
   });
 
+  it("an operator seed grant bypasses the spent daily cap, within the source cap (C8.0)", () => {
+    const out = budgetForRun({ specRemaining: 48, workspaceRemaining: 0, firstPassRemaining: 0, seedPages: 5 });
+    expect(out).toEqual({ pages: 5, charge: "seed", reason: "operator seed run" });
+    expect(budgetForRun({ specRemaining: 3, workspaceRemaining: 0, firstPassRemaining: 0, seedPages: 25 }).pages).toBe(3);
+  });
+
+  it("a seed grant never overrides the source cap, and the first pass still pays first", () => {
+    expect(budgetForRun({ ...full, specRemaining: 0, seedPages: 10 }).reason).toBe(SOURCE_CAP_REASON);
+    expect(budgetForRun({ ...full, seedPages: 10 }).charge).toBe("first_pass");
+  });
+
   it("stops with the source reason when that one source is out", () => {
     const out = budgetForRun({ ...full, specRemaining: 0 });
     expect(out.pages).toBe(0);

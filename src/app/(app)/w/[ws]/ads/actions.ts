@@ -42,32 +42,31 @@ export async function toggleCampaignAction(
   return undefined;
 }
 
+/**
+ * Pulls a campaign's live numbers from Meta. Writes only numbers Meta
+ * reported (C7.0): our campaigns hold no Meta campaign id or ad-account token
+ * yet, so today this says so instead of saving anything. The earlier version
+ * saved spend and clicks estimated from the budget as if they were real.
+ */
 export async function syncCampaignMetricsAction(
   workspaceId: string,
   campaignId: string,
-  budget: number,
-  status: string,
-  startDate: Date,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const user = await requireUser();
     await requireMembership(workspaceId, user.id);
 
-    const metrics = await pullMetaCampaignMetrics({
-      campaignId,
-      budget,
-      status,
-      startDate,
-    });
+    const pulled = await pullMetaCampaignMetrics({ metaCampaignId: null, accessToken: null });
+    if (pulled.status !== "ok") return { ok: false, error: pulled.reason };
 
     await updateCampaignMetrics({
       workspaceId,
       campaignId,
       metrics: {
-        spend: metrics.spend,
-        impressions: metrics.impressions,
-        clicks: metrics.clicks,
-        conversions: metrics.conversions,
+        spend: pulled.metrics.spend,
+        impressions: pulled.metrics.impressions,
+        clicks: pulled.metrics.clicks,
+        conversions: pulled.metrics.conversions,
       },
     });
 

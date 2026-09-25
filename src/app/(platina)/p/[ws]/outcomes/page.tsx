@@ -20,13 +20,14 @@ const VERDICT_LABEL: Record<string, string> = {
   inconclusive: "Inconclusive",
 };
 
-export default async function OutcomesPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function OutcomesPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [receipts, outcomes, imports, config, firstParty] = await Promise.all([
     listReceipts(params.ws),
     listOutcomes(params.ws),

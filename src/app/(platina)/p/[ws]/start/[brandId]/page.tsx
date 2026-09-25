@@ -44,13 +44,14 @@ function Found({ c }: { c: Discovered }) {
   return <span className="text-muted-foreground">Couldn&apos;t check</span>;
 }
 
-export default async function SourcesPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; brandId: string };
-  searchParams: { error?: string; suggest?: string };
-}) {
+export default async function SourcesPage(
+  props: {
+    params: Promise<{ ws: string; brandId: string }>;
+    searchParams: Promise<{ error?: string; suggest?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const brand = await getBrand(params.ws, params.brandId);
   if (!brand || brand.kind !== "own_brand") notFound();
 

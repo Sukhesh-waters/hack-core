@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { GlassCard } from "@/components/glass-card";
 import { cn } from "@/lib/utils";
@@ -78,11 +79,11 @@ export function RuleRow({
   workspaceId: string;
   rule: RuleRowView;
 }) {
-  const [toggleState, toggleAction] = useFormState<
+  const [toggleState, toggleAction] = useActionState<
     AutomationRuleState,
     FormData
   >(toggleAutomationRuleAction, undefined);
-  const [deleteState, deleteFormAction] = useFormState<
+  const [deleteState, deleteFormAction] = useActionState<
     AutomationRuleState,
     FormData
   >(deleteAutomationRuleAction, undefined);

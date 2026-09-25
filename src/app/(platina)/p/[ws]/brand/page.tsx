@@ -6,13 +6,14 @@ import { declareBrandAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function BrandPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function BrandPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [chunks, gates] = await Promise.all([
     listBrandChunks(params.ws),
     listGateEvents(params.ws),

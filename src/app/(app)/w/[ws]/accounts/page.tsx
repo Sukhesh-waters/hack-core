@@ -11,11 +11,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Connected accounts" };
 export const dynamic = "force-dynamic";
 
-export default async function AccountsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function AccountsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [accounts, clients] = await Promise.all([
     listConnectedAccounts(params.ws),
     listClients(params.ws),

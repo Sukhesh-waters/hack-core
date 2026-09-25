@@ -36,7 +36,7 @@ export function KbNudge({ workspaceId }: { workspaceId: string }) {
           setHasNewKnowledge(false);
           router.refresh();
         }}
-        className="h-7 gap-1.5 bg-brand-teal text-xs font-semibold text-slate-950 hover:bg-brand-teal/90"
+        className="h-7 gap-1.5 bg-brand-teal text-xs font-semibold text-primary-foreground hover:bg-brand-teal/90"
       >
         <RefreshCw className="size-3" /> Refresh Ideation Context
       </Button>

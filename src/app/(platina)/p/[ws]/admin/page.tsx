@@ -18,13 +18,14 @@ import {
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina admin" };
 
-export default async function AdminPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function AdminPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [config, profile, rules, deliveries, gates] = await Promise.all([
     getWorkspaceConfig(params.ws),
     getWorkspaceProfile(params.ws),

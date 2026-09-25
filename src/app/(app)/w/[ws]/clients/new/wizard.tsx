@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import type { BrandContext } from "@/db/schema";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -105,7 +105,7 @@ export function IntakeWizard({ workspaceId }: { workspaceId: string }) {
   const [step, setStep] = useState(0);
   const [data, setData] = useState<WizardData>(INITIAL);
   const [stepError, setStepError] = useState<string | null>(null);
-  const [state, formAction] = useFormState<CreateClientState, FormData>(
+  const [state, formAction] = useActionState<CreateClientState, FormData>(
     createClientWithContext,
     undefined,
   );

@@ -72,20 +72,20 @@ describe("GET /api/w/[ws]/reports/[clientId]/export", () => {
   it("returns 404 when client does not exist", async () => {
     getClientById.mockResolvedValue(null);
     const req = new Request("http://localhost/api/w/ws_1/reports/cli_missing/export");
-    const res = await GET(req, { params: { ws: "ws_1", clientId: "cli_missing" } });
+    const res = await GET(req, { params: Promise.resolve({ ws: "ws_1", clientId: "cli_missing" }) });
     expect(res.status).toBe(404);
   });
 
   it("returns 401 when membership fails", async () => {
     requireMembership.mockRejectedValue(new Error("Not a member"));
     const req = new Request("http://localhost/api/w/ws_1/reports/cli_1/export");
-    const res = await GET(req, { params: { ws: "ws_1", clientId: "cli_1" } });
+    const res = await GET(req, { params: Promise.resolve({ ws: "ws_1", clientId: "cli_1" }) });
     expect(res.status).toBe(401);
   });
 
   it("returns CSV with correct attachment headers and body", async () => {
     const req = new Request("http://localhost/api/w/ws_1/reports/cli_1/export");
-    const res = await GET(req, { params: { ws: "ws_1", clientId: "cli_1" } });
+    const res = await GET(req, { params: Promise.resolve({ ws: "ws_1", clientId: "cli_1" }) });
 
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/csv");

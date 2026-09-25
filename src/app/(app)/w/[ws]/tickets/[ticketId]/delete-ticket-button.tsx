@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { deleteTicketAction, type TicketState } from "../actions";
 
 /**
@@ -37,7 +38,7 @@ export function DeleteTicketButton({
   workspaceId: string;
   ticketId: string;
 }) {
-  const [state, formAction] = useFormState<TicketState, FormData>(
+  const [state, formAction] = useActionState<TicketState, FormData>(
     deleteTicketAction,
     undefined,
   );

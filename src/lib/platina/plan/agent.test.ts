@@ -316,3 +316,20 @@ describe("real-time planning: situation, anchor and revision", () => {
     await expect(critiquePlan(plan, COLD)).rejects.toBeInstanceOf(PlanError);
   });
 });
+
+describe("C6: the client's own results reach the planner", () => {
+  it("renders learned patterns as their own first-party block, not as citable evidence", () => {
+    const prompt = buildPlanPrompt({
+      ...COLD,
+      coldStart: false,
+      learnedPatterns: ['Format "carousel" tends to beat your usual post (worked 5, mixed 1, failed 0 of 6)'],
+    });
+    expect(prompt).toContain("What this client's own confirmed results say");
+    expect(prompt).toContain('- Format "carousel" tends to beat your usual post');
+    expect(prompt).toContain("never cite it as an evidence id");
+  });
+
+  it("says nothing about results when there are none", () => {
+    expect(buildPlanPrompt(COLD)).not.toContain("own confirmed results say");
+  });
+});

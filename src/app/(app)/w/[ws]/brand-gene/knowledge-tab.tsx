@@ -3,6 +3,8 @@ import {
   similarKnowledgeChunksQuery,
 } from "@/db/queries/knowledge";
 import { getSourceRegistry } from "@/db/queries/sources";
+import { getClientById } from "@/db/queries/clients";
+import { listClientIdentities } from "@/db/queries/client-identities";
 import { GlassCard } from "@/components/glass-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +12,7 @@ import { routeAI } from "@/lib/ai/router";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { firecrawlConfigured } from "@/lib/scrape/firecrawl";
 import { IngestForm } from "./ingest-form";
+import { OwnIdentities } from "./own-identities";
 import { IngestedSourcesList, SourcesCard } from "./sources-list";
 
 async function SearchResults({
@@ -66,10 +69,13 @@ export async function KnowledgeTab({
   clientId: string;
   query?: string;
 }) {
-  const [sources, registry] = await Promise.all([
+  const [sources, registry, client, identities] = await Promise.all([
     listKnowledgeSources(workspaceId, clientId),
     getSourceRegistry(workspaceId, clientId),
+    getClientById(workspaceId, clientId),
+    listClientIdentities(workspaceId, clientId),
   ]);
+  const clientName = client?.name ?? "this client";
 
   const trimmedQuery = query?.trim();
 
@@ -80,11 +86,18 @@ export async function KnowledgeTab({
         <p className="mt-2 text-xs text-muted-foreground/70">
           Pages you paste in here seed this client&apos;s own reference
           vault — declared material, not public pattern data. Never cited as
-          performance truth.
+          performance truth. Only the client&apos;s own pages are accepted.
         </p>
+        <OwnIdentities
+          workspaceId={workspaceId}
+          clientId={clientId}
+          clientName={clientName}
+          identities={identities}
+        />
         <IngestForm
           workspaceId={workspaceId}
           clientId={clientId}
+          clientName={clientName}
           siteAvailable={firecrawlConfigured()}
         />
         <IngestedSourcesList sources={sources} />

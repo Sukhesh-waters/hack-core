@@ -13,13 +13,14 @@ import { cn } from "@/lib/utils";
 export const metadata = { title: "SOP template" };
 export const dynamic = "force-dynamic";
 
-export default async function SopTemplatePage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string; templateId: string };
-  searchParams?: { tab?: string };
-}) {
+export default async function SopTemplatePage(
+  props: {
+    params: Promise<{ ws: string; templateId: string }>;
+    searchParams?: Promise<{ tab?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const user = await requireUser();
   const [loaded, canEdit, members, metrics] = await Promise.all([
     loadSopTemplate(params.ws, params.templateId),

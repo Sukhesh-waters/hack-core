@@ -11,11 +11,12 @@ import { Button } from "@/components/ui/button";
 export const metadata = { title: "Workspace ready" };
 export const dynamic = "force-dynamic";
 
-export default async function WorkspaceReadyPage({
-  searchParams,
-}: {
-  searchParams: { ws?: string };
-}) {
+export default async function WorkspaceReadyPage(
+  props: {
+    searchParams: Promise<{ ws?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const user = await requireUser();
   if (!searchParams.ws) redirect("/hub");
 
@@ -58,7 +59,7 @@ export default async function WorkspaceReadyPage({
       <div className="mt-8 flex justify-center gap-3">
         <Button
           asChild
-          className="rounded-full bg-brand-teal text-foreground hover:bg-brand-teal/90"
+          className="rounded-full bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
         >
           <Link
             href={hasClients ? `/p/${workspace.id}` : `/p/${workspace.id}/start`}

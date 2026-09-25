@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import {
-  resolveTheme,
   THEME_STORAGE_KEY,
   type ThemePreference,
 } from "@/lib/theme";
@@ -26,15 +25,12 @@ const ThemeContext = createContext<{
  * and to react to explicit toggles.
  */
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  // Always "dark" on first render, matching the server's only possible
-  // answer (it has no `document`) — reading the real DOM class here instead
-  // would make the client's FIRST render pass diverge from the server's,
-  // which is exactly what a hydration mismatch is. The blocking script in
-  // the root layout already set the correct class before paint, so this
-  // effect (below) only needs to resync React's state to match it — that
-  // happens post-hydration, where a state update is just a normal re-render,
-  // not a hydration comparison.
-  const [theme, setThemeState] = useState<ThemePreference>("dark");
+  // Always "light" on first render, matching the server's only possible
+  // answer (it has no `document`) and the product default (C7.9). The
+  // blocking script already applied a stored "dark" before paint; the effect
+  // below resyncs React's state to the DOM after hydration, where a state
+  // update is a normal re-render, not a hydration comparison.
+  const [theme, setThemeState] = useState<ThemePreference>("light");
 
   useEffect(() => {
     const fromDom = document.documentElement.classList.contains("dark")
@@ -51,18 +47,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setTheme = useCallback((next: ThemePreference) => {
     window.localStorage.setItem(THEME_STORAGE_KEY, next);
     setThemeState(next);
-  }, []);
-
-  // No stored preference yet: keep following the system until the user
-  // makes an explicit choice, matching resolveTheme's own precedence.
-  useEffect(() => {
-    if (window.localStorage.getItem(THEME_STORAGE_KEY)) return;
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => {
-      setThemeState(resolveTheme(null, media.matches));
-    };
-    media.addEventListener("change", onChange);
-    return () => media.removeEventListener("change", onChange);
   }, []);
 
   return (

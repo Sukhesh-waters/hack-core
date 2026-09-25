@@ -44,7 +44,7 @@ describe("parseSocialRef", () => {
     expect(parseSocialRef(input)).toEqual(expected);
   });
 
-  it.each(["", "acme", "linkedin:@acme", "https://example.com/acme", "instagram:@"])(
+  it.each(["", "acme", "youtube:@acme", "linkedin:@", "https://example.com/acme", "instagram:@"])(
     "refuses %j instead of guessing",
     (input) => {
       expect(parseSocialRef(input)).toBeNull();

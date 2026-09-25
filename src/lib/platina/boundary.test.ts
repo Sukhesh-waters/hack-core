@@ -69,6 +69,8 @@ const ALLOWED_EXACT = new Set([
   "@/db/schema", // identity tables only (users, orgs, workspaces, memberships)
   "@/db/platina-schema",
   "@/db/queries/platina",
+  "@/db/queries/platina-learning", // C6 own-site + learning loop queries
+  "@/db/queries/platina-ops", // C7.1 ops board rows (read by Admin -> Health)
   "@/db/queries/memberships",
   "@/db/queries/workspaces", // identity enumeration for cron fan-out
   "@/lib/permissions",
@@ -84,6 +86,17 @@ const ALLOWED_EXACT = new Set([
   // single public web page. Its one client is shared infra outside Platina;
   // social and ad-library content stays Apify-only.
   "@/lib/scrape/firecrawl",
+  "@/lib/scrape/site", // page picker + section chunker, same decision
+  // Owner decision 2026-09-22 (C6): read-only post metrics from connected
+  // accounts. The one connector module Platina may import; it never writes.
+  "@/lib/connectors/metrics-read",
+  // Owner decision 2026-09-22 (C7.0, D6): neutral ingest safety shared by
+  // both products — the SSRF-safe fetch, URL clean-up, and the "whose page
+  // is this?" check that keeps third-party pages out of first-party stores.
+  "@/lib/net/safe-fetch",
+  "@/lib/ingest/url",
+  "@/lib/ingest/ownership",
+
   "@/lib/utils",
   "@/inngest/client",
 ]);
@@ -127,7 +140,7 @@ const FORBIDDEN_EXACT = new Set([
 /** Catch-all prefixes, each with its carve-out (if any). */
 const FORBIDDEN_PREFIXES: { prefix: string; allowed?: string[] }[] = [
   { prefix: "@/app/(app)" },
-  { prefix: "@/lib/connectors" },
+  { prefix: "@/lib/connectors", allowed: ["@/lib/connectors/metrics-read"] },
   { prefix: "@/lib/sop" },
   { prefix: "@/lib/data" },
   { prefix: "@/lib/plan" },

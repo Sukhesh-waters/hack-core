@@ -10,11 +10,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Ads Management" };
 export const dynamic = "force-dynamic";
 
-export default async function AdsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function AdsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [campaigns, competitorAds] = await Promise.all([
     listCampaigns(params.ws),
     recentCompetitorAds(params.ws, 5),
@@ -45,6 +46,14 @@ export default async function AdsPage({
           <Link href={`/w/${params.ws}/ads/new`}>New campaign</Link>
         </Button>
       </div>
+
+      {/* C8.3: public ad-library view in Platina (no ad account needed; link only). */}
+      <p className="mt-4 text-sm text-muted-foreground">
+        No ad account connected?{" "}
+        <Link href={`/p/${params.ws}/ads`} className="text-brand-teal underline-offset-4 hover:underline">
+          See what this client and its competitors advertise, from the public LinkedIn and Meta ad libraries →
+        </Link>
+      </p>
 
       {/* KPI summary cards */}
       <div className="mt-8 grid gap-4 sm:grid-cols-4">

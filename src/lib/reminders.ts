@@ -2,6 +2,51 @@
 
 export const REMINDER_HORIZON_HOURS = 24;
 
+/** The Resend rejection shape the sweeps classify. Structural on purpose:
+ *  `ErrorResponse` passes straight through and the tests need no SDK. */
+export type SendFailure = {
+  name: string;
+  statusCode?: number | null;
+};
+
+/** Rejections where the request itself is unacceptable, so replaying the
+ *  identical payload can only fail the same way.
+ *
+ *  Deliberately excludes the environment-level codes — missing/invalid API
+ *  key, quota, rate limit, server error. Those fail every row equally and
+ *  start succeeding once the account or the outage is fixed, so giving up on
+ *  a row because of one would discard a reminder a retry would have sent. */
+const PERMANENT_SEND_FAILURES: ReadonlySet<string> = new Set([
+  "validation_error",
+  "invalid_from_address",
+  "invalid_attachment",
+  "invalid_parameter",
+  "invalid_region",
+  "missing_required_field",
+  "invalid_idempotency_key",
+  "invalid_idempotent_request",
+  "not_found",
+  "method_not_allowed",
+]);
+
+/** True when a sweep should stop replaying a failed send.
+ *
+ *  Stamping on `true` trades the send away: the row is never retried, even
+ *  if the cause (an unverified sender domain, say) is fixed later. That is
+ *  the point — an unstamped row is re-sent every 15 minutes forever, and a
+ *  permanent rejection never becomes a success. The logged error is the
+ *  only record that the email did not go out. */
+export function isPermanentSendFailure(failure: SendFailure): boolean {
+  if (PERMANENT_SEND_FAILURES.has(failure.name)) return true;
+  // Unrecognised code: fall back to the status class. 4xx means the request
+  // was refused, except 408/429 which explicitly mean try again; 5xx is the
+  // server's problem; a null status means the call never got an answer.
+  const status = failure.statusCode;
+  if (status == null) return false;
+  if (status === 408 || status === 429) return false;
+  return status >= 400 && status < 500;
+}
+
 export type ReminderSlot = {
   title: string;
   scheduledFor: Date;

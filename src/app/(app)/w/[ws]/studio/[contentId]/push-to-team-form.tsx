@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { pushToTeamAction, type RefineState } from "./actions";
 
@@ -29,7 +30,7 @@ export function PushToTeamForm({
   contentId: string;
   members: TeamMemberOption[];
 }) {
-  const [state, formAction] = useFormState<RefineState, FormData>(
+  const [state, formAction] = useActionState<RefineState, FormData>(
     pushToTeamAction,
     undefined,
   );

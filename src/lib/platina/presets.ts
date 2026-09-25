@@ -23,14 +23,29 @@ export const CONFERENCE_PRESETS: ConferencePreset[] = [
     url: "https://pittcon.org/",
   },
   {
+    // hplc-conference.org stopped resolving (live 2026-09-21); each HPLC
+    // symposium has its own yearly site. Bump the year when it is announced.
     key: "hplc",
-    name: "HPLC symposium series",
-    url: "https://hplc-conference.org/",
+    name: "HPLC 2027 symposium",
+    url: "https://www.hplc2027.com/",
   },
   {
     key: "analytica",
     name: "analytica trade fair",
     url: "https://analytica.de/en/",
+  },
+  // Gulf (campaign intelligence C4). arablab.com redirects here.
+  {
+    key: "arablab",
+    name: "ARABLAB LIVE (Dubai)",
+    url: "https://www.terrapinn.com/exhibition/arablab-live/",
+  },
+  {
+    // Formerly Medlab Middle East (medlabme.com redirects here); from 2027 a
+    // Labs zone inside WHX Dubai.
+    key: "whx-labs",
+    name: "WHX Labs Dubai (formerly Medlab Middle East)",
+    url: "https://www.worldhealthexpo.com/events/labs/dubai/",
   },
   {
     key: "acs",

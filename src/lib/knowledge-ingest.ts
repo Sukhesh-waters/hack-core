@@ -6,6 +6,8 @@ import {
   isUnsupportedByFirecrawl,
   scrapeWithFirecrawl,
 } from "@/lib/scrape/firecrawl";
+import { markdownToText } from "@/lib/scrape/site";
+import { safeFetch } from "@/lib/net/safe-fetch";
 
 /**
  * Pure text extraction + chunking for the Brand Gene Knowledge tab's
@@ -79,9 +81,12 @@ export function chunkText(
 export async function fetchPage(
   url: string,
 ): Promise<{ html: string; contentType: string }> {
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    headers: { "user-agent": "InstaMediaAI-KnowledgeIngest/1.0" },
+  // safeFetch refuses private/internal addresses on every redirect hop and
+  // stops reading at the byte cap (C7.0 SSRF guard).
+  const response = await safeFetch(url, {
+    timeoutMs: FETCH_TIMEOUT_MS,
+    maxBytes: MAX_RESPONSE_BYTES,
+    headers: { "user-agent": "PlatinaAI-KnowledgeIngest/1.0" },
   });
   if (!response.ok) {
     throw new Error(`Fetch failed with status ${response.status}.`);
@@ -91,26 +96,16 @@ export async function fetchPage(
     throw new Error("Only HTML pages are supported in this slice.");
   }
   const html = await response.text();
-  return { html: html.slice(0, MAX_RESPONSE_BYTES), contentType };
+  return { html, contentType };
 }
 
 // ---------------------------------------------------------------------------
 // readPage — the one entry point: own fetch and Firecrawl, in either order
 // ---------------------------------------------------------------------------
 
-/** Firecrawl markdown -> plain prose for chunking: keep paragraphs, drop link/image syntax. */
-export function markdownToText(markdown: string): string {
-  return markdown
-    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/(\*\*|__)(.+?)\1/g, "$2")
-    .replace(/\\([|*_`#[\]()])/g, "$1")
-    .replace(/^\s*(?:[-*_]\s*){3,}$/gm, "")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
+// markdownToText lives with the other page-reading helpers in the shared
+// scrape module (Platina uses it too); re-exported for existing callers.
+export { markdownToText } from "@/lib/scrape/site";
 
 export type ReadPageResult = {
   title: string | null;
@@ -196,6 +191,9 @@ export async function readPage(
  * "ready" or "failed". Shown as interrupted instead of "Ingesting…" forever.
  */
 export const INGEST_ORPHAN_AFTER_MS = 3 * 60_000;
+
+/** Written on a pending row the refresh job closes after INGEST_ORPHAN_AFTER_MS. */
+export const INTERRUPTED_REASON = "Interrupted before it finished (the server restarted). Ingest it again.";
 
 export function ingestDisplayStatus(
   source: { status: string; createdAt: Date | string | null },

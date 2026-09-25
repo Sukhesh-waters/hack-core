@@ -11,11 +11,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Workflows" };
 export const dynamic = "force-dynamic";
 
-export default async function WorkflowsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function WorkflowsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const user = await requireUser();
   const [workflow, canEdit] = await Promise.all([
     loadContentWorkflow(params.ws),

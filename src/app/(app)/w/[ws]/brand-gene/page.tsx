@@ -12,13 +12,14 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Brand Gene" };
 export const dynamic = "force-dynamic";
 
-export default async function BrandGenePage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { client?: string; tab?: string; q?: string };
-}) {
+export default async function BrandGenePage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ client?: string; tab?: string; q?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const clientsList = await listClients(params.ws);
 
   if (clientsList.length === 0) {

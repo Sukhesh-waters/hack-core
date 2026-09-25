@@ -272,7 +272,7 @@ export default function LandingPage() {
 
           <h1 className="mt-7 text-balance font-display text-4xl font-extrabold leading-[1.08] tracking-tight text-white sm:text-6xl lg:text-7xl">
             Every client workspace.{" "}
-            <span className="bg-gradient-to-r from-brand-teal via-teal-300 to-brand-purple bg-clip-text italic text-transparent">
+            <span className="bg-gradient-to-r from-brand-teal via-sky-300 to-brand-purple bg-clip-text italic text-transparent">
               One living content engine.
             </span>
           </h1>
@@ -288,7 +288,7 @@ export default function LandingPage() {
             <Button
               asChild
               size="lg"
-              className="rounded-full bg-brand-teal px-8 text-slate-950 font-semibold shadow-lg shadow-brand-teal/25 transition hover:bg-brand-teal/90 hover:scale-[1.02]"
+              className="rounded-full bg-brand-teal px-8 text-primary-foreground font-semibold shadow-lg shadow-brand-teal/25 transition hover:bg-brand-teal/90 hover:scale-[1.02]"
             >
               <Link href="/login" className="flex items-center gap-2">
                 <span>Enter Workspace</span>
@@ -538,7 +538,7 @@ export default function LandingPage() {
                 <Button
                   asChild
                   size="lg"
-                  className="rounded-full bg-brand-teal px-8 py-6 text-base font-semibold text-slate-950 shadow-xl shadow-brand-teal/30 hover:bg-brand-teal/90 hover:scale-[1.02] transition"
+                  className="rounded-full bg-brand-teal px-8 py-6 text-base font-semibold text-primary-foreground shadow-xl shadow-brand-teal/30 hover:bg-brand-teal/90 hover:scale-[1.02] transition"
                 >
                   <Link href="/login" className="flex items-center gap-2">
                     <span>Launch Workspace</span>

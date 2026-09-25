@@ -10,11 +10,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Doc" };
 export const dynamic = "force-dynamic";
 
-export default async function DocDetailPage({
-  params,
-}: {
-  params: { ws: string; slug: string };
-}) {
+export default async function DocDetailPage(
+  props: {
+    params: Promise<{ ws: string; slug: string }>;
+  }
+) {
+  const params = await props.params;
   const doc = await getWorkspaceDocBySlug(params.ws, params.slug);
   if (!doc) notFound();
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,7 @@ function SubmitButton() {
     <Button
       type="submit"
       disabled={pending}
-      className="w-full rounded-full bg-brand-teal text-foreground hover:bg-brand-teal/90"
+      className="w-full rounded-full bg-brand-teal text-primary-foreground hover:bg-brand-teal/90"
     >
       {pending ? "Sending link…" : "Email me a magic link"}
     </Button>
@@ -20,7 +21,7 @@ function SubmitButton() {
 }
 
 export function EmailForm({ callbackUrl }: { callbackUrl: string }) {
-  const [state, formAction] = useFormState(signInWithEmail, undefined);
+  const [state, formAction] = useActionState(signInWithEmail, undefined);
 
   return (
     <form action={formAction} className="space-y-3">

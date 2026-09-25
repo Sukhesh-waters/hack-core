@@ -30,6 +30,10 @@ export type SchedulableSpec = {
   // Inngest step results serialize dates to strings; both are accepted.
   lastProbeAt: Date | string | null;
   lastSuccessAt: Date | string | null;
+  /** When a run last started (first pass included). */
+  lastRunAt?: Date | string | null;
+  /** Set on approval — the anchor for a source that has never run. */
+  updatedAt?: Date | string | null;
   currentIntervalMinutes: number | null;
   consecutiveUnchanged: number;
   fetchesDay: string | null;
@@ -76,13 +80,35 @@ export function nextDueAt(
   const jitter = jitterMinutes(spec.id);
   if (probeCapable) {
     const base =
-      toDate(spec.lastProbeAt) ?? toDate(spec.lastSuccessAt) ?? new Date(0);
+      toDate(spec.lastProbeAt) ?? toDate(spec.lastSuccessAt) ?? neverRunAnchor(spec);
     return addMinutes(base, spec.cadenceMinutes + jitter);
   }
-  const interval = spec.currentIntervalMinutes ?? ADAPTIVE_START_MINUTES;
+  // The source's own cadence is a floor: an ad library set to daily and a
+  // LinkedIn source set to weekly used to run every 6 hours (the adaptive
+  // start), which alone would spend the month's Apify budget in days.
+  // Until its first success the floor does not apply: live 2026-09-21, seven
+  // weekly event pages approved after the workspace's daily cap was spent
+  // failed their first run and would have waited a full week to be read.
+  // (The tick pauses capped workspaces, so retrying sooner costs nothing.)
+  const interval = spec.lastSuccessAt
+    ? Math.max(spec.currentIntervalMinutes ?? ADAPTIVE_START_MINUTES, spec.cadenceMinutes)
+    : Math.min(spec.currentIntervalMinutes ?? ADAPTIVE_START_MINUTES, spec.cadenceMinutes);
   const base =
-    toDate(spec.lastSuccessAt) ?? toDate(spec.lastProbeAt) ?? new Date(0);
+    toDate(spec.lastSuccessAt) ?? toDate(spec.lastProbeAt) ?? neverRunAnchor(spec);
   return addMinutes(base, interval + jitter);
+}
+
+/**
+ * Where the clock starts for a source with no probe and no success yet.
+ * It used to be 1970, which made every newly approved source "overdue" at
+ * the next five-minute tick — while its first pass (sent on approval) was
+ * still running. Live, 2026-09-21: 5 of 8 Waters sources were collected twice
+ * within 50 seconds, paying for every page twice. The last run start, or else
+ * the approval time, is the honest anchor; 1970 stays only for a row that
+ * somehow has neither.
+ */
+function neverRunAnchor(spec: SchedulableSpec): Date {
+  return toDate(spec.lastRunAt ?? null) ?? toDate(spec.updatedAt ?? null) ?? new Date(0);
 }
 
 export function isDue(

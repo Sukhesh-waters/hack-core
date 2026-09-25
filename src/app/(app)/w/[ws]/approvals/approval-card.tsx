@@ -1,7 +1,8 @@
 "use client";
 
+import { useActionState } from "react";
 import Link from "next/link";
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { approveAction, scheduleAction, type ApprovalState } from "./actions";
 
@@ -21,7 +22,7 @@ export function ApproveForm({
   workspaceId: string;
   contentId: string;
 }) {
-  const [state, formAction] = useFormState<ApprovalState, FormData>(
+  const [state, formAction] = useActionState<ApprovalState, FormData>(
     approveAction,
     undefined,
   );
@@ -44,7 +45,7 @@ export function ScheduleForm({
   workspaceId: string;
   contentId: string;
 }) {
-  const [state, formAction] = useFormState<ApprovalState, FormData>(
+  const [state, formAction] = useActionState<ApprovalState, FormData>(
     scheduleAction,
     undefined,
   );

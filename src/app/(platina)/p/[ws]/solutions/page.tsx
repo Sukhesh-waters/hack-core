@@ -26,13 +26,14 @@ const USE_CASE_LABEL: Record<string, string> = {
   campaign_performance: "Campaign performance",
 };
 
-export default async function SolutionsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string };
-}) {
+export default async function SolutionsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const rows = await solutionsQuery(params.ws);
 
   return (

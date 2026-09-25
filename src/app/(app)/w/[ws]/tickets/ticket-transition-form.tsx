@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import type { TicketStatus } from "@/lib/tickets";
 import { advanceTicketStatusAction, type TicketState } from "./actions";
@@ -29,7 +30,7 @@ export function TicketTransitionForm({
   to: TicketStatus;
   label: string;
 }) {
-  const [state, formAction] = useFormState<TicketState, FormData>(
+  const [state, formAction] = useActionState<TicketState, FormData>(
     advanceTicketStatusAction,
     undefined,
   );

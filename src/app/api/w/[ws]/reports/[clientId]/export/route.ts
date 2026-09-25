@@ -13,8 +13,9 @@ import { MIN_BASELINE_N } from "@/lib/scoring";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { ws: string; clientId: string } },
+  props: { params: Promise<{ ws: string; clientId: string }> }
 ) {
+  const params = await props.params;
   try {
     const user = await requireUser();
     await requireMembership(params.ws, user.id);

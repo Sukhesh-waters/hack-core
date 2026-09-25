@@ -23,11 +23,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Draft" };
 export const dynamic = "force-dynamic";
 
-export default async function DraftPage({
-  params,
-}: {
-  params: { ws: string; contentId: string };
-}) {
+export default async function DraftPage(
+  props: {
+    params: Promise<{ ws: string; contentId: string }>;
+  }
+) {
+  const params = await props.params;
   const row = await getContentById(params.ws, params.contentId);
   if (!row) notFound();
   const [brandProfile, thread, members, attachments] = await Promise.all([
@@ -192,7 +193,7 @@ export default async function DraftPage({
             </div>
             <Link
               href={`/w/${params.ws}/ads/new?client=${row.clientId}`}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-teal px-3.5 py-1.5 text-xs font-semibold text-slate-950 transition hover:bg-brand-teal/90"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-brand-teal px-3.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-brand-teal/90"
             >
               🚀 Launch Meta Campaign
             </Link>

@@ -28,7 +28,8 @@ function formatDate(date: Date) {
   });
 }
 
-export default async function SopPage({ params }: { params: { ws: string } }) {
+export default async function SopPage(props: { params: Promise<{ ws: string }> }) {
+  const params = await props.params;
   const user = await requireUser();
   // Every list and count is one query; nothing here fans out per card.
   const [templates, canEdit, canRun, stepCounts, templateRunCountsMap, runs, progress, clients] =

@@ -10,6 +10,7 @@
  */
 import {
   findingTitleExists,
+  openFindingsForUseCaseQuery,
   getBrand,
   insertFinding,
   listCompetitorsOf,
@@ -115,6 +116,7 @@ function ideationDeps(scope: StageScope): IdeationDeps {
     ),
     exists: (ws, title) => findingTitleExists(ws, IDEATION_USE_CASE, title),
     insertFinding,
+    openDirections: (ws) => openFindingsForUseCaseQuery(ws, IDEATION_USE_CASE),
   };
 }
 

@@ -12,9 +12,17 @@ import {
   platinaBrandSources,
   platinaCampaigns,
   platinaClaimsRules,
+  platinaCreativeMetrics,
+  platinaCreativeReviews,
+  platinaCreatives,
+  platinaFirstPartyChunks,
+  platinaLearningEvents,
   platinaDebateTranscripts,
+  platinaEventParticipants,
+  platinaEvents,
   platinaFindings,
   platinaGateEvents,
+  platinaInterestSignals,
   platinaAlertDeliveries,
   platinaOutcomeImports,
   platinaOutcomes,
@@ -341,6 +349,71 @@ export async function markTargetsRendered(
     );
 }
 
+/**
+ * Replaces a spec's targets without touching updatedAt (which anchors a
+ * never-run source's schedule). Workspace-scoped.
+ */
+export async function updateScanSpecTargets(
+  workspaceId: string,
+  specId: string,
+  targets: PlatinaScanTarget[],
+) {
+  await db
+    .update(platinaScanSpecs)
+    .set({ targets })
+    .where(and(eq(platinaScanSpecs.workspaceId, workspaceId), eq(platinaScanSpecs.id, specId)));
+}
+
+/** A one-time backfill is done once its target has collected: clear the flag. */
+export async function clearTargetBackfill(workspaceId: string, specId: string, targetValues: string[]) {
+  const spec = await getScanSpec(workspaceId, specId);
+  if (!spec) return;
+  const done = new Set(targetValues);
+  if (!spec.targets.some((t) => t.backfill && done.has(t.value))) return;
+  await updateScanSpecTargets(
+    workspaceId,
+    specId,
+    spec.targets.map((t) => {
+      if (!t.backfill || !done.has(t.value)) return t;
+      const rest = { ...t };
+      delete rest.backfill;
+      return rest;
+    }),
+  );
+}
+
+/**
+ * Remembers which pages the site picker chose for each target (C1), so the
+ * next collection within a week reads the same pages without re-listing the
+ * site. Workspace-scoped like every write; touches only the named targets.
+ */
+export async function rememberPickedPages(
+  workspaceId: string,
+  specId: string,
+  picks: { target: string; urls: string[] }[],
+  now: Date = new Date(),
+) {
+  if (picks.length === 0) return;
+  const spec = await getScanSpec(workspaceId, specId);
+  if (!spec) return;
+  const byTarget = new Map(picks.map((p) => [p.target, p.urls]));
+  const targets = spec.targets.map((target) => {
+    const urls = byTarget.get(target.value);
+    return urls ? { ...target, pickedPages: urls, pickedAt: now.toISOString() } : target;
+  });
+  await db
+    .update(platinaScanSpecs)
+    // updatedAt deliberately untouched: it anchors a never-run source's
+    // schedule, and remembering picks is bookkeeping, not an approval.
+    .set({ targets })
+    .where(
+      and(
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        eq(platinaScanSpecs.id, specId),
+      ),
+    );
+}
+
 export async function supersedeBrandChunksForBrand(
   workspaceId: string,
   brandId: string,
@@ -422,6 +495,8 @@ export async function insertBrainChunk(input: {
   absorbedChunkIds?: string[];
   transcriptId?: string;
   embedding?: number[];
+  /** Measured market insights only (C5): one active chunk per key. */
+  insightKey?: string;
 }) {
   const [row] = await db
     .insert(platinaBrainChunks)
@@ -435,6 +510,7 @@ export async function insertBrainChunk(input: {
       absorbedChunkIds: input.absorbedChunkIds ?? [],
       transcriptId: input.transcriptId,
       embedding: input.embedding,
+      insightKey: input.insightKey ?? null,
     })
     .returning({ id: platinaBrainChunks.id });
   return row.id;
@@ -884,7 +960,7 @@ export async function listAlertRules(workspaceId: string) {
 export async function insertAlertRule(input: {
   workspaceId: string;
   name: string;
-  source?: "outcome" | "finding" | "approval" | "run";
+  source?: "outcome" | "finding" | "approval" | "run" | "ops";
   conditions: { field: string; op: "gt" | "lt" | "eq" | "gte" | "lte"; value: number | string }[];
   severity: "info" | "warning" | "critical";
 }) {
@@ -2806,4 +2882,527 @@ export async function listStaleQueuedRuns(olderThan: Date, limit = 50) {
     )
     .orderBy(platinaAuditRuns.queuedAt)
     .limit(limit);
+}
+
+// ---------------------------------------------------------------------------
+// Interest signals (campaign intelligence C3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Social posts and ads collected for a client and its competitors since a
+ * date — the raw material for interest and pressure signals. Scoped by
+ * workspace on BOTH the documents and the specs they came from.
+ */
+export function interestSourceDocsQuery(
+  workspaceId: string,
+  brandIds: string[],
+  since: Date,
+) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      canonicalUrl: platinaSignalDocuments.canonicalUrl,
+      body: platinaSignalDocuments.body,
+      metrics: platinaSignalDocuments.metrics,
+      raw: platinaSignalDocuments.raw,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaScanSpecs.id, platinaSignalDocuments.scanSpecId))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        inArray(platinaSignalDocuments.sourceKind, ["social_posts", "ad_library"]),
+        gte(platinaSignalDocuments.fetchedAt, since),
+      ),
+    );
+}
+
+/** Stored ad-library snapshots for these brands (C8.3 Ads page). */
+export function adDocumentsQuery(workspaceId: string, brandIds: string[], since: Date) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      canonicalUrl: platinaSignalDocuments.canonicalUrl,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+      body: platinaSignalDocuments.body,
+      raw: platinaSignalDocuments.raw,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaScanSpecs.id, platinaSignalDocuments.scanSpecId))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        eq(platinaSignalDocuments.sourceKind, "ad_library"),
+        gte(platinaSignalDocuments.fetchedAt, since),
+      ),
+    );
+}
+
+/** Subjects the interest pass gave each ad, by the ad's URL (its pressure signals). */
+export function adTopicsQuery(workspaceId: string, brandIds: string[]) {
+  return db
+    .selectDistinct({ sourceUrl: platinaInterestSignals.sourceUrl, topic: platinaInterestSignals.topic })
+    .from(platinaInterestSignals)
+    .where(
+      and(
+        eq(platinaInterestSignals.workspaceId, workspaceId),
+        inArray(platinaInterestSignals.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        eq(platinaInterestSignals.signalKind, "pressure"),
+        inArray(platinaInterestSignals.channel, ["linkedin_ads", "meta_ads"]),
+      ),
+    );
+}
+
+export async function listInterestSourceDocs(workspaceId: string, brandIds: string[], since: Date) {
+  return interestSourceDocsQuery(workspaceId, brandIds, since);
+}
+
+/** Idempotent: re-measuring the same post on the same day is a no-op. */
+export async function insertInterestSignals(
+  rows: (typeof platinaInterestSignals.$inferInsert)[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const inserted = await db
+    .insert(platinaInterestSignals)
+    .values(rows)
+    .onConflictDoNothing()
+    .returning({ id: platinaInterestSignals.id });
+  return inserted.length;
+}
+
+export function interestSignalsQuery(workspaceId: string, brandIds: string[], since: Date) {
+  return db
+    .select()
+    .from(platinaInterestSignals)
+    .where(
+      and(
+        eq(platinaInterestSignals.workspaceId, workspaceId),
+        inArray(platinaInterestSignals.brandId, brandIds.length > 0 ? brandIds : ["__none__"]),
+        gte(platinaInterestSignals.observedAt, since),
+      ),
+    );
+}
+
+export async function listInterestSignals(workspaceId: string, brandIds: string[], since: Date) {
+  return interestSignalsQuery(workspaceId, brandIds, since);
+}
+
+// ---------------------------------------------------------------------------
+// Events (campaign intelligence C4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Documents events are read from: conference pages (any spec) and social
+ * posts (a company announcing where it will be). Scoped by workspace on the
+ * documents AND, for the spec join, on the specs.
+ */
+export function eventSourceDocsQuery(workspaceId: string, since: Date) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      canonicalUrl: platinaSignalDocuments.canonicalUrl,
+      title: platinaSignalDocuments.title,
+      body: platinaSignalDocuments.body,
+      metrics: platinaSignalDocuments.metrics,
+      fetchedAt: platinaSignalDocuments.fetchedAt,
+    })
+    .from(platinaSignalDocuments)
+    .leftJoin(
+      platinaScanSpecs,
+      and(
+        eq(platinaScanSpecs.id, platinaSignalDocuments.scanSpecId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        inArray(platinaSignalDocuments.sourceKind, ["conference", "social_posts"]),
+        gte(platinaSignalDocuments.fetchedAt, since),
+      ),
+    );
+}
+
+export async function listEventSourceDocs(workspaceId: string, since: Date) {
+  return eventSourceDocsQuery(workspaceId, since);
+}
+
+export function eventsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaEvents)
+    .where(eq(platinaEvents.workspaceId, workspaceId))
+    .orderBy(platinaEvents.startsOn);
+}
+
+export async function listEvents(workspaceId: string) {
+  return eventsQuery(workspaceId);
+}
+
+/**
+ * Insert an event, or refresh the one with the same key: a later sighting
+ * fills what an earlier one lacked (a post without dates, then the event
+ * page), but never overwrites a date already read.
+ */
+export async function upsertEvent(input: typeof platinaEvents.$inferInsert): Promise<string> {
+  const [row] = await db
+    .insert(platinaEvents)
+    .values(input)
+    .onConflictDoUpdate({
+      target: [platinaEvents.workspaceId, platinaEvents.eventKey],
+      set: {
+        lastSeenAt: sql`now()`,
+        startsOn: sql`coalesce(${platinaEvents.startsOn}, excluded.starts_on)`,
+        endsOn: sql`coalesce(${platinaEvents.endsOn}, excluded.ends_on)`,
+        dateText: sql`coalesce(${platinaEvents.dateText}, excluded.date_text)`,
+        location: sql`coalesce(${platinaEvents.location}, excluded.location)`,
+        country: sql`coalesce(${platinaEvents.country}, excluded.country)`,
+        // A newer read of the event page replaces the older one's notes.
+        detail: sql`coalesce(excluded.detail, ${platinaEvents.detail})`,
+      },
+      // The conflict target already pins the workspace; this keeps it explicit.
+      setWhere: eq(platinaEvents.workspaceId, input.workspaceId),
+    })
+    .returning({ id: platinaEvents.id });
+  return row.id;
+}
+
+export async function insertEventParticipants(
+  rows: (typeof platinaEventParticipants.$inferInsert)[],
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const inserted = await db
+    .insert(platinaEventParticipants)
+    .values(rows)
+    .onConflictDoNothing()
+    .returning({ id: platinaEventParticipants.id });
+  return inserted.length;
+}
+
+export function eventParticipantsQuery(workspaceId: string, eventIds: string[]) {
+  return db
+    .select()
+    .from(platinaEventParticipants)
+    .where(
+      and(
+        eq(platinaEventParticipants.workspaceId, workspaceId),
+        inArray(platinaEventParticipants.eventId, eventIds.length > 0 ? eventIds : ["__none__"]),
+      ),
+    );
+}
+
+export async function listEventParticipants(workspaceId: string, eventIds: string[]) {
+  return eventParticipantsQuery(workspaceId, eventIds);
+}
+
+// ---------------------------------------------------------------------------
+// Measured market insights in the Brain (C5)
+// ---------------------------------------------------------------------------
+
+/** Active insight chunks whose key starts with `prefix` ("interest:<clientId>:", "event:"). */
+export function activeInsightChunksQuery(workspaceId: string, prefix: string) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      insightKey: platinaBrainChunks.insightKey,
+      content: platinaBrainChunks.content,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.status, "active"),
+        sql`${platinaBrainChunks.insightKey} like ${prefix.replace(/[%_\\]/g, "\\$&") + "%"}`,
+      ),
+    );
+}
+
+export async function listActiveInsightChunks(workspaceId: string, prefix: string) {
+  return activeInsightChunksQuery(workspaceId, prefix);
+}
+
+/** Retire replaced measurements. Kept for history; retrieval reads active only. */
+export async function supersedeBrainChunks(workspaceId: string, ids: string[]) {
+  if (ids.length === 0) return;
+  await db
+    .update(platinaBrainChunks)
+    .set({ status: "superseded" })
+    .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), inArray(platinaBrainChunks.id, ids)));
+}
+
+/**
+ * Documents from workspace-wide sources (no client attached: event pages,
+ * trade press added for the whole workspace). A workspace is one division ×
+ * region, so these are market context for every client in it.
+ */
+export function workspaceWideSignalIdsQuery(workspaceId: string, limit = 2000) {
+  return db
+    .select({ id: platinaSignalDocuments.id })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        isNull(platinaScanSpecs.brandId),
+      ),
+    )
+    .orderBy(desc(platinaSignalDocuments.fetchedAt))
+    .limit(limit);
+}
+
+export async function listWorkspaceWideSignalIds(workspaceId: string) {
+  return (await workspaceWideSignalIdsQuery(workspaceId)).map((r) => r.id);
+}
+
+// ---------------------------------------------------------------------------
+// Render-path queries (fewer round trips)
+// ---------------------------------------------------------------------------
+
+/**
+ * Interest signals for a client AND its competitors in one round trip (the
+ * page used to fetch competitors first, then signals). Workspace-scoped on
+ * both the signals and the brand subquery.
+ */
+export function clientScopeSignalsQuery(workspaceId: string, clientId: string, since: Date) {
+  const scope = db
+    .select({ id: platinaBrands.id })
+    .from(platinaBrands)
+    .where(
+      and(
+        eq(platinaBrands.workspaceId, workspaceId),
+        or(eq(platinaBrands.id, clientId), eq(platinaBrands.parentBrandId, clientId)),
+      ),
+    );
+  return db
+    .select()
+    .from(platinaInterestSignals)
+    .where(
+      and(
+        eq(platinaInterestSignals.workspaceId, workspaceId),
+        inArray(platinaInterestSignals.brandId, scope),
+        gte(platinaInterestSignals.observedAt, since),
+      ),
+    );
+}
+
+export async function listClientScopeSignals(workspaceId: string, clientId: string, since: Date) {
+  return clientScopeSignalsQuery(workspaceId, clientId, since);
+}
+
+/** Every event participant in the workspace — no need to wait for event ids. */
+export function workspaceEventParticipantsQuery(workspaceId: string) {
+  return db
+    .select()
+    .from(platinaEventParticipants)
+    .where(eq(platinaEventParticipants.workspaceId, workspaceId));
+}
+
+export async function listWorkspaceEventParticipants(workspaceId: string) {
+  return workspaceEventParticipantsQuery(workspaceId);
+}
+
+// ---------------------------------------------------------------------------
+// Live flow snapshot (3D view) — one round trip for every count
+// ---------------------------------------------------------------------------
+
+/**
+ * Every count the live-flow view shows, as scalar subqueries in ONE statement
+ * (one database round trip instead of fourteen). Each subquery filters its
+ * own table by workspace_id — asserted in platina.test.ts by counting the
+ * workspace parameter.
+ */
+export function flowCountsSql(workspaceId: string, sinceDate: Date, today: string) {
+  // Raw SQL params are not mapped by column type: a Date must go as text.
+  const since = sinceDate.toISOString();
+  const d = platinaSignalDocuments;
+  const docs = (kindSql: ReturnType<typeof sql>, recent: boolean) =>
+    sql`(select count(*)::int from ${d} where ${d.workspaceId} = ${workspaceId} and ${kindSql}${recent ? sql` and ${d.fetchedAt} >= ${since}` : sql``})`;
+  const linkedin = sql`${d.sourceUrl} like 'linkedin:%'`;
+  const web = sql`${d.sourceKind} in ('competitor_site','press_release','trade_editorial') `;
+  const ads = sql`${d.sourceKind} = 'ad_library'`;
+  const events = sql`${d.sourceKind} = 'conference'`;
+  const b = platinaBrainChunks;
+  // C6: first-party knowledge (own site, lessons), live chunks only.
+  const f = platinaFirstPartyChunks;
+  const fp = (kind: ReturnType<typeof sql>, recent: boolean) =>
+    sql`(select count(*)::int from ${f} where ${f.workspaceId} = ${workspaceId} and ${f.supersededAt} is null and ${kind}${recent ? sql` and ${f.createdAt} >= ${since}` : sql``})`;
+  const brain = (kind: ReturnType<typeof sql>) =>
+    sql`(select count(*)::int from ${b} where ${b.workspaceId} = ${workspaceId} and ${b.status} = 'active' and ${kind})`;
+  return sql`select
+    ${docs(web, false)} as "docsWeb", ${docs(web, true)} as "docsWeb24h",
+    ${docs(linkedin, false)} as "docsLinkedin", ${docs(linkedin, true)} as "docsLinkedin24h",
+    ${docs(ads, false)} as "docsAds", ${docs(ads, true)} as "docsAds24h",
+    ${docs(events, false)} as "docsEvents", ${docs(events, true)} as "docsEvents24h",
+    (select count(*)::int from ${platinaDebateTranscripts} where ${platinaDebateTranscripts.workspaceId} = ${workspaceId}) as "debates",
+    (select count(*)::int from ${platinaDebateTranscripts} where ${platinaDebateTranscripts.workspaceId} = ${workspaceId} and ${platinaDebateTranscripts.createdAt} >= ${since}) as "debates24h",
+    (select count(*)::int from ${platinaInterestSignals} where ${platinaInterestSignals.workspaceId} = ${workspaceId}) as "interestSignals",
+    (select count(*)::int from ${platinaInterestSignals} where ${platinaInterestSignals.workspaceId} = ${workspaceId} and ${platinaInterestSignals.collectedAt} >= ${since}) as "interestSignals24h",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId}) as "events",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId} and ${platinaEvents.startsOn} > ${today}) as "eventsUpcoming",
+    (select count(*)::int from ${platinaEvents} where ${platinaEvents.workspaceId} = ${workspaceId} and ${platinaEvents.firstSeenAt} >= ${since}) as "events24h",
+    ${brain(sql`${b.insightKey} is null`)} as "brainClaims",
+    ${brain(sql`(${b.insightKey} like 'interest:%' or ${b.insightKey} like 'pressure:%')`)} as "brainMeasured",
+    ${brain(sql`${b.insightKey} like 'event:%'`)} as "brainEvents",
+    ${brain(sql`${b.createdAt} >= ${since}`)} as "brain24h",
+    (select count(*)::int from ${platinaFindings} where ${platinaFindings.workspaceId} = ${workspaceId}) as "findings",
+    (select count(*)::int from ${platinaFindings} where ${platinaFindings.workspaceId} = ${workspaceId} and ${platinaFindings.status} in ('new','needs_decision')) as "findingsNew",
+    (select count(*)::int from ${platinaPlans} where ${platinaPlans.workspaceId} = ${workspaceId}) as "plans",
+    (select count(*)::int from ${platinaPlans} where ${platinaPlans.workspaceId} = ${workspaceId} and ${platinaPlans.createdAt} >= ${since}) as "plans24h",
+    ((select count(*)::int from ${platinaPlanFeedback} where ${platinaPlanFeedback.workspaceId} = ${workspaceId})
+      + (select count(*)::int from ${platinaOutcomes} where ${platinaOutcomes.workspaceId} = ${workspaceId} and ${platinaOutcomes.synthetic} = false)) as "outcomes",
+    (select count(*)::int from ${platinaAuditRuns} where ${platinaAuditRuns.workspaceId} = ${workspaceId} and ${platinaAuditRuns.status} in ('queued','running','validating')) as "runsActive",
+    ${fp(sql`${f.kind} = 'own_site'`, false)} as "ownSite", ${fp(sql`${f.kind} = 'own_site'`, true)} as "ownSite24h",
+    ${fp(sql`${f.kind} = 'lesson'`, false)} as "lessons", ${fp(sql`${f.kind} = 'lesson'`, true)} as "lessons24h",
+    (select count(*)::int from ${platinaCreatives} where ${platinaCreatives.workspaceId} = ${workspaceId}) as "creatives",
+    (select count(*)::int from ${platinaCreativeMetrics} where ${platinaCreativeMetrics.workspaceId} = ${workspaceId}) as "creativeMetrics",
+    (select count(*)::int from ${platinaCreativeMetrics} where ${platinaCreativeMetrics.workspaceId} = ${workspaceId} and ${platinaCreativeMetrics.createdAt} >= ${since}) as "creativeMetrics24h",
+    (select count(*)::int from ${platinaCreativeReviews} where ${platinaCreativeReviews.workspaceId} = ${workspaceId} and ${platinaCreativeReviews.status} = 'confirmed') as "reviewsConfirmed",
+    (select count(*)::int from ${platinaCreativeReviews} where ${platinaCreativeReviews.workspaceId} = ${workspaceId} and ${platinaCreativeReviews.confirmedAt} >= ${since}) as "reviewsConfirmed24h",
+    (select count(*)::int from ${platinaLearningEvents} where ${platinaLearningEvents.workspaceId} = ${workspaceId} and ${platinaLearningEvents.kind} in ('demote','promote')) as "backtracks",
+    (select count(*)::int from ${platinaLearningEvents} where ${platinaLearningEvents.workspaceId} = ${workspaceId} and ${platinaLearningEvents.kind} in ('demote','promote') and ${platinaLearningEvents.createdAt} >= ${since}) as "backtracks24h"`;
+}
+
+export type FlowCountsRow = Record<string, number>;
+
+export async function getFlowCounts(workspaceId: string, now: Date = new Date()): Promise<FlowCountsRow> {
+  const since = new Date(now.getTime() - 86_400_000);
+  const rows = await db.execute(flowCountsSql(workspaceId, since, now.toISOString().slice(0, 10)));
+  return ([...rows][0] ?? {}) as FlowCountsRow;
+}
+
+/** Newest active Brain vectors for the point cloud: kind + confidence, short text for hover. */
+export function flowBrainSampleQuery(workspaceId: string, limit = 240) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      insightKey: platinaBrainChunks.insightKey,
+      confidence: platinaBrainChunks.confidence,
+      createdAt: platinaBrainChunks.createdAt,
+      text: sql<string>`left(${platinaBrainChunks.content}, 140)`,
+    })
+    .from(platinaBrainChunks)
+    .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.status, "active")))
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+export async function listFlowBrainSample(workspaceId: string, limit = 240) {
+  return flowBrainSampleQuery(workspaceId, limit);
+}
+
+/** Open findings of one use case, newest first: ideation's cooldown and near-duplicate check. */
+export function openFindingsForUseCaseQuery(workspaceId: string, useCase: string, limit = 200) {
+  return db
+    .select({ title: platinaFindings.title, createdAt: platinaFindings.createdAt })
+    .from(platinaFindings)
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaFindings.useCase, useCase),
+        inArray(platinaFindings.status, ["new", "needs_decision", "validated"]),
+      ),
+    )
+    .orderBy(desc(platinaFindings.createdAt))
+    .limit(limit);
+}
+
+/** Collected documents per company and kind, with the newest (C8.2 competitor portal). */
+export function brandDocCountsQuery(workspaceId: string, brandIds: string[]) {
+  return db
+    .select({
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      n: count(),
+      newest: max(platinaSignalDocuments.fetchedAt),
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+      ),
+    )
+    .groupBy(platinaScanSpecs.brandId, platinaSignalDocuments.sourceKind);
+}
+
+/** Recent analysed findings with the company they are about (C8.2). */
+export function brandFindingsQuery(workspaceId: string, brandIds: string[], limit = 60) {
+  return db
+    .select({
+      brandId: platinaScanSpecs.brandId,
+      title: platinaFindings.title,
+      summary: platinaFindings.summary,
+      useCase: platinaFindings.useCase,
+      createdAt: platinaFindings.createdAt,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+    })
+    .from(platinaFindings)
+    .innerJoin(platinaSignalDocuments, eq(platinaFindings.signalDocumentId, platinaSignalDocuments.id))
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaFindings.workspaceId, workspaceId),
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaScanSpecs.brandId, brandIds),
+        inArray(platinaFindings.status, ["new", "needs_decision", "validated"]),
+      ),
+    )
+    .orderBy(desc(platinaFindings.createdAt))
+    .limit(limit);
+}
+
+/** Active Brain insights for the 3D map (C8.6), newest first. */
+export function brainMapChunksQuery(workspaceId: string, limit = 220) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      confidence: platinaBrainChunks.confidence,
+      agreementState: platinaBrainChunks.agreementState,
+      insightKey: platinaBrainChunks.insightKey,
+      sourceSignalIds: platinaBrainChunks.sourceSignalIds,
+      createdAt: platinaBrainChunks.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .where(and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.status, "active")))
+    .orderBy(desc(platinaBrainChunks.createdAt))
+    .limit(limit);
+}
+
+/** The company, kind and address behind collected documents (C8.6). */
+export function documentBrandsQuery(workspaceId: string, documentIds: string[]) {
+  return db
+    .select({
+      id: platinaSignalDocuments.id,
+      brandId: platinaScanSpecs.brandId,
+      sourceKind: platinaSignalDocuments.sourceKind,
+      sourceUrl: platinaSignalDocuments.sourceUrl,
+      title: platinaSignalDocuments.title,
+    })
+    .from(platinaSignalDocuments)
+    .innerJoin(platinaScanSpecs, eq(platinaSignalDocuments.scanSpecId, platinaScanSpecs.id))
+    .where(
+      and(
+        eq(platinaSignalDocuments.workspaceId, workspaceId),
+        eq(platinaScanSpecs.workspaceId, workspaceId),
+        inArray(platinaSignalDocuments.id, documentIds.length ? documentIds : ["-"]),
+      ),
+    );
 }

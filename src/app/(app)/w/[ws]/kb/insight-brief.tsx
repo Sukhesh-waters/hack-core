@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/glass-card";
@@ -17,7 +18,7 @@ function GenerateButton() {
 
 /** Inspiration-only observations over the top pattern posts. */
 export function InsightBrief({ workspaceId }: { workspaceId: string }) {
-  const [state, formAction] = useFormState<InsightBriefState, FormData>(
+  const [state, formAction] = useActionState<InsightBriefState, FormData>(
     generateInsightBrief,
     undefined,
   );

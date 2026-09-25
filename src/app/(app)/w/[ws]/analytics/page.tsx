@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 
-export default function AnalyticsRedirectPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function AnalyticsRedirectPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   redirect(`/w/${params.ws}/reports`);
 }

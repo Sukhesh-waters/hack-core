@@ -41,6 +41,37 @@ export async function refreshProfileAction(formData: FormData): Promise<void> {
 }
 
 /**
+ * Reads the client's own website into first-party knowledge now (C6 L1),
+ * instead of waiting for the daily pass. Re-lists the site too.
+ */
+export async function readOwnSiteAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId") ?? "");
+  const brandId = String(formData.get("brandId") ?? "");
+  const here = `/p/${ws}/brands/${brandId}`;
+
+  const user = await requireUser();
+  await requireMembership(ws, user.id);
+  const brand = await getBrand(ws, brandId);
+  if (!brand || brand.kind !== "own_brand") redirect(`/p/${ws}/brands`);
+  if (!brand.homepageUrl) redirect(`${here}?error=${encodeURIComponent("Set the client's website first.")}`);
+
+  try {
+    await inngest.send({
+      name: "platina/own-site.requested",
+      data: { workspaceId: ws, brandId, forceRemap: true },
+    });
+  } catch {
+    redirect(
+      `${here}?error=${encodeURIComponent(
+        "The background job runner is not running. Start it with npm run dev:all, then try again.",
+      )}`,
+    );
+  }
+  revalidatePath(here);
+  redirect(`${here}?reading=1`);
+}
+
+/**
  * Confirms the derived profile as this client's declared brand standard
  * (core spine R3, owner decision O3).
  *

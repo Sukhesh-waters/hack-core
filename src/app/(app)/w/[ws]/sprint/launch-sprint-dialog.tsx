@@ -73,14 +73,14 @@ export function LaunchSprintDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button className="bg-gradient-to-r from-teal-600 to-teal-500 hover:from-teal-500 hover:to-teal-400 text-primary-foreground font-medium shadow-lg shadow-teal-900/30 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-teal-200 animate-pulse" />
+        <Button className="bg-gradient-to-r from-sky-600 to-sky-500 hover:from-sky-500 hover:to-sky-400 text-primary-foreground font-medium shadow-lg shadow-sky-900/30 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-sky-200 animate-pulse" />
           <span>Launch Autopilot Sprint</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[540px] bg-popover backdrop-blur-xl border border-border text-foreground shadow-2xl">
         <DialogHeader>
-          <div className="flex items-center gap-2 text-teal-400 font-mono text-xs font-semibold tracking-wider uppercase">
+          <div className="flex items-center gap-2 text-sky-400 font-mono text-xs font-semibold tracking-wider uppercase">
             <Zap className="w-3.5 h-3.5" />
             <span>Autonomous Content Engine</span>
           </div>
@@ -107,7 +107,7 @@ export function LaunchSprintDialog({
               id="client"
               value={clientId}
               onChange={(e) => setClientId(e.target.value)}
-              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-500"
+              className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
               {clients.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -126,7 +126,7 @@ export function LaunchSprintDialog({
                 id="template"
                 value={templateId}
                 onChange={(e) => setTemplateId(e.target.value)}
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-sky-500"
               >
                 {templates.map((t) => (
                   <option key={t.id} value={t.id}>
@@ -146,7 +146,7 @@ export function LaunchSprintDialog({
               placeholder="e.g. Summer Product Drop, Q3 Growth Sprint, High-Protein Recipe Blitz"
               value={theme}
               onChange={(e) => setTheme(e.target.value)}
-              className="bg-background border-border text-foreground placeholder:text-muted-foreground focus:ring-teal-500"
+              className="bg-background border-border text-foreground placeholder:text-muted-foreground focus:ring-sky-500"
               disabled={isPending}
             />
           </div>
@@ -160,7 +160,7 @@ export function LaunchSprintDialog({
                 id="targetCount"
                 value={targetCount}
                 onChange={(e) => setTargetCount(Number(e.target.value))}
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:ring-teal-500"
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:ring-sky-500"
                 disabled={isPending}
               >
                 <option value={2}>2 Posts (Quick Test)</option>
@@ -178,7 +178,7 @@ export function LaunchSprintDialog({
                 id="duration"
                 value={durationDays}
                 onChange={(e) => setDurationDays(Number(e.target.value))}
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:ring-teal-500"
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-foreground focus:ring-sky-500"
                 disabled={isPending}
               >
                 <option value={7}>7 Days</option>
@@ -190,7 +190,7 @@ export function LaunchSprintDialog({
 
           <div className="p-3 bg-muted/40 rounded-lg border border-border text-xs text-muted-foreground space-y-1.5">
             <div className="flex items-center gap-2 text-foreground font-medium">
-              <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />
               <span>What happens automatically:</span>
             </div>
             <ul className="list-disc list-inside space-y-1 pl-1 text-muted-foreground">
@@ -214,11 +214,11 @@ export function LaunchSprintDialog({
             <Button
               type="submit"
               disabled={isPending}
-              className="bg-teal-600 hover:bg-teal-500 text-primary-foreground font-medium flex items-center gap-2 min-w-[140px]"
+              className="bg-sky-600 hover:bg-sky-500 text-primary-foreground font-medium flex items-center gap-2 min-w-[140px]"
             >
               {isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-teal-200" />
+                  <Loader2 className="w-4 h-4 animate-spin text-sky-200" />
                   <span>Synthesizing...</span>
                 </>
               ) : (

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import type { HarnessSegment } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,11 +58,11 @@ export function HarnessForm({
     initial.cadence,
   );
   const [enabled, setEnabled] = useState(initial.enabled);
-  const [saveState, saveAction] = useFormState<HarnessActionState, FormData>(
+  const [saveState, saveAction] = useActionState<HarnessActionState, FormData>(
     saveHarnessRule,
     undefined,
   );
-  const [runState, runAction] = useFormState<HarnessActionState, FormData>(
+  const [runState, runAction] = useActionState<HarnessActionState, FormData>(
     requestPatternRun,
     undefined,
   );

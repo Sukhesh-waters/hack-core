@@ -7,11 +7,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "Creative Studio" };
 export const dynamic = "force-dynamic";
 
-export default async function StudioPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function StudioPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const drafts = await listDrafts(params.ws);
 
   return (

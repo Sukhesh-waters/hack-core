@@ -1,0 +1,701 @@
+[
+ {
+  "inputUrlOrTerm": "HPLC",
+  "searchTerm": "HPLC",
+  "interestOverTime_timelineData": [
+   {
+    "time": "1788825600",
+    "formattedTime": "Sep 8, 2026",
+    "formattedAxisTime": "Sep 8",
+    "value": [
+     9
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "9"
+    ]
+   },
+   {
+    "time": "1788912000",
+    "formattedTime": "Sep 9, 2026",
+    "formattedAxisTime": "Sep 9",
+    "value": [
+     13
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "13"
+    ]
+   },
+   {
+    "time": "1788998400",
+    "formattedTime": "Sep 10, 2026",
+    "formattedAxisTime": "Sep 10",
+    "value": [
+     8
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "8"
+    ]
+   },
+   {
+    "time": "1789084800",
+    "formattedTime": "Sep 11, 2026",
+    "formattedAxisTime": "Sep 11",
+    "value": [
+     7
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "7"
+    ]
+   },
+   {
+    "time": "1789171200",
+    "formattedTime": "Sep 12, 2026",
+    "formattedAxisTime": "Sep 12",
+    "value": [
+     0
+    ],
+    "hasData": [
+     false
+    ],
+    "formattedValue": [
+     "0"
+    ]
+   },
+   {
+    "time": "1789257600",
+    "formattedTime": "Sep 13, 2026",
+    "formattedAxisTime": "Sep 13",
+    "value": [
+     0
+    ],
+    "hasData": [
+     false
+    ],
+    "formattedValue": [
+     "0"
+    ]
+   },
+   {
+    "time": "1789344000",
+    "formattedTime": "Sep 14, 2026",
+    "formattedAxisTime": "Sep 14",
+    "value": [
+     25
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "25"
+    ]
+   },
+   {
+    "time": "1789430400",
+    "formattedTime": "Sep 15, 2026",
+    "formattedAxisTime": "Sep 15",
+    "value": [
+     15
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "15"
+    ]
+   },
+   {
+    "time": "1789516800",
+    "formattedTime": "Sep 16, 2026",
+    "formattedAxisTime": "Sep 16",
+    "value": [
+     16
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "16"
+    ]
+   },
+   {
+    "time": "1789603200",
+    "formattedTime": "Sep 17, 2026",
+    "formattedAxisTime": "Sep 17",
+    "value": [
+     10
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "10"
+    ]
+   },
+   {
+    "time": "1789689600",
+    "formattedTime": "Sep 18, 2026",
+    "formattedAxisTime": "Sep 18",
+    "value": [
+     16
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "16"
+    ]
+   },
+   {
+    "time": "1789776000",
+    "formattedTime": "Sep 19, 2026",
+    "formattedAxisTime": "Sep 19",
+    "value": [
+     0
+    ],
+    "hasData": [
+     false
+    ],
+    "formattedValue": [
+     "0"
+    ]
+   },
+   {
+    "time": "1789862400",
+    "formattedTime": "Sep 20, 2026",
+    "formattedAxisTime": "Sep 20",
+    "value": [
+     55
+    ],
+    "hasData": [
+     true
+    ],
+    "formattedValue": [
+     "55"
+    ]
+   },
+   {
+    "time": "1789948800",
+    "formattedTime": "Sep 21, 2026",
+    "formattedAxisTime": "Sep 21",
+    "value": [
+     0
+    ],
+    "hasData": [
+     false
+    ],
+    "formattedValue": [
+     "0"
+    ],
+    "isPartial": true
+   }
+  ],
+  "interestOverTime_averages": [],
+  "interestBySubregion": [
+   {
+    "geoCode": "AE-AZ",
+    "geoName": "Abu Dhabi",
+    "value": [
+     100
+    ],
+    "formattedValue": [
+     "100"
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     true
+    ]
+   },
+   {
+    "geoCode": "AE-DU",
+    "geoName": "Dubai",
+    "value": [
+     77
+    ],
+    "formattedValue": [
+     "77"
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     true
+    ]
+   },
+   {
+    "geoCode": "AE-AJ",
+    "geoName": "Ajman",
+    "value": [
+     24
+    ],
+    "formattedValue": [
+     "24"
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     true
+    ]
+   },
+   {
+    "geoCode": "AE-RK",
+    "geoName": "Ras al Khaimah",
+    "value": [
+     24
+    ],
+    "formattedValue": [
+     "24"
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     true
+    ]
+   },
+   {
+    "geoCode": "AE-SH",
+    "geoName": "Sharjah",
+    "value": [
+     12
+    ],
+    "formattedValue": [
+     "12"
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     true
+    ]
+   },
+   {
+    "geoCode": "AE-FU",
+    "geoName": "Fujairah",
+    "value": [
+     0
+    ],
+    "formattedValue": [
+     ""
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     false
+    ]
+   },
+   {
+    "geoCode": "AE-UQ",
+    "geoName": "Umm Al Quwain",
+    "value": [
+     0
+    ],
+    "formattedValue": [
+     ""
+    ],
+    "maxValueIndex": 0,
+    "hasData": [
+     false
+    ]
+   }
+  ],
+  "relatedTopics_top": [
+   {
+    "topic": {
+     "mid": "/m/016l46",
+     "title": "High-performance liquid chromatography",
+     "type": "Medical test"
+    },
+    "value": 100,
+    "formattedValue": "100",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/016l46&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/06ntj",
+     "title": "Sports",
+     "type": "Radio format"
+    },
+    "value": 14,
+    "formattedValue": "14",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/06ntj&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/11c3ptzlb8",
+     "title": "Shimadzu",
+     "type": "Topic"
+    },
+    "value": 13,
+    "formattedValue": "13",
+    "hasData": true,
+    "link": "/trends/explore?q=/g/11c3ptzlb8&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/11b77d3kyg",
+     "title": "2025",
+     "type": "Topic"
+    },
+    "value": 9,
+    "formattedValue": "9",
+    "hasData": true,
+    "link": "/trends/explore?q=/g/11b77d3kyg&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/02p0qmm",
+     "title": "Higher Education School",
+     "type": "School category"
+    },
+    "value": 9,
+    "formattedValue": "9",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/02p0qmm&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0168hv",
+     "title": "Cost",
+     "type": "Topic"
+    },
+    "value": 8,
+    "formattedValue": "8",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/0168hv&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/02wwvy",
+     "title": "Candidate",
+     "type": "Topic"
+    },
+    "value": 8,
+    "formattedValue": "8",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/02wwvy&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0z5n",
+     "title": "Application programming interface",
+     "type": "Type of software"
+    },
+    "value": 7,
+    "formattedValue": "7",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/0z5n&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/015www",
+     "title": "Documentation",
+     "type": "Topic"
+    },
+    "value": 7,
+    "formattedValue": "7",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/015www&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/07kgg_v",
+     "title": "Chromatography detector",
+     "type": "Topic"
+    },
+    "value": 7,
+    "formattedValue": "7",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/07kgg_v&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/026yhkk",
+     "title": "Waters Corp",
+     "type": "Analytical laboratory instrument manufacturing company"
+    },
+    "value": 6,
+    "formattedValue": "6",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/026yhkk&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/06vkl",
+     "title": "September",
+     "type": "Month"
+    },
+    "value": 6,
+    "formattedValue": "6",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/06vkl&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/017clw",
+     "title": "Laboratory",
+     "type": "Topic"
+    },
+    "value": 6,
+    "formattedValue": "6",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/017clw&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/11bc72ltd4",
+     "title": "Waters",
+     "type": "Topic"
+    },
+    "value": 6,
+    "formattedValue": "6",
+    "hasData": true,
+    "link": "/trends/explore?q=/g/11bc72ltd4&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/1214m5jh",
+     "title": "column",
+     "type": "Topic"
+    },
+    "value": 5,
+    "formattedValue": "5",
+    "hasData": true,
+    "link": "/trends/explore?q=/g/1214m5jh&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/01lmkt",
+     "title": "Metformin",
+     "type": "Medication"
+    },
+    "value": 5,
+    "formattedValue": "5",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/01lmkt&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/04gb7",
+     "title": "Law",
+     "type": "Topic"
+    },
+    "value": 5,
+    "formattedValue": "5",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/04gb7&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0cknk0",
+     "title": "Vial",
+     "type": "Topic"
+    },
+    "value": 4,
+    "formattedValue": "4",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/0cknk0&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0p57p",
+     "title": "Recipe",
+     "type": "Topic"
+    },
+    "value": 3,
+    "formattedValue": "3",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/0p57p&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/03c1dkx",
+     "title": "Therapy",
+     "type": "Topic"
+    },
+    "value": 3,
+    "formattedValue": "3",
+    "hasData": true,
+    "link": "/trends/explore?q=/m/03c1dkx&date=today+3-m&geo=AE"
+   }
+  ],
+  "relatedTopics_rising": [
+   {
+    "topic": {
+     "mid": "/m/02wwvy",
+     "title": "Candidate",
+     "type": "Topic"
+    },
+    "value": 681000,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/02wwvy&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/07kgg_v",
+     "title": "Chromatography detector",
+     "type": "Topic"
+    },
+    "value": 610950,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/07kgg_v&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/026yhkk",
+     "title": "Waters Corp",
+     "type": "Analytical laboratory instrument manufacturing company"
+    },
+    "value": 588600,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/026yhkk&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/06vkl",
+     "title": "September",
+     "type": "Month"
+    },
+    "value": 583800,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/06vkl&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/11bc72ltd4",
+     "title": "Waters",
+     "type": "Topic"
+    },
+    "value": 520450,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/g/11bc72ltd4&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/1214m5jh",
+     "title": "column",
+     "type": "Topic"
+    },
+    "value": 497050,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/g/1214m5jh&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/01lmkt",
+     "title": "Metformin",
+     "type": "Medication"
+    },
+    "value": 471000,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/01lmkt&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/04gb7",
+     "title": "Law",
+     "type": "Topic"
+    },
+    "value": 425900,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/04gb7&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0cknk0",
+     "title": "Vial",
+     "type": "Topic"
+    },
+    "value": 353500,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/0cknk0&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0p57p",
+     "title": "Recipe",
+     "type": "Topic"
+    },
+    "value": 315500,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/0p57p&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/03c1dkx",
+     "title": "Therapy",
+     "type": "Topic"
+    },
+    "value": 312400,
+    "formattedValue": "Breakout",
+    "link": "/trends/explore?q=/m/03c1dkx&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/06ntj",
+     "title": "Sports",
+     "type": "Radio format"
+    },
+    "value": 650,
+    "formattedValue": "+650%",
+    "link": "/trends/explore?q=/m/06ntj&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/02p0qmm",
+     "title": "Higher Education School",
+     "type": "School category"
+    },
+    "value": 350,
+    "formattedValue": "+350%",
+    "link": "/trends/explore?q=/m/02p0qmm&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0168hv",
+     "title": "Cost",
+     "type": "Topic"
+    },
+    "value": 250,
+    "formattedValue": "+250%",
+    "link": "/trends/explore?q=/m/0168hv&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/g/11c3ptzlb8",
+     "title": "Shimadzu",
+     "type": "Topic"
+    },
+    "value": 200,
+    "formattedValue": "+200%",
+    "link": "/trends/explore?q=/g/11c3ptzlb8&date=today+3-m&geo=AE"
+   },
+   {
+    "topic": {
+     "mid": "/m/0z5n",
+     "title": "Application programming interface",
+     "type": "Type of software"
+    },
+    "value": 70,
+    "formattedValue": "+70%",
+    "link": "/trends/explore?q=/m/0z5n&date=today+3-m&geo=AE"
+   }
+  ],
+  "relatedQueries_top": [
+   {
+    "query": "hplc test",
+    "value": 100,
+    "formattedValue": "100",
+    "hasData": true,
+    "link": "/trends/explore?q=hplc+test&date=today+3-m&geo=AE"
+   }
+  ],
+  "relatedQueries_rising": [],
+  "interestBy": []
+ }
+]

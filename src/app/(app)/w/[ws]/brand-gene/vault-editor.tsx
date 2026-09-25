@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useEffect, useRef, useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import type { BrandContext } from "@/db/schema";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,7 +46,7 @@ export function VaultEditor({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<BrandContext>(declared);
-  const [state, formAction] = useFormState<VaultActionState, FormData>(
+  const [state, formAction] = useActionState<VaultActionState, FormData>(
     updateBrandContext,
     undefined,
   );

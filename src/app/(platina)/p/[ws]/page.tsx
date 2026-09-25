@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { CollectionBanner } from "@/components/platina/collection-banner";
 import { PlatinaPage } from "@/components/platina/page";
 import {
@@ -40,11 +41,12 @@ const RUN_STATUS_LABEL: Record<string, string> = {
  * every number and row traces to a real workspace-scoped query. No live
  * badge claim — the transport pill in the header reports the real state.
  */
-export default async function PlatinaCockpit({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function PlatinaCockpit(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [specs, receipts, campaigns, gates, runs, findings, deliveries, brands, latestPlans] =
     await Promise.all([
       listScanSpecs(params.ws),
@@ -58,13 +60,6 @@ export default async function PlatinaCockpit({
       listPlansWithVerdict(params.ws, 1),
     ]);
   const livePlan = latestPlans[0] ?? null;
-  const livePlanFresh = livePlan
-    ? await readPlanFreshness({
-        workspaceId: params.ws,
-        brandId: livePlan.brandId,
-        createdAt: livePlan.createdAt,
-      })
-    : null;
 
   const base = `/p/${params.ws}`;
   const renderedAt = new Date();
@@ -184,30 +179,16 @@ export default async function PlatinaCockpit({
           </Link>
         </section>
       )}
-      {livePlan && livePlanFresh ? (
+      {livePlan ? (
         <section aria-label="Live plan" className="mb-8 rounded-lg border border-border bg-card p-4">
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
             Live plan
           </p>
-          <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <Link
-                href={`${base}/plan/${livePlan.id}`}
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                {livePlan.title}
-              </Link>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {freshnessMessage(livePlanFresh.count, livePlanFresh.scopeLabel)}
-              </p>
-            </div>
-            <Link
-              href={`${base}/plan/${livePlan.id}`}
-              className="rounded-md border border-border px-3 py-1.5 text-xs"
-            >
-              {livePlanFresh.count > 0 ? "Review and re-plan" : "Open plan"}
-            </Link>
-          </div>
+          {/* Streamed: the freshness read is 2-3 database rounds and used to
+              hold up the whole Cockpit (measured ~260 ms). */}
+          <Suspense fallback={<LivePlanRow base={base} plan={livePlan} fresh={null} />}>
+            <LivePlanFreshness ws={params.ws} base={base} plan={livePlan} />
+          </Suspense>
         </section>
       ) : null}
       <section aria-label="Priority inbox" className="mb-8">
@@ -355,5 +336,41 @@ export default async function PlatinaCockpit({
         </section>
       )}
     </PlatinaPage>
+  );
+}
+
+type LivePlan = { id: string; title: string; brandId: string | null; createdAt: Date };
+
+async function LivePlanFreshness({ ws, base, plan }: { ws: string; base: string; plan: LivePlan }) {
+  const fresh = await readPlanFreshness({ workspaceId: ws, brandId: plan.brandId, createdAt: plan.createdAt });
+  return <LivePlanRow base={base} plan={plan} fresh={fresh} />;
+}
+
+function LivePlanRow({
+  base,
+  plan,
+  fresh,
+}: {
+  base: string;
+  plan: LivePlan;
+  fresh: { count: number; scopeLabel: string | null } | null;
+}) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
+      <div className="min-w-0">
+        <Link
+          href={`${base}/plan/${plan.id}`}
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          {plan.title}
+        </Link>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {fresh ? freshnessMessage(fresh.count, fresh.scopeLabel) : "Checking for new evidence…"}
+        </p>
+      </div>
+      <Link href={`${base}/plan/${plan.id}`} className="rounded-md border border-border px-3 py-1.5 text-xs">
+        {fresh && fresh.count > 0 ? "Review and re-plan" : "Open plan"}
+      </Link>
+    </div>
   );
 }

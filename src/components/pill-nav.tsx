@@ -34,7 +34,7 @@ export function PillNav() {
           <Button
             asChild
             size="sm"
-            className="rounded-full bg-brand-teal px-4 font-medium text-foreground shadow-md shadow-brand-teal/20 transition hover:bg-brand-teal/90 hover:shadow-brand-teal/40"
+            className="rounded-full bg-brand-teal px-4 font-medium text-primary-foreground shadow-md shadow-brand-teal/20 transition hover:bg-brand-teal/90 hover:shadow-brand-teal/40"
           >
             <Link href="/login" className="flex items-center gap-1.5 text-xs sm:text-sm">
               <span>Sign In</span>

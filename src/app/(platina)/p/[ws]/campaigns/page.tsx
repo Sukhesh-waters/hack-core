@@ -5,11 +5,12 @@ import { publishCampaignAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function CampaignsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function CampaignsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const campaigns = await listCampaigns(params.ws);
 
   return (

@@ -19,13 +19,14 @@ const NARRATIVE_COPY: Record<string, string> = {
     "A significant share of recent drafts are getting flagged. Review the brand rules or the drafts themselves.",
 };
 
-export default async function DriftPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { client?: string };
-}) {
+export default async function DriftPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ client?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const clientsList = await listClients(params.ws);
 
   if (clientsList.length === 0) {

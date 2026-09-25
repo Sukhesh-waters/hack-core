@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,7 +22,7 @@ function SubmitButton() {
 }
 
 export function PatternForm({ workspaceId }: { workspaceId: string }) {
-  const [state, formAction] = useFormState<AccountsActionState, FormData>(
+  const [state, formAction] = useActionState<AccountsActionState, FormData>(
     addPublicPage,
     undefined,
   );

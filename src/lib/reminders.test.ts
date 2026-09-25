@@ -3,6 +3,7 @@ import {
   buildHubReminderEmail,
   buildReminderEmail,
   hubReminderStatus,
+  isPermanentSendFailure,
   reminderHorizon,
   REMINDER_HORIZON_HOURS,
 } from "./reminders";
@@ -102,5 +103,70 @@ describe("hubReminderStatus (C1s)", () => {
       now,
     );
     expect(status).toEqual({ overdue: false, notified: false });
+  });
+});
+
+describe("isPermanentSendFailure", () => {
+  it("gives up on a rejection that names the payload", () => {
+    for (const name of [
+      "validation_error",
+      "invalid_from_address",
+      "invalid_parameter",
+      "missing_required_field",
+      "invalid_attachment",
+      "not_found",
+    ]) {
+      expect(isPermanentSendFailure({ name, statusCode: 403 })).toBe(true);
+    }
+  });
+
+  it("gives up on the sandbox-sender rejection that starts the retry loop", () => {
+    // The live 403 from onboarding@resend.dev: unstamped, this row is
+    // re-sent every 15 minutes for as long as the sender is unverified.
+    expect(
+      isPermanentSendFailure({
+        name: "validation_error",
+        statusCode: 403,
+        message:
+          "You can only send testing emails to your own email address (owner@example.com).",
+      } as Parameters<typeof isPermanentSendFailure>[0]),
+    ).toBe(true);
+  });
+
+  it("retries the environment-level failures that every row shares", () => {
+    // Each of these starts succeeding once the account or the outage is
+    // fixed, so stamping on them would discard a deliverable reminder.
+    for (const name of [
+      "rate_limit_exceeded",
+      "daily_quota_exceeded",
+      "monthly_quota_exceeded",
+      "internal_server_error",
+      "application_error",
+      "missing_api_key",
+      "invalid_api_key",
+      "restricted_api_key",
+      "concurrent_idempotent_requests",
+    ]) {
+      expect(isPermanentSendFailure({ name, statusCode: 429 })).toBe(false);
+    }
+  });
+
+  it("falls back to the status class for an unrecognised code", () => {
+    expect(isPermanentSendFailure({ name: "brand_new_code", statusCode: 422 })).toBe(
+      true,
+    );
+    expect(isPermanentSendFailure({ name: "brand_new_code", statusCode: 503 })).toBe(
+      false,
+    );
+  });
+
+  it("retries the 4xx codes that mean try again", () => {
+    expect(isPermanentSendFailure({ name: "unknown", statusCode: 408 })).toBe(false);
+    expect(isPermanentSendFailure({ name: "unknown", statusCode: 429 })).toBe(false);
+  });
+
+  it("retries when the call never got an answer", () => {
+    expect(isPermanentSendFailure({ name: "unknown", statusCode: null })).toBe(false);
+    expect(isPermanentSendFailure({ name: "unknown" })).toBe(false);
   });
 });

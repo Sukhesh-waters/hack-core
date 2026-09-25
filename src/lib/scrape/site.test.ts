@@ -5,7 +5,7 @@ import {
   mapConcurrent,
   pickSitePages,
   readSite,
-} from "./knowledge-site";
+} from "./site";
 
 describe("localeOf", () => {
   it("reads the common locale shapes, and nothing from a plain path", () => {

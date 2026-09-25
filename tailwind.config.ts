@@ -1,4 +1,7 @@
 import type { Config } from "tailwindcss";
+// An import, not require(): on Node 22+ Next 15 can load this file as an ES
+// module, where require is not defined (the dev server crashed on /login).
+import animate from "tailwindcss-animate";
 
 const config = {
   darkMode: ["class"],
@@ -17,7 +20,14 @@ const config = {
       },
       colors: {
         brand: {
-          teal: "#0d9488",
+          // C7.9 (D11): the brand colour is a mild Salesforce-style blue, read
+          // from the theme so light and dark each get a readable shade.
+          // "teal" is the legacy name kept so 300+ existing utilities switch
+          // in one place; new code uses brand-blue (text/icons/borders) or
+          // brand-sky (the logo blue, decorative fills only).
+          teal: "hsl(var(--brand) / <alpha-value>)",
+          blue: "hsl(var(--brand) / <alpha-value>)",
+          sky: "hsl(var(--brand-sky) / <alpha-value>)",
           purple: "#8b5cf6",
           amber: "#f59e0b",
           success: "#10b981",
@@ -77,7 +87,7 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [animate],
 } satisfies Config;
 
 export default config;

@@ -6,7 +6,8 @@ import { listBrands, listScanSpecs } from "@/db/queries/platina";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Clients" };
 
-export default async function BrandsPage({ params }: { params: { ws: string } }) {
+export default async function BrandsPage(props: { params: Promise<{ ws: string }> }) {
+  const params = await props.params;
   const [brands, specs] = await Promise.all([
     listBrands(params.ws),
     listScanSpecs(params.ws),

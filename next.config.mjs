@@ -1,12 +1,7 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  optimizeFonts: false,
-  // Next 14.2 gates instrumentation.ts (used for the boot-time env guard,
-  // src/lib/env.ts) behind this flag; it becomes the stable default in
-  // Next 15 and this flag can be dropped then.
-  experimental: {
-    instrumentationHook: true,
-  },
-};
+// Next 15: instrumentation.ts (the boot-time env guard, src/lib/env.ts) runs
+// by default, and `optimizeFonts` no longer exists (fonts are system stacks,
+// see globals.css), so neither option is needed any more.
+const nextConfig = {};
 
 export default nextConfig;

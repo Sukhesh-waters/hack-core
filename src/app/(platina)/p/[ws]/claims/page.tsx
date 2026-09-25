@@ -4,13 +4,14 @@ import { enforceClaims } from "@/lib/platina/claims";
 
 export const dynamic = "force-dynamic";
 
-export default function ClaimsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { copy?: string };
-}) {
+export default async function ClaimsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ copy?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const copy = searchParams.copy ?? "";
   const result = copy
     ? enforceClaims(copy, {

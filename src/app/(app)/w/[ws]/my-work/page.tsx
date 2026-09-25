@@ -6,11 +6,12 @@ import { MyWorkClient } from "./my-work-client";
 export const metadata = { title: "My Work | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
-export default async function MyWorkPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function MyWorkPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const user = await requireUser();
   const items = await listMyWork(params.ws, user.id);
 

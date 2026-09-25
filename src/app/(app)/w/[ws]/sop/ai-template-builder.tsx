@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useFormState, useFormStatus } from "react-dom";
+import { useState, useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { GlassCard } from "@/components/glass-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,19 +27,19 @@ function GenerateButton() {
 function CommitButton() {
   const { pending } = useFormStatus();
   return (
-    <Button type="submit" size="sm" className="bg-brand-teal text-black hover:bg-brand-teal/90" disabled={pending}>
+    <Button type="submit" size="sm" className="bg-brand-teal text-primary-foreground hover:bg-brand-teal/90" disabled={pending}>
       {pending ? "Saving template..." : "Commit & Save Template"}
     </Button>
   );
 }
 
 export function AiTemplateBuilder({ workspaceId }: { workspaceId: string }) {
-  const [genState, genFormAction] = useFormState<
+  const [genState, genFormAction] = useActionState<
     GenerateTemplateActionState,
     FormData
   >(generateTemplateFromProseAction, {});
 
-  const [commitState, commitFormAction] = useFormState<
+  const [commitState, commitFormAction] = useActionState<
     SopActionState,
     FormData
   >(commitGeneratedTemplateAction, undefined);

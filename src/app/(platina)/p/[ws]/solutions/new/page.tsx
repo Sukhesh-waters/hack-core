@@ -27,13 +27,14 @@ const USE_CASES = [
  * The two buckets stay separate and differently labelled; the similarity
  * floor and the workspace minimum-N are enforced before any proposal shows.
  */
-export default async function NewSolutionPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: { error?: string; findingId?: string; topic?: string };
-}) {
+export default async function NewSolutionPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{ error?: string; findingId?: string; topic?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [config, finding] = await Promise.all([
     getWorkspaceConfig(params.ws),
     searchParams.findingId

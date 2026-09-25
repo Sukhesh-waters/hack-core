@@ -9,11 +9,12 @@ import { PageShell } from "@/components/page-shell";
 export const metadata = { title: "SOP run" };
 export const dynamic = "force-dynamic";
 
-export default async function SopRunPage({
-  params,
-}: {
-  params: { ws: string; runId: string };
-}) {
+export default async function SopRunPage(
+  props: {
+    params: Promise<{ ws: string; runId: string }>;
+  }
+) {
+  const params = await props.params;
   const user = await requireUser();
   const [loaded, members] = await Promise.all([
     loadSopRun(params.ws, params.runId),

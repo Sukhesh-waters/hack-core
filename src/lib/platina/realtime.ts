@@ -16,7 +16,16 @@ export type PlatinaRealtimeScope =
   | "findings"
   | "solutions"
   | "outcomes"
-  | "alerts";
+  | "alerts"
+  // Campaign intelligence: measured insights written to the Brain, events read.
+  | "insights"
+  | "events"
+  // C6: own-site pages read (first-party knowledge); creatives, results,
+  // reviews and learning changes.
+  | "knowledge"
+  | "results"
+  // C7.1: the ops board ran its checks.
+  | "ops";
 
 export const PLATINA_REALTIME_SCOPES: readonly PlatinaRealtimeScope[] = [
   "audits",
@@ -24,6 +33,11 @@ export const PLATINA_REALTIME_SCOPES: readonly PlatinaRealtimeScope[] = [
   "solutions",
   "outcomes",
   "alerts",
+  "insights",
+  "events",
+  "knowledge",
+  "results",
+  "ops",
 ];
 
 export const PLATINA_BROADCAST_EVENT = "platina";

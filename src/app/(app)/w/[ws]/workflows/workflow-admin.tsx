@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { GlassCard } from "@/components/glass-card";
@@ -89,7 +90,7 @@ function RuleChip({
   index: number;
   canEdit: boolean;
 }) {
-  const [remove, removeFn] = useFormState(removeRuleAction, undefined);
+  const [remove, removeFn] = useActionState(removeRuleAction, undefined);
   const meta = RULE_META[category][rule.kind];
   const detail =
     rule.kind === "requires_capability"
@@ -136,7 +137,7 @@ function AddRuleForm({
   transitionId: string;
   category: WorkflowRuleCategory;
 }) {
-  const [add, addFn] = useFormState(addRuleAction, undefined);
+  const [add, addFn] = useActionState(addRuleAction, undefined);
   const kinds = RULE_KINDS[category];
 
   return (
@@ -232,9 +233,9 @@ function StateRow({
   total: number;
   canEdit: boolean;
 }) {
-  const [rename, renameFn] = useFormState(renameStateAction, undefined);
-  const [remove, removeFn] = useFormState(deleteStateAction, undefined);
-  const [move, moveFn] = useFormState(moveStateAction, undefined);
+  const [rename, renameFn] = useActionState(renameStateAction, undefined);
+  const [remove, removeFn] = useActionState(deleteStateAction, undefined);
+  const [move, moveFn] = useActionState(moveStateAction, undefined);
 
   return (
     <GlassCard className="p-4">
@@ -365,7 +366,7 @@ function TransitionRow({
   toName: string;
   canEdit: boolean;
 }) {
-  const [remove, removeFn] = useFormState(deleteTransitionAction, undefined);
+  const [remove, removeFn] = useActionState(deleteTransitionAction, undefined);
   const isInitial = transition.fromStateId === null;
 
   return (
@@ -464,8 +465,8 @@ export function WorkflowAdmin({
   /** Rendering is a courtesy — every action re-checks the capability. */
   canEdit: boolean;
 }) {
-  const [addState, addStateFn] = useFormState(addStateAction, undefined);
-  const [addTrans, addTransFn] = useFormState(addTransitionAction, undefined);
+  const [addState, addStateFn] = useActionState(addStateAction, undefined);
+  const [addTrans, addTransFn] = useActionState(addTransitionAction, undefined);
   const nameById = new Map(states.map((s) => [s.id, s.name]));
 
   return (

@@ -16,3 +16,14 @@ describe("conference presets", () => {
     expect(getConferencePreset("nope")).toBeNull();
   });
 });
+
+describe("conference presets — live state 2026-09-21", () => {
+  it("no longer points at the dead HPLC domain", () => {
+    expect(CONFERENCE_PRESETS.some((p) => p.url.includes("hplc-conference.org"))).toBe(false);
+  });
+
+  it("covers the Gulf lab events", () => {
+    expect(getConferencePreset("arablab")?.url).toContain("arablab-live");
+    expect(getConferencePreset("whx-labs")?.name).toContain("Medlab");
+  });
+});

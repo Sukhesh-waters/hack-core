@@ -15,6 +15,13 @@ import {
   docCountForBrandsQuery,
   findingsForBrandsQuery,
   findingTitleExistsQuery,
+  openFindingsForUseCaseQuery,
+  adDocumentsQuery,
+  adTopicsQuery,
+  brandDocCountsQuery,
+  brandFindingsQuery,
+  brainMapChunksQuery,
+  documentBrandsQuery,
   latestDocumentQuery,
   pagesTodayQuery,
   recentBrainEvidenceQuery,
@@ -38,10 +45,71 @@ import {
   similarBrandChunksQuery,
   brandStandardChunkCountQuery,
   previousSignalDocumentQuery,
+  clientScopeSignalsQuery,
+  flowBrainSampleQuery,
+  flowCountsSql,
+  eventParticipantsQuery,
+  workspaceEventParticipantsQuery,
+  workspaceWideSignalIdsQuery,
+  activeInsightChunksQuery,
+  eventSourceDocsQuery,
+  eventsQuery,
+  interestSignalsQuery,
+  interestSourceDocsQuery,
   unprocessedSignalsQuery,
 } from "./platina";
 
 describe("platina query isolation", () => {
+  it("interest queries filter workspace_id (documents AND the specs they came from)", () => {
+    const docs = interestSourceDocsQuery("ws_i", ["b1"], new Date(0)).toSQL();
+    expect(docs.sql).toContain('"platina_signal_documents"."workspace_id" =');
+    expect(docs.sql).toContain('"platina_scan_specs"."workspace_id" =');
+    expect(docs.params.filter((p) => p === "ws_i")).toHaveLength(2);
+    const signals = interestSignalsQuery("ws_i", ["b1"], new Date(0)).toSQL();
+    expect(signals.sql).toContain('"workspace_id" =');
+    expect(signals.params).toContain("ws_i");
+  });
+
+  it("event queries filter workspace_id (documents, the spec join, events, participants)", () => {
+    const docs = eventSourceDocsQuery("ws_e", new Date(0)).toSQL();
+    expect(docs.sql).toContain('"platina_signal_documents"."workspace_id" =');
+    expect(docs.sql).toContain('"platina_scan_specs"."workspace_id" =');
+    expect(docs.params.filter((p) => p === "ws_e")).toHaveLength(2);
+    const events = eventsQuery("ws_e").toSQL();
+    expect(events.sql).toContain('"workspace_id" =');
+    expect(events.params).toContain("ws_e");
+    const people = eventParticipantsQuery("ws_e", ["e1"]).toSQL();
+    expect(people.sql).toContain('"workspace_id" =');
+    expect(people.params).toContain("ws_e");
+  });
+
+  it("render-path and insight queries filter workspace_id (including subqueries)", () => {
+    const signals = clientScopeSignalsQuery("ws_r", "client_1", new Date(0)).toSQL();
+    expect(signals.sql).toContain('"platina_interest_signals"."workspace_id" =');
+    expect(signals.sql).toContain('"platina_brands"."workspace_id" =');
+    expect(signals.params.filter((p) => p === "ws_r")).toHaveLength(2);
+    for (const q of [
+      workspaceEventParticipantsQuery("ws_r"),
+      workspaceWideSignalIdsQuery("ws_r"),
+      activeInsightChunksQuery("ws_r", "event:"),
+    ]) {
+      const { sql, params } = q.toSQL();
+      expect(sql).toContain('"workspace_id" =');
+      expect(params).toContain("ws_r");
+    }
+  });
+
+  it("live-flow snapshot filters workspace_id in EVERY subquery", async () => {
+    const { PgDialect } = await import("drizzle-orm/pg-core");
+    const { sql, params } = new PgDialect().sqlToQuery(flowCountsSql("ws_f", new Date(0), "2026-09-22"));
+    const froms = sql.match(/ from "/g)?.length ?? 0;
+    expect(froms).toBeGreaterThanOrEqual(20);
+    expect(params.filter((p) => p === "ws_f")).toHaveLength(froms);
+    const sample = flowBrainSampleQuery("ws_f").toSQL();
+    expect(sample.sql).toContain('"workspace_id" =');
+    expect(sample.params).toContain("ws_f");
+  });
+
   it("brandChunksQuery filters workspace_id", () => {
     const { sql, params } = brandChunksQuery("ws_p").toSQL();
     expect(sql).toContain('"workspace_id" =');
@@ -216,6 +284,13 @@ describe("platina query isolation", () => {
       signalProvenanceQuery("ws_a", ["s1"]),
       latestDocumentQuery("ws_a"),
       findingTitleExistsQuery("ws_a", "brand_divergence", "t"),
+      openFindingsForUseCaseQuery("ws_a", "ideation"),
+      brandDocCountsQuery("ws_a", ["b1"]),
+      brandFindingsQuery("ws_a", ["b1"]),
+      brainMapChunksQuery("ws_a"),
+      documentBrandsQuery("ws_a", ["d1"]),
+      adDocumentsQuery("ws_a", ["b1"], new Date("2026-09-01T00:00:00Z")),
+      adTopicsQuery("ws_a", ["b1"]),
     ]) {
       const { sql, params } = q.toSQL();
       expect(sql).toContain('"workspace_id" =');

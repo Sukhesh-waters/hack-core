@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { runBrandResearch, type BrandActionState } from "./actions";
 
@@ -38,7 +39,7 @@ export function ResearchForm({
   rerun?: boolean;
   enrich?: boolean;
 }) {
-  const [state, formAction] = useFormState<BrandActionState, FormData>(
+  const [state, formAction] = useActionState<BrandActionState, FormData>(
     runBrandResearch,
     undefined,
   );

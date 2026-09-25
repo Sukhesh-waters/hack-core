@@ -36,13 +36,19 @@ export type BudgetInput = {
   workspaceRemaining: number;
   /** Pages left in this client's one-time first-pass allowance. */
   firstPassRemaining: number;
+  /**
+   * Pages an operator granted to this one run (C8.0 force run), recorded on
+   * the run's config snapshot. Bypasses the workspace daily cap, never the
+   * source's own cap. Absent or 0 on every scheduled run.
+   */
+  seedPages?: number;
 };
 
 export type BudgetDecision = {
   /** Pages this run may collect. Zero means "do not run". */
   pages: number;
   /** Which purse pays. The first pass does not touch the daily cap. */
-  charge: "first_pass" | "daily";
+  charge: "first_pass" | "seed" | "daily";
   /** Plain language for the run timeline and the UI. */
   reason: string;
 };
@@ -69,6 +75,15 @@ export function budgetForRun(input: BudgetInput): BudgetDecision {
       pages: Math.min(specRemaining, firstPass),
       charge: "first_pass",
       reason: "first pass for this client",
+    };
+  }
+
+  const seed = Math.max(0, input.seedPages ?? 0);
+  if (seed > 0) {
+    return {
+      pages: Math.min(specRemaining, seed),
+      charge: "seed",
+      reason: "operator seed run",
     };
   }
 

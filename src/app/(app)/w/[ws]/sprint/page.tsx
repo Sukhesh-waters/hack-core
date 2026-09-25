@@ -10,11 +10,12 @@ import { Sparkles, Calendar, ChevronRight, Rocket } from "lucide-react";
 export const metadata = { title: "Campaign Sprints | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
-export default async function SprintIndexPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function SprintIndexPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   await requireUser();
   const [clientsList, sprints, templates] = await Promise.all([
     listClients(params.ws),
@@ -33,15 +34,15 @@ export default async function SprintIndexPage({
         {/* Hero Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-8 rounded-2xl bg-card border border-border shadow-xl">
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-teal-400 font-mono text-xs font-semibold tracking-wider uppercase">
-              <Sparkles className="w-4 h-4 text-teal-300 animate-pulse" />
+            <div className="flex items-center gap-2 text-sky-400 font-mono text-xs font-semibold tracking-wider uppercase">
+              <Sparkles className="w-4 h-4 text-sky-300 animate-pulse" />
               <span>Autopilot Campaign Production</span>
             </div>
             <h1 className="text-3xl font-display text-foreground">
               Campaign Sprints
             </h1>
             <p className="text-sm text-muted-foreground max-w-xl">
-              1-Click agency factory: Select a client & theme $\rightarrow$ AI generates hooks, multi-format drafts, brand compliance audits, and calendar slots in 60 seconds.
+              1-Click agency factory: Select a client & theme → AI generates hooks, multi-format drafts, brand compliance audits, and calendar slots in 60 seconds.
             </p>
           </div>
 
@@ -68,7 +69,7 @@ export default async function SprintIndexPage({
 
           {sprints.length === 0 ? (
             <div className="p-12 text-center rounded-2xl bg-card border border-dashed border-border space-y-4">
-              <div className="w-12 h-12 rounded-full bg-teal-500/10 text-teal-400 flex items-center justify-center mx-auto border border-teal-500/20">
+              <div className="w-12 h-12 rounded-full bg-sky-500/10 text-sky-400 flex items-center justify-center mx-auto border border-sky-500/20">
                 <Rocket className="w-6 h-6" />
               </div>
               <div className="space-y-1">
@@ -95,18 +96,18 @@ export default async function SprintIndexPage({
                 <Link
                   key={sprint.id}
                   href={`/w/${params.ws}/sprint/${sprint.id}`}
-                  className="group p-5 rounded-2xl bg-card hover:bg-muted/40 border border-border hover:border-teal-500/50 transition-all shadow-md space-y-4 flex flex-col justify-between"
+                  className="group p-5 rounded-2xl bg-card hover:bg-muted/40 border border-border hover:border-sky-500/50 transition-all shadow-md space-y-4 flex flex-col justify-between"
                 >
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20">
                         {sprint.clientName ?? "All Clients"}
                       </span>
                       <span className="text-xs font-mono uppercase text-muted-foreground">
                         {sprint.status}
                       </span>
                     </div>
-                    <h3 className="text-lg font-medium text-foreground group-hover:text-teal-300 transition-colors">
+                    <h3 className="text-lg font-medium text-foreground group-hover:text-sky-300 transition-colors">
                       {sprint.name}
                     </h3>
                   </div>
@@ -116,7 +117,7 @@ export default async function SprintIndexPage({
                       <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                       <span>Started: {new Date(sprint.createdAt).toLocaleDateString()}</span>
                     </div>
-                    <span className="text-teal-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
+                    <span className="text-sky-400 flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
                       <span>Open Deck</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </span>

@@ -1,0 +1,1 @@
+ALTER TABLE "platina_event_participants" ADD COLUMN "document_id" text;

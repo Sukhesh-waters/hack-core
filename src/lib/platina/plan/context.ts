@@ -8,8 +8,11 @@ import {
   listPlanLessons,
   listSignalIdsForBrands,
   listSignalProvenance,
+  listWorkspaceWideSignalIds,
   similarBrainChunksQuery,
 } from "@/db/queries/platina";
+import { similarFirstPartyChunksQuery } from "@/db/queries/platina-learning";
+import { learnedPatternLines, learningState } from "@/lib/platina/learning-read";
 import { logContextAssembly, type ContextResult } from "@/lib/ai/context/types";
 import { embedText } from "@/lib/platina/embed";
 import { reciprocalRankFusion } from "@/lib/platina/fusion";
@@ -66,8 +69,14 @@ export type PlanContext = {
   failed: PlanLesson[];
   /** Plane B — derived from public/Apify signals that survived validation. */
   patternEvidence: PlanEvidence[];
-  /** Plane A — first-party baseline. Empty until the baseline engine feeds it. */
+  /** Plane A: the client's own website pages and confirmed lessons (C6). */
   baselineEvidence: PlanEvidence[];
+  /**
+   * What the client's own confirmed results say, past the min-N gate
+   * (e.g. carousel posts tend to beat the usual post). First-party
+   * guidance for choosing channel/format/topic; not citable evidence ids.
+   */
+  learnedPatterns?: string[];
   /**
    * True when neither logged results nor collected evidence informed the plan.
    * Lives inside the context on purpose: ContextState is a closed union.
@@ -117,15 +126,20 @@ export async function resolveScope(
   brandId: string | null | undefined,
 ): Promise<Scope | null> {
   if (!brandId) return null;
-  const brand = await getBrand(workspaceId, brandId);
-  if (!brand) return null;
-  const competitors =
-    brand.kind === "own_brand" ? await listCompetitorsOf(workspaceId, brand.id) : [];
-  const ids = await listSignalIdsForBrands(workspaceId, [
-    brand.id,
-    ...competitors.map((c) => c.id),
+  // One round, not three: the brand, its competitors (empty unless it is a
+  // client) and the workspace-wide sources do not depend on each other.
+  const [brand, related, shared] = await Promise.all([
+    getBrand(workspaceId, brandId),
+    listCompetitorsOf(workspaceId, brandId),
+    listWorkspaceWideSignalIds(workspaceId),
   ]);
-  return { label: brand.name, signalIds: new Set(ids), profile: brand.profile ?? null };
+  if (!brand) return null;
+  const competitors = brand.kind === "own_brand" ? related : [];
+  const ids = await listSignalIdsForBrands(workspaceId, [brand.id, ...competitors.map((c) => c.id)]);
+  // Workspace-wide sources (event pages, trade press) are market context for
+  // every client here; without them a client-scoped plan never saw the
+  // events calendar (C5).
+  return { label: brand.name, signalIds: new Set([...ids, ...shared]), profile: brand.profile ?? null };
 }
 
 /**
@@ -143,13 +157,14 @@ async function retrievePatternEvidence(input: {
   floor: number;
   scope: Scope | null;
   newSince: Date | null;
+  /** The brief's embedding, computed once for both planes (null = embed outage). */
+  embedding: number[] | null;
 }): Promise<{ items: PlanEvidence[]; status: EvidenceStatus }> {
-  const { workspaceId, brief, floor, scope } = input;
+  const { workspaceId, brief, floor, scope, embedding } = input;
   if (scope && scope.signalIds.size === 0) {
     return { items: [], status: "no_client_evidence" };
   }
   const pool = scope ? SCOPED_CANDIDATES : CANDIDATES;
-  const embedding = await embedText(brief);
   const [vector, lexical] = await Promise.all([
     embedding
       ? similarBrainChunksQuery(workspaceId, embedding, pool)
@@ -225,6 +240,39 @@ async function retrievePatternEvidence(input: {
 }
 
 /**
+ * First-party evidence (Plane A, C6): the client's own website pages and
+ * confirmed lessons from its own results, nearest to the brief. Scoped to the
+ * client when one is given (plus workspace-wide lessons). Below the relevance
+ * floor nothing is returned: no evidence beats noise. Vector-only, so an
+ * embedding outage returns nothing and the plan says so through the counts.
+ */
+export async function retrieveBaselineEvidence(input: {
+  workspaceId: string;
+  brandId: string | null;
+  embedding: number[] | null;
+  floor: number;
+  newSince: Date | null;
+}): Promise<PlanEvidence[]> {
+  if (!input.embedding) return [];
+  const rows = await similarFirstPartyChunksQuery(input.workspaceId, input.embedding, {
+    brandId: input.brandId,
+    limit: EVIDENCE_TOP_K * 2,
+  });
+  return rows
+    .filter((r) => Number(r.score) >= input.floor)
+    .slice(0, EVIDENCE_TOP_K)
+    .map((r) => ({
+      id: r.id,
+      plane: "A" as const,
+      content: r.kind === "lesson" ? `Lesson from our own results: ${r.content}` : r.content,
+      sourceUrl: r.sourceUrl,
+      collectedAt: r.createdAt,
+      confidence: null,
+      ...(input.newSince && r.createdAt > input.newSince ? { isNew: true } : {}),
+    }));
+}
+
+/**
  * Context recipe for task_type "campaign_plan". Two inputs: the feedback loop
  * (plans this workspace already ran and what the team recorded — plain SQL)
  * and the collected evidence (public-signal patterns relevant to the brief,
@@ -236,26 +284,42 @@ export async function assemblePlanContext(
   params: PlanContextParams,
 ): Promise<ContextResult<PlanContext>> {
   const config = await getWorkspaceConfig(params.workspaceId);
-  const scope = await resolveScope(params.workspaceId, params.brandId);
-  const [worked, failed, retrieved] = await Promise.all([
+  const [scope, embedding] = await Promise.all([
+    resolveScope(params.workspaceId, params.brandId),
+    embedText(params.brief),
+  ]);
+  const floor = config?.similarityFloor ?? DEFAULT_SIMILARITY_FLOOR;
+  const newSince = params.revisionOf?.createdAt ?? null;
+  const [worked, failed, retrieved, baseline, learning] = await Promise.all([
     listPlanLessons(params.workspaceId, "worked", 3),
     listPlanLessons(params.workspaceId, "failed", 3),
     retrievePatternEvidence({
       workspaceId: params.workspaceId,
       brief: params.brief,
-      floor: config?.similarityFloor ?? DEFAULT_SIMILARITY_FLOOR,
+      floor,
       scope,
-      newSince: params.revisionOf?.createdAt ?? null,
+      newSince,
+      embedding,
     }),
+    retrieveBaselineEvidence({
+      workspaceId: params.workspaceId,
+      brandId: params.brandId ?? null,
+      embedding,
+      floor,
+      newSince,
+    }),
+    learningState(params.workspaceId, params.brandId ?? null),
   ]);
+  const learnedPatterns = learnedPatternLines(learning);
 
   const context: PlanContext = {
     brief: params.brief,
     worked: worked.map(toLesson),
     failed: failed.map(toLesson),
     patternEvidence: retrieved.items,
-    baselineEvidence: [],
-    coldStart: worked.length + failed.length + retrieved.items.length === 0,
+    baselineEvidence: baseline,
+    learnedPatterns,
+    coldStart: worked.length + failed.length + retrieved.items.length + baseline.length + learnedPatterns.length === 0,
     evidenceStatus: retrieved.status,
     scopeLabel: scope?.label ?? null,
     clientProfile: scope?.profile ?? null,
@@ -272,6 +336,7 @@ export async function assemblePlanContext(
       failedLessons: context.failed.length,
       patternEvidence: context.patternEvidence.length,
       baselineEvidence: context.baselineEvidence.length,
+      learnedPatterns: learnedPatterns.length,
       coldStart: context.coldStart ? 1 : 0,
       scoped: scope ? 1 : 0,
       clientProfile: scope?.profile ? 1 : 0,

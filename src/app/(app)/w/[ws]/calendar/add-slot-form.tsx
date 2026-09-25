@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { addCalendarPostAction, type CalendarActionState } from "./actions";
@@ -30,7 +31,7 @@ export function AddSlotForm({
   day: string;
   clients: ClientOption[];
 }) {
-  const [state, formAction] = useFormState<CalendarActionState, FormData>(
+  const [state, formAction] = useActionState<CalendarActionState, FormData>(
     addCalendarPostAction,
     undefined,
   );

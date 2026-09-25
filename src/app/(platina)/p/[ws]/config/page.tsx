@@ -18,11 +18,12 @@ async function saveConfig(formData: FormData) {
   });
 }
 
-export default async function ConfigPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function ConfigPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const config = await getWorkspaceConfig(params.ws);
 
   return (

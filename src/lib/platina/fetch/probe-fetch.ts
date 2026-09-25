@@ -1,21 +1,26 @@
 /**
  * The real fetch behind the header-only probes (change probe and onboarding
  * discovery). Own code is permitted for these because no page content is
- * retrieved: the body is drained and discarded, never read or stored. The URL
- * arrives as a variable so no host is named at the call site.
+ * retrieved: the body is capped, drained and discarded, never read or stored.
+ * The URL arrives as a variable so no host is named at the call site.
+ *
+ * Both go through safeFetch (C7.0): a probe URL comes from a person or a
+ * sitemap, so internal addresses are refused on every redirect hop.
  */
+import { safeFetch } from "@/lib/net/safe-fetch";
 import type { ProbeFetch } from "./probe";
 
+/** A probe only needs headers; this is the most body it will even drain. */
+const PROBE_MAX_BYTES = 64 * 1024;
+
 export const headProbeFetch: ProbeFetch = async (url, init) => {
-  const res = await fetch(url, {
+  const res = await safeFetch(url, {
     method: "GET",
     headers: init.headers,
-    signal: AbortSignal.timeout(15_000),
-    redirect: "follow",
+    timeoutMs: 15_000,
+    maxBytes: PROBE_MAX_BYTES,
   });
-  // Drain and discard: the probe never retains page content.
-  await res.arrayBuffer().catch(() => undefined);
-  return res;
+  return { status: res.status, headers: res.headers };
 };
 
 const SITEMAP_MAX_BYTES = 512 * 1024;
@@ -28,30 +33,15 @@ const SITEMAP_MAX_BYTES = 512 * 1024;
  */
 export async function fetchSitemapText(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       headers: { "user-agent": "platina-probe/1.0", accept: "application/xml,text/xml" },
-      signal: AbortSignal.timeout(8_000),
-      redirect: "follow",
+      timeoutMs: 8_000,
+      maxBytes: SITEMAP_MAX_BYTES,
     });
-    if (!res.ok || !res.body) return null;
+    if (!res.ok) return null;
     const type = res.headers.get("content-type") ?? "";
     if (!/xml/i.test(type) && !/\.xml$/i.test(url)) return null;
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let text = "";
-    let bytes = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      bytes += value.byteLength;
-      text += decoder.decode(value, { stream: true });
-      if (bytes >= SITEMAP_MAX_BYTES) {
-        await reader.cancel();
-        break;
-      }
-    }
-    return text;
+    return await res.text();
   } catch {
     return null;
   }

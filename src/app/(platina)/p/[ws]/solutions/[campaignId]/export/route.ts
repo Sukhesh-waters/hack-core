@@ -11,8 +11,9 @@ import { renderPacketHtml } from "@/lib/platina/export/print";
  */
 export async function GET(
   _request: Request,
-  { params }: { params: { ws: string; campaignId: string } },
+  props: { params: Promise<{ ws: string; campaignId: string }> }
 ) {
+  const params = await props.params;
   const user = await requireUser();
   try {
     await requireMembership(params.ws, user.id);

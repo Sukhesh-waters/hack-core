@@ -7,11 +7,12 @@ import { SprintCommandDeck } from "../sprint-command-deck";
 export const metadata = { title: "Campaign Sprint Command Deck | Platina AI OS" };
 export const dynamic = "force-dynamic";
 
-export default async function SprintDeckPage({
-  params,
-}: {
-  params: { ws: string; runId: string };
-}) {
+export default async function SprintDeckPage(
+  props: {
+    params: Promise<{ ws: string; runId: string }>;
+  }
+) {
+  const params = await props.params;
   await requireUser();
   const deckData = await getSprintDeckQuery(params.ws, params.runId);
 

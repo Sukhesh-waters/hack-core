@@ -68,23 +68,24 @@ async function loadCustomFieldValuesByContentId(
 export const metadata = { title: "Calendar" };
 export const dynamic = "force-dynamic";
 
-export default async function CalendarPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: {
-    m?: string;
-    view?: string;
-    scope?: string;
-    clientId?: string;
-    userId?: string;
-    group?: string;
-    hiddenCols?: string;
-    sort?: string;
-    dir?: string;
-  };
-}) {
+export default async function CalendarPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{
+      m?: string;
+      view?: string;
+      scope?: string;
+      clientId?: string;
+      userId?: string;
+      group?: string;
+      hiddenCols?: string;
+      sort?: string;
+      dir?: string;
+    }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const now = new Date();
   const [year, month] = (searchParams.m ?? "")
     .match(/^(\d{4})-(\d{2})$/)

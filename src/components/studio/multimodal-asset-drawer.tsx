@@ -154,7 +154,7 @@ export function MultimodalAssetDrawer({
                   </Button>
                 </div>
 
-                <p className="font-mono text-xs text-muted-foreground rounded bg-accent/30 p-2.5 leading-relaxed selection:bg-brand-teal selection:text-slate-950">
+                <p className="font-mono text-xs text-muted-foreground rounded bg-accent/30 p-2.5 leading-relaxed selection:bg-brand-teal selection:text-primary-foreground">
                   {p.prompt}
                 </p>
               </div>

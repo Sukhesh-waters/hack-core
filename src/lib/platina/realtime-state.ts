@@ -45,3 +45,41 @@ export function nextLiveState(input: {
     detail,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Refresh policy (render cost)
+// ---------------------------------------------------------------------------
+
+/**
+ * Every refresh re-runs ALL of the page's server queries (~70 ms per database
+ * round trip, 1-4 rounds per page). Measured 2026-09-22: the header pill
+ * refreshed every 20 s on every page even while the realtime channel was
+ * live and even in background tabs, and each broadcast in a burst (an audit
+ * run emits several) triggered its own refresh.
+ *
+ * The policy: poll fast only when realtime cannot be trusted; poll slowly as
+ * a safety net while it is live; never poll a hidden tab (catch up when it
+ * becomes visible); coalesce a burst of signals into one refresh.
+ */
+export const POLL_WHILE_LIVE_MS = 120_000;
+export const POLL_WITHOUT_LIVE_MS = 20_000;
+/** Signals closer together than this become one refresh. */
+export const SIGNAL_COALESCE_MS = 800;
+
+export function pollIntervalMs(state: PlatinaLiveState, visible: boolean): number | null {
+  if (!visible) return null;
+  return state === "live" ? POLL_WHILE_LIVE_MS : POLL_WITHOUT_LIVE_MS;
+}
+
+/**
+ * On becoming visible: refresh only if a signal arrived while hidden, or the
+ * last refresh is older than the poll interval that would have applied.
+ */
+export function refreshOnVisible(input: {
+  state: PlatinaLiveState;
+  missedSignal: boolean;
+  msSinceLastRefresh: number;
+}): boolean {
+  if (input.missedSignal) return true;
+  return input.msSinceLastRefresh >= (pollIntervalMs(input.state, true) ?? POLL_WITHOUT_LIVE_MS);
+}

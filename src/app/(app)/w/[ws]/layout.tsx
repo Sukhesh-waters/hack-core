@@ -10,13 +10,18 @@ import {
 } from "@/db/queries/memberships";
 import { WorkspacePresence } from "./workspace-presence";
 
-export default async function WorkspaceLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: { ws: string };
-}) {
+export default async function WorkspaceLayout(
+  props: {
+    children: React.ReactNode;
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
+
+  const {
+    children
+  } = props;
+
   const user = await requireUser();
   try {
     await requireMembership(params.ws, user.id);

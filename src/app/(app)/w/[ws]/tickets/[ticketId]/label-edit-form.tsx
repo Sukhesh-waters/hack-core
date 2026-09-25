@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useActionState } from "react";
+import { useFormStatus } from "react-dom";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { updateTicketLabelsAction, type TicketState } from "../actions";
@@ -26,7 +27,7 @@ export function LabelEditForm({
   ticketId: string;
   labels: string[];
 }) {
-  const [state, formAction] = useFormState<TicketState, FormData>(
+  const [state, formAction] = useActionState<TicketState, FormData>(
     updateTicketLabelsAction,
     undefined,
   );

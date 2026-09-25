@@ -195,7 +195,7 @@ export function DirectChatDrawer({
       >
         <MessageSquare className="size-5" aria-hidden />
         {totalUnread > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-brand-teal px-1 text-xs font-medium text-slate-950">
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-5 items-center justify-center rounded-full bg-brand-teal px-1 text-xs font-medium text-primary-foreground">
             {totalUnread > 9 ? "9+" : totalUnread}
           </span>
         ) : null}
@@ -301,7 +301,7 @@ export function DirectChatDrawer({
                           className={cn(
                             "max-w-[85%] rounded-lg px-3 py-1.5 text-xs",
                             isMe
-                              ? "bg-brand-teal text-slate-950"
+                              ? "bg-brand-teal text-primary-foreground"
                               : "bg-muted text-foreground",
                           )}
                         >
@@ -418,7 +418,7 @@ export function DirectChatDrawer({
                     (!newMessageText.trim() && pendingAttachments.length === 0) ||
                     isSending
                   }
-                  className="inline-flex size-7 items-center justify-center rounded-md bg-brand-teal text-slate-950 hover:bg-brand-teal/90 disabled:opacity-50"
+                  className="inline-flex size-7 items-center justify-center rounded-md bg-brand-teal text-primary-foreground hover:bg-brand-teal/90 disabled:opacity-50"
                 >
                   <Send className="size-3.5" />
                 </button>
@@ -491,7 +491,7 @@ export function DirectChatDrawer({
                         </div>
 
                         {conv.unreadCount > 0 ? (
-                          <span className="flex size-4 items-center justify-center rounded-full bg-brand-teal text-[9px] font-bold text-slate-950">
+                          <span className="flex size-4 items-center justify-center rounded-full bg-brand-teal text-[9px] font-bold text-primary-foreground">
                             {conv.unreadCount}
                           </span>
                         ) : null}

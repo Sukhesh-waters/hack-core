@@ -23,6 +23,7 @@ import {
   deriveSources,
   normalizeHandle,
   normalizeHomepage,
+  normalizeLinkedInCompany,
   type SpecDraft,
 } from "@/lib/platina/onboard/derive";
 import { MAX_COMPETITOR_PROPOSALS } from "@/lib/platina/onboard/competitors";
@@ -50,11 +51,16 @@ export async function createClientAction(formData: FormData): Promise<void> {
   const homepageUrl = homepageRaw ? normalizeHomepage(homepageRaw) : null;
   const instagram = normalizeHandle(String(formData.get("instagram") ?? ""));
   const tiktok = normalizeHandle(String(formData.get("tiktok") ?? ""));
+  const linkedinRaw = String(formData.get("linkedin") ?? "").trim();
+  const linkedin = normalizeLinkedInCompany(linkedinRaw);
   const region = String(formData.get("region") ?? "").trim() || null;
 
   if (name.length < 2) refuse(start, "Enter the client's name.");
   if (homepageRaw && !homepageUrl) refuse(start, "That website address doesn't look right.");
-  if (!homepageUrl && !instagram && !tiktok) {
+  if (linkedinRaw && !linkedin) {
+    refuse(start, "Use the company page — linkedin.com/company/<name> — not a person's profile.");
+  }
+  if (!homepageUrl && !instagram && !tiktok && !linkedin) {
     refuse(start, "Add a website or at least one social handle so there is something to watch.");
   }
 
@@ -68,6 +74,7 @@ export async function createClientAction(formData: FormData): Promise<void> {
       handles: {
         ...(instagram ? { instagram } : {}),
         ...(tiktok ? { tiktok } : {}),
+        ...(linkedin ? { linkedin } : {}),
       },
       region,
       createdById: user.id,
@@ -121,6 +128,10 @@ export async function approveClientSourcesAction(formData: FormData): Promise<vo
   const candidates = deriveSources({
     homepageUrl: brand.homepageUrl ?? "",
     handles: brand.handles,
+    // Must match the page that rendered the checkboxes: without the name the
+    // ad-library candidate does not exist here, and a ticked "ads" box was
+    // silently dropped (found during the live Waters onboarding, 2026-09-21).
+    brandName: brand.name,
   });
   const picked = new Set(formData.getAll("source").map(String));
   // Sections found in the site's sitemap are not derivable from the brand
@@ -249,6 +260,13 @@ export async function approveClientSourcesAction(formData: FormData): Promise<vo
     } catch {
       jobsDown = true;
     }
+  }
+  // The client's own website into first-party knowledge (C6 L1). Best-effort:
+  // the daily pass picks it up if the job runner is down.
+  if (brand.kind === "own_brand" && brand.homepageUrl && !jobsDown) {
+    await inngest
+      .send({ name: "platina/own-site.requested", data: { workspaceId: ws, brandId: brand.id } })
+      .catch(() => undefined);
   }
 
   revalidatePath(`/p/${ws}`);

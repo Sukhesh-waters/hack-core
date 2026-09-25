@@ -12,11 +12,12 @@ function formatUpdatedDate(date: Date) {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export default async function DocsPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function DocsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const [docs, members] = await Promise.all([
     listWorkspaceDocs(params.ws),
     listWorkspaceMembers(params.ws),

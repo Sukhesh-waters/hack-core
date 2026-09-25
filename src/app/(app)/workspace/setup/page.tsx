@@ -9,11 +9,12 @@ import { WorkspaceSetupForm } from "./setup-form";
 export const metadata = { title: "Workspace setup" };
 export const dynamic = "force-dynamic";
 
-export default async function WorkspaceSetupPage({
-  searchParams,
-}: {
-  searchParams: { org?: string };
-}) {
+export default async function WorkspaceSetupPage(
+  props: {
+    searchParams: Promise<{ org?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   const user = await requireUser();
 
   let org: { id: string; name: string } | null = null;

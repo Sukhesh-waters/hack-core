@@ -16,23 +16,15 @@ export const metadata: Metadata = {
 // Sets `.dark` on <html> before first paint so there is no flash of the
 // wrong theme. Deliberately plain JS, not a build of src/lib/theme.ts's
 // resolveTheme — a <script> tag can't import a module — but it mirrors the
-// same precedence (stored → system → dark) and that function's tests are
-// what keep the two definitions honest if either one changes.
+// same rule (a stored "dark" wins, otherwise light; C7.9) and that
+// function's tests are what keep the two definitions honest.
 const noFlashScript = `
 (function () {
   try {
     var stored = localStorage.getItem(${JSON.stringify(THEME_STORAGE_KEY)});
-    var dark;
-    if (stored === "dark" || stored === "light") {
-      dark = stored === "dark";
-    } else if (window.matchMedia) {
-      dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    } else {
-      dark = true;
-    }
-    document.documentElement.classList.toggle("dark", dark);
+    document.documentElement.classList.toggle("dark", stored === "dark");
   } catch (e) {
-    document.documentElement.classList.add("dark");
+    document.documentElement.classList.remove("dark");
   }
 })();
 `;

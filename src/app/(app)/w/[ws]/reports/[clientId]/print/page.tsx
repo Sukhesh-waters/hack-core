@@ -21,11 +21,12 @@ function pct(value: number | null) {
   return value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 }
 
-export default async function PrintReportPage({
-  params,
-}: {
-  params: { ws: string; clientId: string };
-}) {
+export default async function PrintReportPage(
+  props: {
+    params: Promise<{ ws: string; clientId: string }>;
+  }
+) {
+  const params = await props.params;
   const user = await requireUser();
   await requireMembership(params.ws, user.id);
 

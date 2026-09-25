@@ -6,11 +6,12 @@ import { UploadForm } from "./upload-form";
 export const metadata = { title: "Import posts" };
 export const dynamic = "force-dynamic";
 
-export default async function ImportPage({
-  params,
-}: {
-  params: { ws: string; clientId: string };
-}) {
+export default async function ImportPage(
+  props: {
+    params: Promise<{ ws: string; clientId: string }>;
+  }
+) {
+  const params = await props.params;
   const client = await getClientById(params.ws, params.clientId);
   if (!client) notFound();
 

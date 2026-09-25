@@ -4,11 +4,12 @@ import { listBrainChunks } from "@/db/queries/platina";
 
 export const dynamic = "force-dynamic";
 
-export default async function BrainPage({
-  params,
-}: {
-  params: { ws: string };
-}) {
+export default async function BrainPage(
+  props: {
+    params: Promise<{ ws: string }>;
+  }
+) {
+  const params = await props.params;
   const chunks = await listBrainChunks(params.ws);
 
   return (

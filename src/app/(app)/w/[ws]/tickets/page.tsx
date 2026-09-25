@@ -32,19 +32,20 @@ function parseLinkedType(value: string | undefined): TicketLinkType | undefined 
     : undefined;
 }
 
-export default async function TicketsPage({
-  params,
-  searchParams,
-}: {
-  params: { ws: string };
-  searchParams: {
-    title?: string;
-    description?: string;
-    linkedType?: string;
-    linkedId?: string;
-    clientId?: string;
-  };
-}) {
+export default async function TicketsPage(
+  props: {
+    params: Promise<{ ws: string }>;
+    searchParams: Promise<{
+      title?: string;
+      description?: string;
+      linkedType?: string;
+      linkedId?: string;
+      clientId?: string;
+    }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const [tickets, members, content, ideas, campaigns, clients] =
     await Promise.all([
       listTickets(params.ws),
