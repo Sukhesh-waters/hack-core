@@ -194,6 +194,34 @@ export async function setBrainModes(workspaceId: string, modes: BrainModes): Pro
 // Re-exported so a caller only needs this module to read the stage list.
 export { BRAIN_STAGES };
 
+export type BrainConfigPatch = Partial<{
+  surpriseFloor: number;
+  surpriseAuditShare: number;
+  derivedContextShare: number;
+}>;
+
+/**
+ * Restores the surprise-filter floor/audit-share and derived-context-share
+ * knobs (plan §11.4, snapshot `--restore`). Not a Brain-chunk state change —
+ * these are workspace-level knobs, not status/confidence/agreement_state, so
+ * they are not logged through `setBrainState`'s undo journal.
+ */
+export async function setBrainConfig(workspaceId: string, patch: BrainConfigPatch): Promise<void> {
+  const [existing] = await db
+    .select({ id: platinaWorkspaceConfig.id })
+    .from(platinaWorkspaceConfig)
+    .where(eq(platinaWorkspaceConfig.workspaceId, workspaceId))
+    .limit(1);
+  if (existing) {
+    await db
+      .update(platinaWorkspaceConfig)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(platinaWorkspaceConfig.workspaceId, workspaceId));
+    return;
+  }
+  await db.insert(platinaWorkspaceConfig).values({ workspaceId, ...patch });
+}
+
 // ---------------------------------------------------------------------------
 // setBrainState — the only writer of Brain chunk status/confidence/agreement_state
 // ---------------------------------------------------------------------------
@@ -211,9 +239,15 @@ function chunkFilter(workspaceId: string, chunkId: string): SQL {
   return and(eq(platinaBrainChunks.workspaceId, workspaceId), eq(platinaBrainChunks.id, chunkId))!;
 }
 
-/** The current state `setBrainState` diffs against. Exported so its SQL shape is testable. */
-export function brainChunkStateQuery(workspaceId: string, chunkId: string) {
-  return db
+/**
+ * The current state `setBrainState` diffs against. Exported so its SQL shape
+ * is testable. `FOR UPDATE`-locked: `setBrainState` runs this inside its
+ * transaction, so a concurrent grader/undo/restore reading the same chunk
+ * blocks behind this one instead of both diffing the same stale row and one
+ * writer's change being silently lost.
+ */
+export function brainChunkStateQuery(workspaceId: string, chunkId: string, executor: Pick<typeof db, "select"> = db) {
+  return executor
     .select({
       status: platinaBrainChunks.status,
       confidence: platinaBrainChunks.confidence,
@@ -221,7 +255,8 @@ export function brainChunkStateQuery(workspaceId: string, chunkId: string) {
     })
     .from(platinaBrainChunks)
     .where(chunkFilter(workspaceId, chunkId))
-    .limit(1);
+    .limit(1)
+    .for("update");
 }
 
 /** The write `setBrainState` issues after diffing. Exported so its SQL shape is testable. */
@@ -255,15 +290,7 @@ export async function setBrainState(
   gradeId?: string | null,
 ): Promise<BrainStateDiffRow[]> {
   return db.transaction(async (tx) => {
-    const [current] = await tx
-      .select({
-        status: platinaBrainChunks.status,
-        confidence: platinaBrainChunks.confidence,
-        agreementState: platinaBrainChunks.agreementState,
-      })
-      .from(platinaBrainChunks)
-      .where(chunkFilter(workspaceId, chunkId))
-      .limit(1);
+    const [current] = await brainChunkStateQuery(workspaceId, chunkId, tx);
     if (!current) return [];
 
     const diff = diffBrainState(current, next);

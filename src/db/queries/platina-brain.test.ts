@@ -54,11 +54,14 @@ describe("B0 brain queries filter workspace_id in the generated SQL", () => {
     expect(filtered.params).toEqual(expect.arrayContaining(["ws_a", "grading", "c1", "c2"]));
   });
 
-  it("brainChunkStateQuery (setBrainState's select) filters workspace AND chunk id", () => {
+  it("brainChunkStateQuery (setBrainState's select) filters workspace AND chunk id, and locks the row", () => {
     const { sql, params } = brainChunkStateQuery("ws_a", "chunk1").toSQL();
     expect(sql).toContain('"platina_brain_chunks"."workspace_id" = ');
     expect(sql).toContain('"platina_brain_chunks"."id" = ');
     expect(params).toEqual(expect.arrayContaining(["ws_a", "chunk1"]));
+    // A concurrent grader/undo/restore must block on this row, not diff a
+    // stale read (see the file-header comment on setBrainState).
+    expect(sql.toLowerCase()).toContain("for update");
   });
 
   it("updateBrainChunkStateQuery (setBrainState's write) filters workspace AND chunk id", () => {

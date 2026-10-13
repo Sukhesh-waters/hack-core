@@ -21,7 +21,11 @@
     "platina:force": "npx tsx scripts/platina-force.ts",
     "platina:evidence": "npx tsx scripts/import-evidence-pack.ts",
     "platina:ads-sweep": "npx tsx --conditions=react-server scripts/platina-ads-sweep.ts",
-    "platina:learning": "npx tsx --conditions=react-server scripts/platina-learning.ts"
+    "platina:learning": "npx tsx --conditions=react-server scripts/platina-learning.ts",
+    "platina:brain-mode": "npx tsx scripts/platina-brain-mode.ts",
+    "platina:brain-snapshot": "npx tsx scripts/platina-brain-snapshot.ts",
+    "platina:brain-undo": "npx tsx scripts/platina-brain-undo.ts",
+    "platina:brain-replay": "npx tsx scripts/platina-brain-replay.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",
