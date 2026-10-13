@@ -54,11 +54,24 @@ describe("planRestore", () => {
       chunk({}),
       chunk({ id: "c2", createdAt: "2026-01-15T00:00:00.000Z", status: "active" }),
     ];
-    const plan = planRestore(snap, live);
+    const plan = planRestore(snap, live, { archiveNew: true });
     expect(plan.archive).toEqual(["c2"]);
     // Archiving happens through setBrainState at the caller, not a delete —
     // planRestore only ever names ids, never removes a row.
     expect(plan.stateChanges.find((s) => s.chunkId === "c2")).toBeUndefined();
+  });
+
+  it("by default a post-snapshot row is reported but left alone (live pipeline keeps writing real insights)", () => {
+    const snap = snapshot({ chunks: [chunk({})] });
+    const live = [chunk({}), chunk({ id: "c2", createdAt: "2026-01-15T00:00:00.000Z", status: "active" })];
+    const plan = planRestore(snap, live);
+    expect(plan.newSinceSnapshot).toEqual(["c2"]);
+    expect(plan.archive).toEqual([]);
+  });
+
+  it("parses --archive-new", () => {
+    const parsed = parseRecoveryArgs(["--restore", "f.json", "--archive-new"]);
+    expect(parsed.ok && parsed.args.archiveNew).toBe(true);
   });
 
   it("an already-archived post-snapshot row is skipped, not re-archived", () => {
@@ -67,7 +80,7 @@ describe("planRestore", () => {
       chunk({}),
       chunk({ id: "c2", createdAt: "2026-01-15T00:00:00.000Z", status: "archived" }),
     ];
-    const plan = planRestore(snap, live);
+    const plan = planRestore(snap, live, { archiveNew: true });
     expect(plan.archive).toEqual([]);
   });
 
@@ -198,6 +211,7 @@ describe("parseRecoveryArgs", () => {
       limit: 10,
       apply: true,
       restore: "backups/x.json",
+      archiveNew: false,
     });
   });
 
@@ -214,6 +228,7 @@ describe("parseRecoveryArgs", () => {
       limit: null,
       apply: false,
       restore: null,
+      archiveNew: false,
     });
   });
 

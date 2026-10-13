@@ -54,7 +54,17 @@ export type BrainRestoreStateChange = { chunkId: string; next: BrainState };
 export type BrainRestorePlan = {
   /** Only chunks whose status/confidence/agreementState differs from the snapshot. */
   stateChanges: BrainRestoreStateChange[];
-  /** Chunk ids created after the snapshot, absent from it, and not already archived. */
+  /**
+   * Chunk ids created after the snapshot, absent from it, and not already
+   * archived. Includes rows the unchanged live pipeline wrote since then.
+   */
+  newSinceSnapshot: string[];
+  /**
+   * What the restore will archive: empty unless the operator passes
+   * --archive-new. Until B1's written_by marker exists, new rows from the
+   * live pipeline cannot be told apart from rows a new stage wrote, and
+   * archiving fresh, legitimate insights is worse than leaving them.
+   */
   archive: string[];
   modes: BrainModes;
 };
@@ -66,12 +76,16 @@ export type BrainRestorePlan = {
  * live cannot be recreated (rows are never deleted, so this should not
  * happen) and is silently skipped rather than guessed at.
  */
-export function planRestore(snapshot: BrainSnapshot, currentChunks: BrainSnapshotChunk[]): BrainRestorePlan {
+export function planRestore(
+  snapshot: BrainSnapshot,
+  currentChunks: BrainSnapshotChunk[],
+  options: { archiveNew?: boolean } = {},
+): BrainRestorePlan {
   const bySnapshotId = new Map(snapshot.chunks.map((c) => [c.id, c]));
   const takenAt = new Date(snapshot.takenAt).getTime();
 
   const stateChanges: BrainRestoreStateChange[] = [];
-  const archive: string[] = [];
+  const newSinceSnapshot: string[] = [];
 
   for (const current of currentChunks) {
     const snapChunk = bySnapshotId.get(current.id);
@@ -92,11 +106,16 @@ export function planRestore(snapshot: BrainSnapshot, currentChunks: BrainSnapsho
     // is "new since then" rather than some other data shape mismatch.
     const createdAfter = new Date(current.createdAt).getTime() > takenAt;
     if (createdAfter && current.status !== "archived") {
-      archive.push(current.id);
+      newSinceSnapshot.push(current.id);
     }
   }
 
-  return { stateChanges, archive, modes: snapshot.modes };
+  return {
+    stateChanges,
+    newSinceSnapshot,
+    archive: options.archiveNew ? [...newSinceSnapshot] : [],
+    modes: snapshot.modes,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +204,8 @@ export type RecoveryArgs = {
   limit: number | null;
   apply: boolean;
   restore: string | null;
+  /** Restore only: also archive rows created since the snapshot. */
+  archiveNew: boolean;
 };
 
 export type ParseRecoveryArgsResult = { ok: true; args: RecoveryArgs } | { ok: false; error: string };
@@ -244,6 +265,7 @@ export function parseRecoveryArgs(argv: string[]): ParseRecoveryArgsResult {
       limit,
       apply: has("apply"),
       restore: get("restore") ?? null,
+      archiveNew: has("archive-new"),
     },
   };
 }

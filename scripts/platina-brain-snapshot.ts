@@ -6,10 +6,13 @@
  *   npx tsx scripts/platina-brain-snapshot.ts --ws waters-gcc-internal [--stage gate]
  *     -> writes backups/<date>-brain-<slug>[-<stage>].json
  *
- *   npx tsx scripts/platina-brain-snapshot.ts --restore backups/2026-10-13-brain-waters-gcc-internal.json [--apply]
+ *   npx tsx scripts/platina-brain-snapshot.ts --restore backups/2026-10-13-brain-waters-gcc-internal.json [--archive-new] [--apply]
  *     -> dry run by default: prints what planRestore would change.
- *        --apply: state changes and archiving through setBrainState (cause
+ *        --apply: state changes through setBrainState (cause
  *        "restore:<file basename>"), modes and config knobs restored too.
+ *        Rows created since the snapshot are left alone unless
+ *        --archive-new: the live pipeline keeps writing real insights, and
+ *        until B1's written_by marker they cannot be told apart.
  *        Content and embeddings are never touched.
  */
 import { basename } from "node:path";
@@ -20,7 +23,7 @@ async function main() {
   process.loadEnvFile(".env.local");
   const parsed = parseRecoveryArgs(process.argv.slice(2));
   if (!parsed.ok) throw new Error(parsed.error);
-  const { ws: slug, stage, restore, apply } = parsed.args;
+  const { ws: slug, stage, restore, apply, archiveNew } = parsed.args;
 
   const { db } = await import("@/db");
   const { eq } = await import("drizzle-orm");
@@ -41,13 +44,17 @@ async function main() {
       ...c,
       createdAt: c.createdAt.toISOString(),
     }));
-    const plan = planRestore(snapshot, currentChunks);
+    const plan = planRestore(snapshot, currentChunks, { archiveNew });
 
     console.log(`\nrestoring ${snapshot.slug} from ${restore} (taken ${snapshot.takenAt})`);
     console.log(`  ${plan.stateChanges.length} chunk(s) to revert:`);
     for (const change of plan.stateChanges) console.log(`    ${change.chunkId} -> ${JSON.stringify(change.next)}`);
-    console.log(`  ${plan.archive.length} chunk(s) created since the snapshot, to archive (kept, never deleted):`);
-    for (const id of plan.archive) console.log(`    ${id}`);
+    if (archiveNew) {
+      console.log(`  ${plan.archive.length} chunk(s) created since the snapshot, to archive (kept, never deleted):`);
+      for (const id of plan.archive) console.log(`    ${id}`);
+    } else {
+      console.log(`  ${plan.newSinceSnapshot.length} chunk(s) created since the snapshot are left as they are (--archive-new to archive them)`);
+    }
     console.log(`  modes -> ${JSON.stringify(plan.modes)}`);
     console.log(`  config -> ${JSON.stringify(snapshot.config)}`);
 
