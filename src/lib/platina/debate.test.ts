@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ONE_ROUND, nextRoundAllowed } from "./contradiction";
 import {
+  ANALYSIS_PROMPT_VERSION,
   CHALLENGER_SYSTEM,
   NO_MATERIAL_OBJECTION,
   NOTHING_NEW,
@@ -9,6 +10,12 @@ import {
   parseAttack,
   parseHeadline,
 } from "./debate";
+
+describe("ANALYSIS_PROMPT_VERSION (B0 provenance)", () => {
+  it("is a non-empty, stable version tag stored on every transcript", () => {
+    expect(ANALYSIS_PROMPT_VERSION).toBe("analysis-v1");
+  });
+});
 
 describe("debate round cap", () => {
   it("hard-codes a single contradiction round", () => {

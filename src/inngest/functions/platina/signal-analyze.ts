@@ -15,10 +15,10 @@ import {
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { ANALYSIS_GLOBAL_CONCURRENCY, ANALYSIS_THROTTLE } from "@/lib/platina/analysis";
 import { planAnalysis } from "@/lib/platina/analysis-plan";
-import { runContradictionRound } from "@/lib/platina/debate";
-import { findingTitleFor } from "@/lib/platina/finding-title";
+import { analysisWrites, type AnalysisWriteContext } from "@/lib/platina/analysis-writes";
+import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
+import { ANALYSIS_PROMPT_VERSION, runContradictionRound } from "@/lib/platina/debate";
 import { embedText } from "@/lib/platina/embed";
-import { findingPathFor, findingUseCaseForSourceKind } from "@/lib/platina/findings";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 /**
@@ -31,6 +31,17 @@ import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
  * unprocessed -> processing flip that only one caller can win, so a replay
  * finds nothing to claim and returns without writing a duplicate finding.
  * A failed analysis releases the claim so the next sweep retries it.
+ *
+ * B0 (metacognitive Brain): `analysisWrites` (lib/platina/analysis-writes.ts)
+ * now makes the WHAT-to-write decision this file used to make inline; the
+ * decision is unchanged (proven by brain-legacy-equivalence.test.ts), and
+ * this file still issues every DB write itself. Telemetry
+ * (`recordBrainEvent`) is added at every exit, each folded into the
+ * step.run that already performs that exit's DB write rather than given a
+ * step of its own: Inngest memoizes a completed step.run and never re-runs
+ * its callback on replay, so sharing the step is what stops a replay from
+ * recording the same funnel event twice. `recordBrainEvent` itself never
+ * throws, so it cannot turn a successful write into a failed step.
  */
 export const platinaSignalAnalyze = inngest.createFunction(
   {
@@ -104,12 +115,31 @@ export const platinaSignalAnalyze = inngest.createFunction(
         }),
       );
 
+      // The same context `findingTitleFor`/`findingUseCaseForSourceKind` used
+      // inline before this slice — now threaded through `analysisWrites`.
+      const writeContext: AnalysisWriteContext = {
+        competitorName: subject?.brandName ?? null,
+        pageTitle: signal.title,
+        sourceKind: signal.sourceKind ?? subject?.sourceKind ?? undefined,
+      };
+
       if (plan.action === "skip") {
-        await step.run("processed-skip", () =>
-          plan.cause === "own_brand"
-            ? markSignalProcessed(workspaceId, signal.id)
-            : markSignalSkipped(workspaceId, signal.id, plan.reason),
-        );
+        const writes = analysisWrites(plan, undefined, writeContext);
+        await step.run("processed-skip", async () => {
+          if (writes.skip) {
+            await markSignalSkipped(workspaceId, signal.id, writes.skip.reason, writes.skip.cause);
+          } else {
+            await markSignalProcessed(workspaceId, signal.id);
+          }
+          await recordBrainEvent({
+            workspaceId,
+            stage: "analysis",
+            decision: plan.cause,
+            subjectId: signal.id,
+            promptVersion: ANALYSIS_PROMPT_VERSION,
+            detail: { sourceKind: writeContext.sourceKind ?? null },
+          });
+        });
         return { skipped: plan.reason };
       }
 
@@ -129,28 +159,41 @@ export const platinaSignalAnalyze = inngest.createFunction(
         ),
       );
 
+      const writes = analysisWrites(plan, result, writeContext);
+
       const transcriptId = await step.run("transcript", () =>
         insertTranscript({
           workspaceId,
           signalIds: [signal.id],
-          proposerClaim: result.claim.text,
-          challengerAttack: result.attack.text,
-          score: result.result.score,
-          state: result.result.state,
-          strongestObjection: result.result.caveat,
+          ...writes.transcript!,
+          // B0 provenance: which provider/model answered on each side, and
+          // the prompt version — the before-number for agreement-by-model
+          // and the B2 blind-challenger A/B. `blinded` is false until B2.
+          proposerProvider: result.providers.proposer,
+          proposerModel: result.models.proposer,
+          challengerProvider: result.providers.challenger,
+          challengerModel: result.models.challenger,
+          promptVersion: ANALYSIS_PROMPT_VERSION,
+          blinded: false,
+          objected: result.objected,
         }),
       );
+
       // The proposer is allowed to say a page holds no move. Recording that
       // keeps the findings list about moves instead of about pages — and the
       // transcript above means the judgement stays auditable.
-      if (result.nothingNew && !plan.changed) {
-        await step.run("processed-nothing-new", () =>
-          markSignalSkipped(
+      if (writes.skip) {
+        await step.run("processed-nothing-new", async () => {
+          await markSignalSkipped(workspaceId, signal.id, writes.skip!.reason, writes.skip!.cause);
+          await recordBrainEvent({
             workspaceId,
-            signal.id,
-            "Read, but there was no new move on this page.",
-          ),
-        );
+            stage: "analysis",
+            decision: "nothing_new",
+            subjectId: signal.id,
+            promptVersion: ANALYSIS_PROMPT_VERSION,
+            detail: { state: result.result.state, changed: plan.changed, providers: result.providers },
+          });
+        });
         return {
           analysed: signal.id,
           state: result.result.state,
@@ -159,61 +202,58 @@ export const platinaSignalAnalyze = inngest.createFunction(
         };
       }
 
-      const path = findingPathFor(result.result.state);
-
       let brainChunkId: string | null = null;
-      if (path.brainChunk) {
-        const content = result.result.caveat
-          ? `${result.claim.text}\nCaveat: ${result.result.caveat}`
-          : result.claim.text;
+      if (writes.brainChunk) {
         // Embed at write time; a router outage stores the chunk without a
         // vector rather than blocking the finding.
         const embedding = await step.run("embed", () =>
           runWithAiCost({ workspaceId, purpose: "signal-analysis" }, () =>
-            embedText(content),
+            embedText(writes.brainChunk!.content),
           ),
         );
         brainChunkId = await step.run("brain", () =>
           insertBrainChunk({
             workspaceId,
-            content,
-            confidence: result.result.score,
-            agreementState: result.result.state,
+            content: writes.brainChunk!.content,
+            confidence: writes.brainChunk!.confidence,
+            agreementState: writes.brainChunk!.agreementState,
+            generation: writes.brainChunk!.generation,
             sourceSignalIds: [signal.id],
-            generation: 0,
             transcriptId,
             embedding: embedding ?? undefined,
           }),
         );
       }
 
-      if (path.finding) {
-        const useCase = findingUseCaseForSourceKind(
-          signal.sourceKind ?? subject?.sourceKind ?? undefined,
-        );
+      if (writes.finding) {
         await step.run("finding", () =>
           insertFinding({
             workspaceId,
             signalDocumentId: signal.id,
             transcriptId,
             brainChunkId,
-            useCase,
+            useCase: writes.finding!.useCase,
             // The move, not the page's HTML title (R2).
-            title: findingTitleFor({
-              headline: result.headline,
-              competitorName: subject?.brandName ?? null,
-              claimText: result.claim.text,
-              pageTitle: signal.title,
-            }),
-            summary: result.claim.text,
-            strongestObjection: result.result.caveat ?? result.attack.text,
-            status: path.finding === "needs_decision" ? "needs_decision" : "new",
+            title: writes.finding!.title,
+            summary: writes.finding!.summary,
+            strongestObjection: writes.finding!.strongestObjection,
+            status: writes.finding!.status,
           }),
         );
         await broadcastPlatinaSignal(workspaceId, "findings");
       }
 
-      await step.run("processed", () => markSignalProcessed(workspaceId, signal.id));
+      await step.run("processed", async () => {
+        await markSignalProcessed(workspaceId, signal.id);
+        await recordBrainEvent({
+          workspaceId,
+          stage: "analysis",
+          decision: "analysed",
+          subjectId: signal.id,
+          promptVersion: ANALYSIS_PROMPT_VERSION,
+          detail: { state: result.result.state, changed: plan.changed, providers: result.providers },
+        });
+      });
       return { analysed: signal.id, state: result.result.state };
     } catch (error) {
       await step.run("release", () => releaseSignal(workspaceId, signal.id));
