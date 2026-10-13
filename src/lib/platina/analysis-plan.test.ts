@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import { routeChatWithProvenance } from "@/lib/ai/router";
 import { OWN_BRAND_SKIP, planAnalysis } from "./analysis-plan";
+import { runContradictionRound } from "./debate";
+
+vi.mock("@/lib/ai/router", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai/router")>();
+  return { ...actual, routeChatWithProvenance: vi.fn() };
+});
+const routeMock = routeChatWithProvenance as unknown as ReturnType<typeof vi.fn>;
 
 const prose =
   "Bluebird Roasters has introduced a 48-hour roast guarantee for wholesale buyers across the country. ".repeat(
@@ -66,6 +74,26 @@ describe("the cost guarantee", () => {
     });
     expect(plan.action).toBe("skip");
     expect(loadPrevious).not.toHaveBeenCalled();
+  });
+
+  it("a skip plan never reaches the debate, so the router is never called (generalised across own_brand, low_value and thin pages)", async () => {
+    routeMock.mockReset();
+    const plans = await Promise.all([
+      planAnalysis({ signal, subject: { ...competitor, kind: "own_brand" }, loadPrevious: noPrevious }),
+      planAnalysis({
+        signal: { ...signal, canonicalUrl: "https://bluebird.example/privacy", sourceUrl: "https://bluebird.example/privacy" },
+        subject: competitor,
+        loadPrevious: noPrevious,
+      }),
+      planAnalysis({ signal: { ...signal, body: "Call us." }, subject: competitor, loadPrevious: noPrevious }),
+    ]);
+    for (const plan of plans) {
+      expect(plan.action).toBe("skip");
+      // signal-analyze.ts's own branch: runContradictionRound (and so the
+      // router) is only ever called once a plan survives to "analyse".
+      if (plan.action === "analyse") await runContradictionRound(plan.input);
+    }
+    expect(routeMock).not.toHaveBeenCalled();
   });
 });
 

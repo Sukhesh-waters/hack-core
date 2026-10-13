@@ -68,6 +68,29 @@ describe("runContradictionRound — independence measured by who answered", () =
     expect(out.result.caveat ?? "").not.toContain(SAME_PROVIDER_CAVEAT);
   });
 
+  it("returns the model each side actually answered with, alongside the provider (B0 provenance)", async () => {
+    stub(async () => ({ text: weakAttack, provider: "gemini" }));
+    const out = await runContradictionRound("signal text");
+
+    expect(out.models).toEqual({ proposer: "groq-model", challenger: "gemini-model" });
+  });
+
+  it("objected is false for an honest no-material-objection reply, true for a real one", async () => {
+    stub(async () => ({ text: weakAttack, provider: "gemini" }));
+    const noObjection = await runContradictionRound("signal text");
+    expect(noObjection.objected).toBe(false);
+
+    const realObjection = JSON.stringify({
+      text: "the sample is from one region",
+      confounders: ["seasonality"],
+      strongestObjection: "single-region sample",
+      confounderStrength: 0.6,
+    });
+    stub(async () => ({ text: realObjection, provider: "gemini" }));
+    const objected = await runContradictionRound("signal text");
+    expect(objected.objected).toBe(true);
+  });
+
   it("asks the challenger to avoid the provider that proposed", async () => {
     stub(async () => ({ text: weakAttack, provider: "gemini" }));
     await runContradictionRound("signal text");

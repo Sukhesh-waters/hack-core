@@ -1,0 +1,125 @@
+{
+  "own_brand": {
+    "processed": true
+  },
+  "low_value_boilerplate": {
+    "skip": {
+      "reason": "Skipped: a privacy policy, which says nothing about the market.",
+      "cause": "low_value"
+    },
+    "processed": false
+  },
+  "thin_page": {
+    "skip": {
+      "reason": "Skipped: only 8 characters of text — too little to draw anything from.",
+      "cause": "low_value"
+    },
+    "processed": false
+  },
+  "nothing_new_unchanged": {
+    "transcript": {
+      "proposerClaim": "Bluebird reaffirms its wholesale roast guarantee.",
+      "challengerAttack": "This restates existing marketing copy.",
+      "score": 0.95,
+      "state": "agreed"
+    },
+    "skip": {
+      "reason": "Read, but there was no new move on this page.",
+      "cause": "nothing_new"
+    },
+    "processed": false
+  },
+  "nothing_new_changed": {
+    "transcript": {
+      "proposerClaim": "Bluebird's roast guarantee language is unchanged from its profile copy.",
+      "challengerAttack": "This looks like standing language rather than a new move, but the page did change elsewhere.",
+      "score": 0.55,
+      "state": "qualified",
+      "strongestObjection": "page changed but no concrete new claim is isolated"
+    },
+    "processed": true,
+    "brainChunk": {
+      "content": "Bluebird's roast guarantee language is unchanged from its profile copy.\nCaveat: page changed but no concrete new claim is isolated",
+      "confidence": 0.55,
+      "agreementState": "qualified",
+      "generation": 0
+    },
+    "finding": {
+      "title": "Bluebird Roasters: nothing new",
+      "summary": "Bluebird's roast guarantee language is unchanged from its profile copy.",
+      "strongestObjection": "page changed but no concrete new claim is isolated",
+      "status": "new",
+      "useCase": "competitor_change"
+    }
+  },
+  "agreed": {
+    "transcript": {
+      "proposerClaim": "Bluebird Roasters now guarantees a 48-hour roast turnaround for wholesale orders, undercutting the industry-standard 5-day window.",
+      "challengerAttack": "The claim is well supported and no competitor offers a comparable guarantee today.",
+      "score": 0.88,
+      "state": "agreed"
+    },
+    "processed": true,
+    "brainChunk": {
+      "content": "Bluebird Roasters now guarantees a 48-hour roast turnaround for wholesale orders, undercutting the industry-standard 5-day window.",
+      "confidence": 0.88,
+      "agreementState": "agreed",
+      "generation": 0
+    },
+    "finding": {
+      "title": "Bluebird Roasters now guarantees 48-hour roasts",
+      "summary": "Bluebird Roasters now guarantees a 48-hour roast turnaround for wholesale orders, undercutting the industry-standard 5-day window.",
+      "strongestObjection": "The claim is well supported and no competitor offers a comparable guarantee today.",
+      "status": "new",
+      "useCase": "competitor_change"
+    }
+  },
+  "qualified_with_caveat": {
+    "transcript": {
+      "proposerClaim": "Bluebird Roasters is piloting a subscription box for small cafes in the Pacific Northwest.",
+      "challengerAttack": "The pilot is limited to one region and may not reflect a broader strategy shift.",
+      "score": 0.58,
+      "state": "qualified",
+      "strongestObjection": "single-region pilot, not yet a broader strategy"
+    },
+    "processed": true,
+    "brainChunk": {
+      "content": "Bluebird Roasters is piloting a subscription box for small cafes in the Pacific Northwest.\nCaveat: single-region pilot, not yet a broader strategy",
+      "confidence": 0.58,
+      "agreementState": "qualified",
+      "generation": 0
+    },
+    "finding": {
+      "title": "Bluebird pilots a cafe subscription box",
+      "summary": "Bluebird Roasters is piloting a subscription box for small cafes in the Pacific Northwest.",
+      "strongestObjection": "single-region pilot, not yet a broader strategy",
+      "status": "new",
+      "useCase": "competitor_change"
+    }
+  },
+  "contested": {
+    "transcript": {
+      "proposerClaim": "Bluebird Roasters claims to be the fastest-growing wholesale roaster in the region.",
+      "challengerAttack": "This is an unverifiable superlative with no supporting figures, and several competitors make the same claim.",
+      "score": 0.3,
+      "state": "contested"
+    },
+    "processed": true,
+    "finding": {
+      "title": "Bluebird claims fastest growth in the region",
+      "summary": "Bluebird Roasters claims to be the fastest-growing wholesale roaster in the region.",
+      "strongestObjection": "This is an unverifiable superlative with no supporting figures, and several competitors make the same claim.",
+      "status": "needs_decision",
+      "useCase": "competitor_change"
+    }
+  },
+  "refuted": {
+    "transcript": {
+      "proposerClaim": "Bluebird Roasters has secured exclusive national distribution with a major retailer.",
+      "challengerAttack": "No retailer or contract is named, and the wording matches Bluebird's standard aspirational marketing language used for years.",
+      "score": 0.08,
+      "state": "refuted"
+    },
+    "processed": true
+  }
+}

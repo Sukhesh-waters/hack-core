@@ -35,6 +35,7 @@ import {
   platinaWorkspaceConfig,
   platinaWorkspaceProfiles,
   PLATINA_EMBEDDING_MODEL_VERSION,
+  type BrainSkipCause,
   type PlanDoc,
   type PlanOrigin,
   type PlanVerdict,
@@ -524,10 +525,38 @@ export async function insertTranscript(input: {
   score: number;
   state: "agreed" | "qualified" | "contested" | "refuted";
   strongestObjection?: string;
+  // B0 (metacognitive Brain): provenance for the agreement-by-model metric
+  // and the B2 blind-challenger A/B. A caller that predates this slice omits
+  // all of these, and they are stored as null — "not measured", never a
+  // false 0/false (CLAUDE.md).
+  proposerProvider?: string;
+  proposerModel?: string;
+  challengerProvider?: string;
+  challengerModel?: string;
+  promptVersion?: string;
+  blinded?: boolean;
+  objected?: boolean;
 }) {
   const [row] = await db
     .insert(platinaDebateTranscripts)
-    .values(input)
+    .values({
+      workspaceId: input.workspaceId,
+      signalIds: input.signalIds,
+      proposerClaim: input.proposerClaim,
+      challengerAttack: input.challengerAttack,
+      score: input.score,
+      state: input.state,
+      strongestObjection: input.strongestObjection,
+      proposerProvider: input.proposerProvider ?? null,
+      proposerModel: input.proposerModel ?? null,
+      challengerProvider: input.challengerProvider ?? null,
+      challengerModel: input.challengerModel ?? null,
+      promptVersion: input.promptVersion ?? null,
+      // B2 ships the real blind challenger; until then every transcript is
+      // honestly "not blinded" (false), not "not measured" (null).
+      blinded: input.blinded ?? false,
+      objected: input.objected ?? null,
+    })
     .returning({ id: platinaDebateTranscripts.id });
   return row.id;
 }
@@ -913,6 +942,10 @@ export async function markSignalSkipped(
   workspaceId: string,
   signalId: string,
   reason: string,
+  // B0: the machine-readable twin of `reason`, so a replay (plan §11.3) can
+  // select "surprise" or "untestable" skips without parsing human text.
+  // Omitted by a caller that predates this slice -> stored as null.
+  skipCause?: BrainSkipCause,
 ) {
   await db
     .update(platinaSignalDocuments)
@@ -920,6 +953,7 @@ export async function markSignalSkipped(
       processingState: "processed",
       processingStartedAt: null,
       skipReason: reason.slice(0, 300),
+      skipCause: skipCause ?? null,
     })
     .where(
       and(

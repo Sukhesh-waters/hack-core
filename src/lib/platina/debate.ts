@@ -23,6 +23,13 @@ export const NO_MATERIAL_OBJECTION = "no material objection";
 /** Characters of the built analysis input the proposer sees. */
 export const SIGNAL_BUDGET = 6000;
 
+/**
+ * Bumped whenever PROPOSER_SYSTEM or CHALLENGER_SYSTEM changes. Stored on
+ * every transcript (B0) so objection rates and agreement-by-model are never
+ * compared across prompt versions (plan §13).
+ */
+export const ANALYSIS_PROMPT_VERSION = "analysis-v1";
+
 /** Said when the page carries no move worth reporting. */
 export const NOTHING_NEW = "nothing new";
 
@@ -111,15 +118,18 @@ export async function runContradictionRound(
   // provider rather than dropping the document — and record that honestly.
   let challengerRaw: string;
   let challengerProvider: ProviderId;
+  let challengerModel: string;
   try {
     const independentReply = await challenge({ avoid: [proposal.provider] });
     challengerRaw = independentReply.text;
     challengerProvider = independentReply.provider;
+    challengerModel = independentReply.model;
   } catch (error) {
     if (!(error instanceof AIRouterError)) throw error;
     const fallback = await challenge({ prefer: proposal.provider });
     challengerRaw = fallback.text;
     challengerProvider = fallback.provider;
+    challengerModel = fallback.model;
   }
   const independent = challengerProvider !== proposal.provider;
 
@@ -135,6 +145,13 @@ export async function runContradictionRound(
     result,
     independent,
     providers: { proposer: proposal.provider, challenger: challengerProvider },
+    // B0: provenance for the agreement-by-model metric (plan §8) and B2's
+    // blind-challenger A/B — recorded now so neither needs a schema change.
+    models: { proposer: proposal.model, challenger: challengerModel },
+    // Recorded for the objection-rate metric. NO_MATERIAL_OBJECTION is the
+    // marker parseAttack normalises an honest "no objection" reply to,
+    // whatever literal words the model used.
+    objected: attack.strongestObjection !== NO_MATERIAL_OBJECTION,
     headline: parseHeadline(proposal.text),
     nothingNew: isNothingNew(parseHeadline(proposal.text)),
   };
