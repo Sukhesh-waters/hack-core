@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AutoRefresh } from "@/components/platina/auto-refresh";
+import { BrainQualityCard } from "@/components/platina/brain-quality-card";
 import { PlatinaFormError } from "@/components/platina/form-error";
 import { PlatinaPage } from "@/components/platina/page";
 import { PendingButton } from "@/components/platina/pending-button";
@@ -14,6 +15,7 @@ import {
   collectCoreHealth,
   probeModelRouter,
 } from "@/lib/platina/health-collect";
+import { loadBrainQualityCard } from "@/lib/platina/brain-quality-loader";
 import { ago, dailyStrip, type OpsStatus } from "@/lib/platina/ops-view";
 import { runOpsChecksNowAction } from "./actions";
 
@@ -100,11 +102,12 @@ export default async function HealthPage(
   const runProbe = searchParams.probe === "1";
   const now = new Date();
   // The provider check makes two short paid AI calls, so it only runs on request.
-  const [core, providers, ops, history] = await Promise.all([
+  const [core, providers, ops, history, brainQuality] = await Promise.all([
     collectCoreHealth(params.ws),
     runProbe ? probeModelRouter() : Promise.resolve<HealthCheck[]>([]),
     latestOpsChecks(params.ws),
     opsHistoryQuery(params.ws, new Date(now.getTime() - 7 * 86_400_000)),
+    loadBrainQualityCard(params.ws, now),
   ]);
   const checks = [...core, ...providers];
   const { status, blocking } = summarize(checks);
@@ -203,6 +206,8 @@ export default async function HealthPage(
           )}
         </div>
       </section>
+
+      <BrainQualityCard rows={brainQuality} />
     </PlatinaPage>
   );
 }
