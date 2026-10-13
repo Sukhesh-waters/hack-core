@@ -19,6 +19,9 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users, workspaces } from "./schema";
+// B0 (metacognitive Brain): type-only import — brain-modes.ts is a pure,
+// DB-free module, so this cannot become a circular import.
+import type { BrainModes } from "@/lib/platina/brain-modes";
 
 const id = () =>
   text("id")
@@ -316,6 +319,10 @@ export const platinaSignalDocuments = pgTable(
     // Why analysis passed this document over (low-value page, no new move).
     // A skipped document is never deleted and never silent.
     skipReason: text("skip_reason"),
+    // B0 (metacognitive Brain): the same skip, machine-readable, so a replay
+    // (plan §11.3) can select "surprise" or "untestable" skips by cause
+    // without parsing the human skip_reason text.
+    skipCause: text("skip_cause").$type<BrainSkipCause>(),
     // When an analysis worker claimed this document. A claim older than the
     // stale window (worker died / job runner restarted) is reclaimable.
     processingStartedAt: timestamp("processing_started_at", { mode: "date" }),
@@ -360,11 +367,102 @@ export const platinaDebateTranscripts = pgTable(
     state: platinaAgreementState("state").notNull(),
     strongestObjection: text("strongest_objection"),
     humanRuling: text("human_ruling"),
+    // B0 (metacognitive Brain): provenance for the agreement-by-model metric
+    // and the blind-challenger A/B (B2). Nullable: every transcript written
+    // before this slice has none of these, and that is "not measured", not 0.
+    proposerProvider: text("proposer_provider"),
+    proposerModel: text("proposer_model"),
+    challengerProvider: text("challenger_provider"),
+    challengerModel: text("challenger_model"),
+    promptVersion: text("prompt_version"),
+    blinded: boolean("blinded"),
+    objected: boolean("objected"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
     workspaceIdx: index("platina_debate_transcripts_workspace_id_idx").on(
       table.workspaceId,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Brain telemetry + undo journal (B0 — metacognitive Brain). Both
+// append-only: no update/delete query is exported for either.
+// ---------------------------------------------------------------------------
+
+/** Stage "analysis"'s skip causes, machine-readable next to the human `skip_reason`. */
+export type BrainSkipCause =
+  | "low_value"
+  | "own_brand"
+  | "nothing_new"
+  | "surprise"
+  | "untestable"
+  | "gate";
+
+/**
+ * One funnel event per stage decision: "this document/claim/chunk stopped
+ * (or passed) here, for this reason." Read by `brainFunnelCountsQuery` into
+ * the Brain quality card (plan §8). Kept 120 days; the monthly consolidation
+ * job prunes it via `pruneBrainTelemetryQuery`.
+ */
+export const platinaBrainTelemetry = pgTable(
+  "platina_brain_telemetry",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    stage: text("stage").notNull(),
+    decision: text("decision").notNull(),
+    subjectId: text("subject_id"),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
+    promptVersion: text("prompt_version"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_brain_telemetry_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    stageIdx: index("platina_brain_telemetry_ws_stage_created_idx").on(
+      table.workspaceId,
+      table.stage,
+      table.createdAt,
+    ),
+  }),
+);
+
+/**
+ * The undo journal (plan §11.2): every status/confidence/agreement_state
+ * change a new stage makes to a Brain chunk, written in the same
+ * transaction as the change itself by `setBrainState()` — the only writer.
+ * Kept forever: it is small, and it is the audit trail.
+ */
+export const platinaBrainStateLog = pgTable(
+  "platina_brain_state_log",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brainChunkId: text("brain_chunk_id").notNull(),
+    field: text("field").notNull(),
+    fromValue: jsonb("from_value"),
+    toValue: jsonb("to_value"),
+    // The stage + prompt_version or script name that made the change, e.g.
+    // "grading", "undo:<run id>", "scripts/platina-brain-undo.ts".
+    cause: text("cause").notNull(),
+    gradeId: text("grade_id"),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_brain_state_log_workspace_id_idx").on(
+      table.workspaceId,
+    ),
+    chunkIdx: index("platina_brain_state_log_ws_chunk_idx").on(
+      table.workspaceId,
+      table.brainChunkId,
+    ),
+    causeIdx: index("platina_brain_state_log_ws_cause_created_idx").on(
+      table.workspaceId,
+      table.cause,
+      table.createdAt,
     ),
   }),
 );
@@ -610,6 +708,14 @@ export const platinaWorkspaceConfig = pgTable(
       .notNull()
       .default({}),
     promptVersion: integer("prompt_version").notNull().default(1),
+    // B0 (metacognitive Brain): per-stage mode map (off|shadow|on; a missing
+    // key reads as off — see src/lib/platina/brain-modes.ts).
+    brainModes: jsonb("brain_modes").$type<BrainModes>().notNull().default({}),
+    // B0: surprise filter floor (standard deviations) and audit sample share
+    // (B4), and the Brain's share of the retrieval evidence budget (B6/B7).
+    surpriseFloor: real("surprise_floor").notNull().default(1.0),
+    surpriseAuditShare: real("surprise_audit_share").notNull().default(0.1),
+    derivedContextShare: real("derived_context_share").notNull().default(0.4),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
   },
@@ -1105,6 +1211,8 @@ export const platinaWorkspaceScopedTables = {
   platinaOutcomes,
   platinaSignalDocuments,
   platinaDebateTranscripts,
+  platinaBrainTelemetry,
+  platinaBrainStateLog,
   platinaBrainChunks,
   platinaGateEvents,
   platinaScanSpecs,
