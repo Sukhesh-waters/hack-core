@@ -51,6 +51,14 @@
   read post metrics from connected accounts through one read-only shared
   call (`src/lib/connectors/metrics-read.ts`, allowlisted in the boundary
   test); it never posts, schedules or writes through InstaMedia connectors.
+  **Owner decision 2026-10-13 (metacognitive Brain, plan
+  docs/superpowers/plans/2026-10-13-metacognitive-brain.md, D1-D7):** every
+  Brain claim carries a falsifier from the metric registry
+  (`src/lib/platina/falsifier-metrics.ts`); a daily grader tests it when its
+  window closes; refuted claims are demoted, never deleted. Facts are exempt
+  only with a code-verified quote. Each new stage runs behind a per-workspace
+  off/shadow/on mode, and every Brain state change is journaled
+  (`setBrainState`) so it can be undone.
   **Owner decision 2026-09-22 (plan C7, D6/D9):** first-party knowledge
   ingest (InstaMedia's knowledge base and Platina alike) accepts only the
   client's OWN pages — an allowlist of the client's domains and social pages

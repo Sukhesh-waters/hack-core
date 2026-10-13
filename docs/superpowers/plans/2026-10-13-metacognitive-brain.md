@@ -257,9 +257,11 @@ this comes before the brief's Slice 1. It is small.
   ```
 
   Initial entries, all already collected: `engagement_index` (per company
-  median), `topic_momentum`, `active_ads` (per advertiser),
-  `ad_days_running`, `event_participants`, and Plane A creative metrics
-  (`engagement_rate`, `ctr`, `leads`) from `platina_creative_metrics`.
+  median), `topic_momentum` (30-day window only: it is always measured
+  against a fixed 90-day baseline), `ad_days_running`, `event_participants`,
+  and Plane A creative metrics (`engagement_rate`, `ctr`, `leads`) from
+  `platina_creative_metrics`. **`active_ads` was dropped when B0 was built:**
+  no code writes it, so a falsifier on it could never be graded.
   Moving the RECENT/BASELINE constants out of `interest.ts` happens here
   (re-exported, so nothing else changes).
   `compareMeasurements(a, b)` throws when scale versions differ. Reports go
@@ -408,7 +410,7 @@ magnitude would drop every new press release. The tracked value is therefore
 |---|---|---|
 | web / press / trade page | `novelty = 1 − max Jaccard(added words, words of the last 5 versions of this URL)`, word sets via `consolidate.ts words()` | `nov:<canonicalUrl>` |
 | social post | engagement index vs that company's median (already computed for interest) | `eng:<brandId>` |
-| ad library | active-ad count change for the advertiser | `ads:<brandId>` |
+| ad library | median days running of the advertiser's ads (`ad_days_running`; `active_ads` is not collected) | `ads:<brandId>` |
 
 `surprise.ts` (pure, statistic rung):
 `deviation = |observed − mean| / max(sd, floorSd)`. Skip when
@@ -773,7 +775,7 @@ invalid reply is never salvaged into a claim.
 `--restore <file>` returns state columns and config to the snapshot through
 `setBrainState()`. It leaves content and embeddings alone: they are never
 changed by these stages. Rows created after the snapshot are archived. Taking a
-snapshot is a required step in the flip checklist (§11.6).
+snapshot is a required step in the flip checklist (§11.7).
 
 ### 11.5 Proof that "off" is the same data
 
@@ -784,7 +786,22 @@ Brain chunk, skip) equal a stored snapshot from today's `main`. It runs in CI on
 every slice. If it changes, something leaked past a mode switch and the slice
 is not done.
 
-### 11.6 Flip checklist (every stage, every workspace)
+### 11.6 Deploy order (every slice with a migration)
+
+`main` auto-deploys to Vercel. From B0 on, the analysis job writes the new
+columns, so **the migration is applied to the database before the code
+reaches `main`**. Additive columns are safe for the old code that is still
+running. The reverse order breaks `insertTranscript` in the live job. The
+Brain quality card fails soft (one "not available yet" row) if this is ever
+missed. The analysis job does not, which is why the order is a rule.
+
+1. Table backup of the tables the migration touches (`backups/`).
+2. `npm run db:migrate`, then verify the new columns and tables exist.
+3. Merge to `main`; Vercel deploys.
+4. Rollback: redeploy the previous commit first, then `drizzle/down/00NN.sql`
+   if the schema must go too.
+
+### 11.7 Flip checklist (every stage, every workspace)
 
 1. Shadow numbers for the stage written into §14.
 2. `platina:brain-snapshot` taken; the file name is recorded in §14.
