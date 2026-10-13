@@ -13,14 +13,32 @@ const FUNNEL_WINDOW_DAYS = 7;
 const TRANSCRIPT_WINDOW_DAYS = 30;
 const DAY_MS = 86_400_000;
 
+/** Shown instead of the card when its tables cannot be read (e.g. migration 0087 not applied yet). */
+export const BRAIN_QUALITY_UNAVAILABLE: BrainQualityRow = {
+  label: "Brain quality",
+  value: null,
+  detail: "Not available yet: its records could not be read.",
+  status: "not_enough",
+};
+
+/**
+ * Never throws: the card shares the Health page's Promise.all, so a failure
+ * here (a deploy that reached the app before its migration) must cost one
+ * card, not the whole page.
+ */
 export async function loadBrainQualityCard(workspaceId: string, now: Date = new Date()): Promise<BrainQualityRow[]> {
   const funnelSince = new Date(now.getTime() - FUNNEL_WINDOW_DAYS * DAY_MS);
   const transcriptSince = new Date(now.getTime() - TRANSCRIPT_WINDOW_DAYS * DAY_MS);
-  const [funnel, fetchedCount, transcripts, modes] = await Promise.all([
-    brainFunnelCounts(workspaceId, funnelSince),
-    fetchedDocumentCount(workspaceId, funnelSince),
-    listBrainQualityTranscripts(workspaceId, transcriptSince),
-    getBrainModes(workspaceId),
-  ]);
-  return buildBrainQualityCard({ funnel, fetchedCount, transcripts, modes });
+  try {
+    const [funnel, fetchedCount, transcripts, modes] = await Promise.all([
+      brainFunnelCounts(workspaceId, funnelSince),
+      fetchedDocumentCount(workspaceId, funnelSince),
+      listBrainQualityTranscripts(workspaceId, transcriptSince),
+      getBrainModes(workspaceId),
+    ]);
+    return buildBrainQualityCard({ funnel, fetchedCount, transcripts, modes });
+  } catch (error) {
+    console.warn("[platina] brain quality card unavailable:", error instanceof Error ? error.message : error);
+    return [BRAIN_QUALITY_UNAVAILABLE];
+  }
 }
