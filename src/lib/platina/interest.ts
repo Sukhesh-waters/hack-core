@@ -17,10 +17,12 @@
  * it never produces a number. Every signal carries its proof URL.
  */
 
-export const MIN_INTEREST_N = 5;
-/** "Now" vs. "before" windows for momentum. */
-export const RECENT_DAYS = 30;
-export const BASELINE_DAYS = 90;
+// Scale constants moved to measurement-scales.ts (Brain plan B0, "coastline"
+// rule): declared and versioned in one place instead of scattered across
+// files. Re-exported here so every existing importer of these three names
+// keeps working unchanged.
+import { MIN_INTEREST_N, RECENT_DAYS, BASELINE_DAYS } from "./measurement-scales";
+export { MIN_INTEREST_N, RECENT_DAYS, BASELINE_DAYS } from "./measurement-scales";
 const DAY = 86_400_000;
 
 export type SignalKind = "interest" | "pressure";
