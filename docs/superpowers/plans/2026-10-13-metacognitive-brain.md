@@ -1,7 +1,10 @@
 # Metacognitive Brain — build plan (B0–B9)
 
 Status: **APPROVED 2026-10-13. Final dev plan.** The owner accepted every
-recommendation (D1–D7, §10). Build starts at B0. Nothing in here is built yet.
+recommendation (D1–D7, §10). **B0 built** (branch `feat/b0`, merged to `main`);
+migration 0087 waits for the database (§15). Environment and the code-verified
+flow are in §15 and override any Vercel-specific step above while hosting is
+paused.
 Source brief: [docs/newbrain.md](../../newbrain.md) (architecture, principles, invariants).
 This plan maps that brief onto the code as it stands on `main` (d7bd1f6), names what
 already exists, and lays out the order to build the rest without breaking the
@@ -886,3 +889,68 @@ prototype-level slices on `main` behind modes.
 | B7 | | | | | |
 | B8 | | | | | |
 | B9 | | | | | |
+
+---
+
+## 15. Environment and code-verified flow (2026-10-13)
+
+### 15.1 Environment, as of tonight
+
+| Item | State | What it changes |
+|---|---|---|
+| Hosting | Vercel plan cancelled, for now | Nothing auto-deploys from `main`. Merging is safe without a database. CLAUDE.md "Deploy: Vercel only" no longer describes reality (owner to confirm the new target) |
+| Database | Supabase project `eqhzaj…` unreachable (pooler: tenant not found; host does not resolve). Being re-provisioned tonight | 0087 is not applied. B1+ builds and tests without a database (unit + SQL-shape tests) |
+| Runtime | Local only: `npm run dev:all` (Next + Inngest dev server) | Crons run only while `dev:all` is up. Every scheduled job in this plan must catch up on start, not assume it fired yesterday |
+
+**When the database is back:** run these steps, in this order, before
+`npm run dev:all` starts the job runner against it.
+
+| Case | Steps |
+|---|---|
+| **A. Same project restored** | 1. Table backup (`platina_workspace_config`, `platina_debate_transcripts`, `platina_signal_documents`) to `backups/`.<br>2. `npm run db:migrate` (applies 0087 only).<br>3. Verify the columns and the two tables exist.<br>4. Start `dev:all` |
+| **B. New project** | 1. `npm run db:migrate` (0000 → 0087).<br>2. Re-onboard Waters (`scripts/onboard-client.ts --apply`, then `platina:force`, `platina:evidence`).<br>3. Start `dev:all`. Collection, the Brain, the funnel numbers and every learning baseline start from zero. Milestone dates (§12) then count from that day, because falsifier windows are at least 30 days |
+
+The rule in §11.6 still holds in both cases. The job runner must never run new
+code against a database without its migration, or `insertTranscript` fails.
+
+### 15.2 The real-time planning path, verified in code
+
+Each claim the plan rests on was checked against the code on `feat/b0`:
+
+| # | Claim | Where | Verdict |
+|---|---|---|---|
+| V1 | Support retrieval already excludes anything not `active` | `similarBrainChunksQuery`/lexical in `db/queries/platina.ts` filter `status = 'active'` and the embedding version | **Holds.** A B5 refutation (status `demoted`) drops out of support with no retrieval change. B6 needs exactly one new query: refuted/demoted chunks on the same subject, for the counter-evidence slot |
+| V2 | Plans keep the evidence ids they cited | `PlanDoc.evidence` (a frozen `PlanEvidenceSnapshot[]`) + `phases[].evidenceIds` (jsonb) | **Holds.** B8's "evidence behind this plan was proved wrong" is a lookup of snapshot ids against `grade_state`. The plan-level falsifier is an optional `PlanDoc.falsifier` field. **No plan-table migration** |
+| V3 | Freshness is cheap and scoped | `plan/freshness-read.ts`: active Brain chunks since `plan.createdAt`, scoped through `sourceSignalIds`; no model call | **Holds.** B8 changes stay in two places: filter to gated insights in `brainEvidenceSinceQuery`, plus one refuted-cited query |
+| V4 | A refutation reaches an open plan page live | The header's `PlatinaLiveStatus` subscribes to the workspace channel, and any scope signal refreshes the page (coalesced). `market-insight-sync` and `learning-service` already broadcast `insights` | **Holds.** B5 broadcasts `insights` after grading; no new client wiring |
+| V5 | Job order leaves the grader fresh measurements, and credit sees grades the same day | Crons: `scan-coordinator` every 5 min → `audit-run` → `interest.extract.requested` (also daily 04:30) → analysis (`contradict-sweep`, event + 6-hourly backstop, 8/min) → **grader 05:00** → `platina-learning` 06:00 → `consolidate` 1st of month | **Holds.** 05:00 sits between interest extraction and learning |
+| V6 | Insight writes can take the new fields without touching callers | `insertBrainChunk(input)` takes an options object, and `market-insight-writer.ts` plans `write/supersede/unchanged` per `insightKey` | **Holds.** B1 adds optional fields. Code-built falsifiers attach in the insight writer's `write` path |
+| V7 | B0 telemetry cannot double-count on a job replay | `recordBrainEvent` runs inside the `step.run` that does the exit's write | **Holds** (Inngest memoises completed steps) |
+| V8 | The analysis decision is stable while new stages land | `analysis-writes.ts` + `brain-legacy-equivalence.test.ts` (9 fixtures) | **Holds.** Every later slice must keep it green with its mode `off` |
+| V9 | Debate-claim Brain writes signal the plan page | `signal-analyze` broadcasts `findings` only | **Fine as is** (V4: any scope refreshes). B1 adds an `insights` broadcast when a claim enters the Brain, so a future per-scope listener stays correct |
+
+### 15.3 Local-runtime adjustments to the slices
+
+- **Catch-up, not "yesterday".** The B5 grader takes every chunk with
+  `due_at <= now`, so a missed 05:00 run is caught up the next time `dev:all`
+  runs. Monthly consolidation already checks its own month. The B4
+  expectation update happens per observation, so it has nothing to miss.
+- **Inngest dev server.** It crashes after a long idle ("error leasing
+  partition"). The ops check flags a job runner that is not running, and
+  nothing in this plan assumes a cron fired.
+- **Verification is code-first until the database is back.** Every slice
+  ships pure modules with unit tests, SQL-shape tests for every query, and the
+  golden test. Live shadow numbers (§14) start once the database and
+  `dev:all` are up.
+
+### 15.4 Build waves from here
+
+| Wave | Runs in parallel | Needs a database? |
+|---|---|---|
+| W1 (now) | **B1** interrogation + falsifier (owns migration 0088) · **B3/B4 pure**: `significance.ts`, `surprise.ts` · **B6/B7 pure**: `diversify.ts`, `context-budget.ts` | No |
+| W2 | **B2** blind challenger (needs B1's schema) · **B3 wiring** (gate) · **B5** grader + 0089 grades table | No to build; yes for shadow numbers |
+| W3 | **B4 wiring** (expectations table 0090) · **B6/B7 wiring** into the four retrieval call sites | Same |
+| W4 | **B8** real-time planning (badges, plan falsifier, refuted-cited freshness) · **B9** | Same |
+
+Migrations are numbered in wave order (0088 B1, 0089 B5, 0090 B4), so two
+parallel agents never generate the same number.
