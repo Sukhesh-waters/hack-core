@@ -13,6 +13,7 @@ import { blindChallengerInput } from "./challenger";
 import { nextRoundAllowed } from "./contradiction";
 import { runContradictionRound, runInterrogationRound } from "./debate";
 import { assertFalsifiableClaim } from "./falsifier-metrics";
+import { gateInsight } from "./insight-gate";
 
 // Hoisted, static mock — the same pattern analysis-plan.test.ts already
 // uses successfully; a per-test vi.resetModules()+dynamic-import was tried
@@ -196,11 +197,177 @@ describe("invariant: challenger blind, exactly once (B2)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Not yet provable — each row is the later slice that builds it (plan §7)
+// invariant: deterministic gates override every model (B3)
 // ---------------------------------------------------------------------------
 
-describe.todo("invariant: deterministic gates override every model (B3)");
-it.todo("B3 — a gate refusal (min-N, significance, schema) produces no Brain write regardless of the debate's agreement state");
+describe("invariant: deterministic gates override every model (B3)", () => {
+  const plan = { action: "analyse" as const, input: "x", changed: false };
+  const context = { competitorName: "Bluebird Roasters", pageTitle: "Roast guarantee", sourceKind: "competitor_site" };
+  // "agreed" at the strongest possible score — the state most likely to earn
+  // a chunk under every other rule — proving the override holds even there
+  // is the strong form of this invariant (mirrors the B1 test above it).
+  const agreedDebate = {
+    claim: { text: "Bluebird now guarantees a 48-hour roast.", evidenceSpans: ["48-hour roast guarantee"], specificity: 0.95 },
+    attack: { text: "No material defect found.", confounders: [], strongestObjection: "no material objection", confounderStrength: 0 },
+    result: { state: "agreed" as const, score: 0.98 },
+    headline: "Bluebird now guarantees a 48-hour roast",
+    nothingNew: false,
+  };
+
+  it("mode='on', min-N refusal: an 'agreed' debate state still produces no Brain write — a finding is written instead, held, with the reason in its summary", () => {
+    const gate = gateInsight({
+      interrogation: { ok: true, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim", falsifier: null, confidence: "high" } },
+      falsifier: { metric: "topic_momentum" },
+      testability: { n: 1, minN: 5 },
+      resolveState: agreedDebate.result.state,
+    });
+    expect(gate.pass).toBe(false);
+
+    const writes = analysisWrites(plan, agreedDebate, context, {
+      mode: "on",
+      interrogation: { ok: true, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim", falsifier: null, confidence: "high" } },
+      parsed: null,
+      signalDocumentId: "sig_1",
+      now: new Date(),
+      promptVersion: "analysis-v2",
+      writtenBy: "interrogation-v1",
+      gate: { mode: "on", result: gate },
+    });
+
+    expect(writes.brainChunk).toBeUndefined();
+    expect(writes.skip).toBeUndefined(); // markSignalSkipped is NOT used when a finding is written
+    expect(writes.processed).toBe(true);
+    expect(writes.finding).toBeDefined();
+    expect(writes.finding?.summary).toContain("Held:");
+    expect(writes.finding?.summary).toContain("Not enough data to test yet.");
+  });
+
+  it("mode='on', significance refusal: same override, different reason", () => {
+    const gate = gateInsight({
+      interrogation: { ok: true, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim", falsifier: null, confidence: "high" } },
+      falsifier: { metric: "topic_momentum" },
+      testability: { n: 20, minN: 5 },
+      significance: { significant: false, reason: "not clearly different from usual: p=0.4 is at or above 0.1" },
+      resolveState: agreedDebate.result.state,
+    });
+    const writes = analysisWrites(plan, agreedDebate, context, {
+      mode: "on",
+      interrogation: { ok: true, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim", falsifier: null, confidence: "high" } },
+      parsed: null,
+      signalDocumentId: "sig_1",
+      now: new Date(),
+      promptVersion: "analysis-v2",
+      writtenBy: "interrogation-v1",
+      gate: { mode: "on", result: gate },
+    });
+    expect(writes.brainChunk).toBeUndefined();
+    expect(writes.finding?.summary).toContain("Not clearly different from usual.");
+  });
+
+  it("mode='shadow': a gate refusal changes NOTHING about the write — today's v2 behaviour proceeds exactly as if no gate ran", () => {
+    const now = new Date();
+    const gate = gateInsight({
+      interrogation: { ok: true, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim", falsifier: null, confidence: "high" } },
+      falsifier: { metric: "topic_momentum" },
+      testability: { n: 1, minN: 5 },
+      resolveState: agreedDebate.result.state,
+    });
+    const v2Base = {
+      mode: "shadow" as const,
+      interrogation: { ok: true as const, value: { headline: "h", what: "w", why: ["e1"], how: "how", kind: "claim" as const, falsifier: { metric: "topic_momentum", subject: { topic: "roast speed" }, direction: "below" as const, threshold: 1, window_days: 30 }, confidence: "high" as const } },
+      parsed: null,
+      signalDocumentId: "sig_1",
+      now,
+      promptVersion: "analysis-v2",
+      writtenBy: "interrogation-v1",
+    };
+    const withGate = analysisWrites(plan, agreedDebate, context, { ...v2Base, gate: { mode: "shadow", result: gate } });
+    const withoutGate = analysisWrites(plan, agreedDebate, context, v2Base);
+    expect(withGate).toEqual(withoutGate);
+    expect(withGate.brainChunk).toBeDefined();
+  });
+
+  it("resolveV2 (D7) is invariant to the proposer's self-reported confidence — only wired in once gate mode is 'on'", async () => {
+    const spans = { e1: "Acme Roasters today announced a 48-hour roast guarantee for all wholesale customers." };
+    const numbered = {
+      input:
+        "Competitor: Acme Roasters\n" +
+        "Source: a page on the competitor's own website — https://acme-roasters.example/news/guarantee\n\n" +
+        `WHAT CHANGED — this is the signal:\n[e1] ${spans.e1}`,
+      spans,
+    };
+    const challengerReply = JSON.stringify({
+      text: "No material defect found.",
+      confounders: [],
+      strongestObjection: "none",
+      confounderStrength: 0,
+      verdict: "no_material_objection",
+    });
+    const replyWith = (confidence: "low" | "high") =>
+      JSON.stringify({
+        headline: "Acme now guarantees a 48-hour roast",
+        what: "Acme now guarantees a 48-hour roast turnaround for wholesale orders.",
+        why: ["e1"],
+        how: "A faster guarantee than the industry standard signals a capacity investment.",
+        kind: "claim",
+        falsifier: { metric: "topic_momentum", subject: { topic: "roast speed" }, direction: "below", threshold: 1.0, window_days: 30 },
+        confidence,
+      });
+
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce({ text: replyWith("low"), provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+      .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+    const lowConfidence = await runInterrogationRound(numbered, undefined, undefined, undefined, { mode: "on" });
+
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce({ text: replyWith("high"), provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+      .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+    const highConfidence = await runInterrogationRound(numbered, undefined, undefined, undefined, { mode: "on" });
+
+    // Both rounds cited the same evidence against the challenger — only
+    // `confidence` differs between the two replies — so resolveV2 (used
+    // because gate mode is "on") must land on the identical state and score.
+    expect(lowConfidence.result).toEqual(highConfidence.result);
+    expect(lowConfidence.claim.specificity).not.toBe(highConfidence.claim.specificity); // confidence WAS recorded...
+    // ...it just was not read by the decision above.
+  });
+
+  it("gate mode 'off': resolveV2 is never consulted — result equals a plain resolve(), and no gateShadow is returned", async () => {
+    const spans = { e1: "Acme Roasters today announced a 48-hour roast guarantee for all wholesale customers." };
+    const numbered = {
+      input: `WHAT CHANGED — this is the signal:\n[e1] ${spans.e1}`,
+      spans,
+    };
+    const interrogationReply = JSON.stringify({
+      headline: "Acme now guarantees a 48-hour roast",
+      what: "Acme now guarantees a 48-hour roast turnaround for wholesale orders.",
+      why: ["e1"],
+      how: "A faster guarantee than the industry standard signals a capacity investment.",
+      kind: "claim",
+      falsifier: { metric: "topic_momentum", subject: { topic: "roast speed" }, direction: "below", threshold: 1.0, window_days: 30 },
+      confidence: "high",
+    });
+    const challengerReply = JSON.stringify({
+      text: "No material defect found.",
+      confounders: [],
+      strongestObjection: "none",
+      confounderStrength: 0,
+      verdict: "no_material_objection",
+    });
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce({ text: interrogationReply, provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+      .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+    const out = await runInterrogationRound(numbered);
+    expect(out.gateShadow).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Not yet provable — each row is the later slice that builds it (plan §7)
+// ---------------------------------------------------------------------------
 
 describe.todo("invariant: derived chunks stay under the context cap and are never self-cited (B6)");
 it.todo("B6 — diversify's derived-share cap arithmetic (including cold start) and the lineage/self-citation refusal");

@@ -202,6 +202,50 @@ describe("buildBrainQualityCard — stage switches", () => {
   });
 });
 
+describe("buildBrainQualityCard — held by the quality check (B3)", () => {
+  it("is omitted entirely when stage='gate' has never recorded anything — never shown as a phantom 0", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [{ stage: "analysis", decision: "analysed", count: 5 }],
+      fetchedCount: 5,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    expect(rows.some((r) => r.label === "Held by the quality check")).toBe(false);
+  });
+
+  it("is not_enough below a small N even when stage='gate' has some rows", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [{ stage: "gate", decision: "testability", count: 2 }],
+      fetchedCount: 0,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    const row = rows.find((r) => r.label === "Held by the quality check")!;
+    expect(row.status).toBe("not_enough");
+    expect(row.value).toBeNull();
+  });
+
+  it("reports counts per reason, in plain words, once above the floor", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [
+        { stage: "gate", decision: "testability", count: 3 },
+        { stage: "gate", decision: "significance", count: 4 },
+        // A different stage's "gate" DECISION (stage="analysis") is a
+        // different telemetry stream entirely and must not be pooled in.
+        { stage: "analysis", decision: "gate", count: 99 },
+      ],
+      fetchedCount: 0,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    const row = rows.find((r) => r.label === "Held by the quality check")!;
+    expect(row.status).toBe("ok");
+    expect(row.value).toBe(7);
+    expect(row.detail).toContain("Not clearly different from usual: 4");
+    expect(row.detail).toContain("Not enough data to test yet: 3");
+  });
+});
+
 describe("buildBrainQualityCard — no internal vocabulary leaks into the card", () => {
   it("never shows a banned internal term anywhere in the card's text", () => {
     const rounds = [
@@ -216,6 +260,8 @@ describe("buildBrainQualityCard — no internal vocabulary leaks into the card",
         { stage: "analysis", decision: "untestable", count: 1 },
         { stage: "analysis", decision: "gate", count: 1 },
         { stage: "analysis", decision: "analysed", count: 5 },
+        { stage: "gate", decision: "testability", count: 6 },
+        { stage: "gate", decision: "significance", count: 5 },
       ],
       fetchedCount: 10,
       transcripts: rounds,

@@ -23,9 +23,11 @@
  *    the event's own page vs. a post), stated as a rule below — not a model
  *    score.
  */
+import type { BrainMode } from "./brain-modes";
 import { daysUntil, eventTiming } from "./events";
 import type { TopicMomentum } from "./interest";
 import { subjectKeyFor, type FalsifierClaim } from "./falsifier-metrics";
+import { isSignificant, mannWhitneyOneSided, splitRecentBaseline } from "./significance";
 
 export type MarketInsight = {
   key: string;
@@ -41,6 +43,16 @@ export type MarketInsight = {
   falsifier?: FalsifierClaim | null;
   subjectKey?: string | null;
   direction?: "up" | "down" | "none";
+  /**
+   * B3 (gate) — the significance check's own verdict on this insight's
+   * stated trend, when there was one to test. Always computed (cheap, pure)
+   * whenever `m.change !== null`, regardless of gate mode, so a "shadow"
+   * caller can log what the check WOULD have changed without that override
+   * actually happening (plan §5 B3: "off/shadow -> content unchanged
+   * (shadow logs what would change)"). Undefined when there was nothing to
+   * test (no stated trend, or a pressure insight).
+   */
+  gateCheck?: { significant: boolean; reason: string };
 };
 
 export type InsightSignal = {
@@ -74,7 +86,13 @@ export function interestInsights(input: {
   names: Map<string, string>;
   momentum: TopicMomentum[];
   signals: InsightSignal[];
+  /** B3 (gate) — defaults "off": today's B1 behaviour, byte-identical. */
+  gateMode?: BrainMode;
+  /** B3 — "now" the significance check's recent/baseline windows are measured against. Defaults to now; irrelevant when there is no stated trend to test. */
+  now?: Date;
 }): MarketInsight[] {
+  const gateMode = input.gateMode ?? "off";
+  const now = input.now ?? new Date();
   const out: MarketInsight[] = [];
   for (const m of input.momentum) {
     if (m.status !== "ok") continue;
@@ -88,10 +106,49 @@ export function interestInsights(input: {
     const companies = new Set(rows.map((s) => s.brandId)).size;
     if (m.signalKind === "interest") {
       const value = m.recent ?? m.baseline!;
-      const trend =
+      let trend =
         m.recent !== null && m.baseline !== null
           ? ` That is ${m.change! >= 0 ? "up" : "down"} from ${fmt(m.baseline)}× in the 90 days before.`
           : "";
+      let falsifierFields: Pick<MarketInsight, "falsifier" | "subjectKey" | "direction"> =
+        m.change === null
+          ? { falsifier: null, subjectKey: subjectKeyFor({ topic: m.topic }), direction: "none" }
+          : {
+              falsifier: {
+                metric: "topic_momentum",
+                subject: { topic: m.topic },
+                direction: m.change >= 0 ? "below" : "above",
+                threshold: 1.0,
+                window_days: 30,
+              },
+              subjectKey: subjectKeyFor({ topic: m.topic }),
+              direction: m.change >= 0 ? "up" : "down",
+            };
+
+      // B3 (gate): a stated trend is checked against a one-sided
+      // Mann-Whitney test on the RAW per-post observations behind this
+      // topic (the same rows `rows` above, already scoped to this
+      // topic/region/signalKind) — not the medians `m` already reduced them
+      // to. Computed whenever there is a trend to test, regardless of mode,
+      // so "shadow" can log what the check would have changed without that
+      // change actually happening (content/falsifier only flip at mode
+      // "on"). Below the min-N floor `isSignificant` says "not enough data"
+      // rather than treating a thin sample as settled either way.
+      let gateCheck: { significant: boolean; reason: string } | undefined;
+      if (gateMode !== "off" && m.change !== null) {
+        const { recent, baseline } = splitRecentBaseline(
+          rows.map((s) => ({ value: s.value, observedAt: s.observedAt })),
+          now,
+        );
+        const mw = mannWhitneyOneSided(recent, baseline, m.change >= 0 ? "greater" : "less");
+        gateCheck = isSignificant(mw);
+
+        if (gateMode === "on" && !gateCheck.significant) {
+          trend = " That is not clearly different from usual.";
+          falsifierFields = { falsifier: null, subjectKey: subjectKeyFor({ topic: m.topic }), direction: "none" };
+        }
+      }
+
       out.push({
         key: `interest:${input.client.id}:${m.topic}`,
         content:
@@ -105,19 +162,8 @@ export function interestInsights(input: {
         // stated direction: an "up" claim is refuted if momentum falls back
         // below parity within 30 days, a "down" claim if it rises above it.
         // No trend stated (no baseline) → nothing to test, so no falsifier.
-        ...(m.change === null
-          ? { falsifier: null, subjectKey: subjectKeyFor({ topic: m.topic }), direction: "none" as const }
-          : {
-              falsifier: {
-                metric: "topic_momentum" as const,
-                subject: { topic: m.topic },
-                direction: m.change >= 0 ? ("below" as const) : ("above" as const),
-                threshold: 1.0,
-                window_days: 30 as const,
-              },
-              subjectKey: subjectKeyFor({ topic: m.topic }),
-              direction: m.change >= 0 ? ("up" as const) : ("down" as const),
-            }),
+        ...falsifierFields,
+        ...(gateCheck ? { gateCheck } : {}),
       });
     } else {
       out.push({

@@ -120,6 +120,67 @@ describe("interestInsights", () => {
     expect(insight.direction).toBe("none");
   });
 
+  it("B3 (gate off, default): content/falsifier unchanged from B1, and no gateCheck is computed at all", () => {
+    const [insight] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
+      signals,
+    });
+    expect(insight.gateCheck).toBeUndefined();
+  });
+
+  it("B3 (gate shadow): computes gateCheck but leaves content/falsifier exactly as B1 — nothing changes yet", () => {
+    const offRun = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
+      signals,
+    })[0];
+    const shadowRun = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
+      signals,
+      gateMode: "shadow",
+      now: new Date("2026-09-21T09:00:00Z"),
+    })[0];
+    expect(shadowRun.content).toBe(offRun.content);
+    expect(shadowRun.falsifier).toEqual(offRun.falsifier);
+    expect(shadowRun.gateCheck).toBeDefined();
+  });
+
+  it("B3 (gate on, trend not significant): content says 'not clearly different from usual' and carries NO falsifier", () => {
+    // Only two raw observations behind this topic (below MIN_INTEREST_N):
+    // mannWhitneyOneSided reports "not enough data", which is never significant.
+    const thinSignals = [sig({ documentId: "d1", value: 0.9 }), sig({ documentId: "d2", value: 1.1, observedAt: new Date("2026-09-15T00:00:00Z") })];
+    const [insight] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
+      signals: thinSignals,
+      gateMode: "on",
+      now: new Date("2026-09-21T09:00:00Z"),
+    });
+    expect(insight.content).toContain("That is not clearly different from usual.");
+    expect(insight.content).not.toContain("That is up from");
+    expect(insight.falsifier).toBeNull();
+    expect(insight.direction).toBe("none");
+    expect(insight.gateCheck).toEqual({ significant: false, reason: "not enough data" });
+  });
+
+  it("B3 (gate on, nothing to test): a topic with no stated trend is unaffected — same as B1", () => {
+    const [insight] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms()],
+      signals,
+      gateMode: "on",
+    });
+    expect(insight.falsifier).toBeNull();
+    expect(insight.gateCheck).toBeUndefined();
+  });
+
   it("B1: a pressure insight carries NO falsifier — it describes what runs now and predicts nothing", () => {
     const [p] = interestInsights({
       client: { id: "waters", name: "Waters" },
