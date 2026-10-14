@@ -2,6 +2,7 @@ import { inngest } from "@/inngest/client";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { getWorkspaceConfig } from "@/db/queries/platina";
 import {
+  advanceDueAt,
   gradeCountsForChunk,
   insertGrade,
   listDueFalsifierChunks,
@@ -13,7 +14,14 @@ import { recordDecision } from "@/lib/platina/suggestions-record";
 import { modeOf } from "@/lib/platina/brain-modes";
 import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
-import { earnedConfidence, gradeEventId, gradeInsight, type GradeVerdict } from "@/lib/platina/falsifier-grade";
+import {
+  earnedConfidence,
+  gradeEventId,
+  gradeInsight,
+  insufficientAttemptsExhausted,
+  nextDueAt,
+  type GradeVerdict,
+} from "@/lib/platina/falsifier-grade";
 import { FALSIFIER_METRICS, measureMetric, type FalsifierMetricId } from "@/lib/platina/falsifier-metrics";
 import { measureDeps } from "@/lib/platina/falsifier-metrics-deps";
 
@@ -26,14 +34,25 @@ const LEDGER_VERDICTS: readonly GradeVerdict[] = ["refuted", "promoted"];
  * Grades every due chunk in one page and applies the mode's behaviour
  * (plan §5 B5):
  *  - shadow: the grade row is inserted; telemetry is recorded; the Brain
- *    chunk is never touched.
+ *    chunk is never touched — no state change, no due_at push. Because
+ *    due_at never moves in shadow, every later day's attempt lands on the
+ *    SAME (brain_chunk_id, metric, window_days, due_at) key and the insert
+ *    is a no-op: one row per due date, exactly as the unique key promises.
  *  - on: the grade row is inserted, then setBrainState (the only writer of
- *    Brain-chunk state) applies the transition, and a refuted/promoted
- *    chunk's citing suggestions get a ledger "result" event (credit.ts picks
- *    it up with no new learning code).
- * A conflict on the grade's unique key (brain_chunk_id, window_days, metric)
- * means this exact chunk was already graded by an earlier, crashed attempt
- * at this page — `inserted: false` — and no state change is attempted again.
+ *    journaled Brain-chunk state) applies the transition. refuted/promoted
+ *    are terminal. holding and insufficient (below the retry cap) are NOT:
+ *    the chunk's due_at is pushed forward by `nextDueAt` (a plain,
+ *    workspace-filtered update — due_at is a schedule, not journaled
+ *    state — see advanceDueAtQuery) so it is re-measured next window and
+ *    can later refute or promote. A refuted/promoted chunk's citing
+ *    suggestions get a ledger "result" event (credit.ts picks it up with no
+ *    new learning code).
+ *
+ * Every write here is independently idempotent (setBrainState diffs against
+ * current state; advanceDueAtQuery is guarded on due_at still equalling the
+ * value just graded; recordDecision's "result" event is unique per
+ * suggestion+day), so re-running this on a crash-replay of the same page is
+ * always safe whether or not `insertGrade` found a fresh row to write.
  */
 async function gradeChunk(
   workspaceId: string,
@@ -61,6 +80,7 @@ async function gradeChunk(
     metric: metricId,
     scaleVersion: def.scaleVersion,
     windowDays: chunk.falsifier.window_days,
+    dueAt: chunk.dueAt,
     threshold: chunk.falsifier.threshold,
     direction: chunk.falsifier.direction,
     measuredValue: graded.measured?.value ?? null,
@@ -77,22 +97,30 @@ async function gradeChunk(
     detail: { metric: metricId, reason: graded.reason, inserted, mode },
   });
 
-  // Already graded by a prior, crashed pass over this same page — never
-  // re-decide a chunk's state twice from one conflicting insert.
-  if (!inserted) return { graded: false, changed: false };
   if (mode === "shadow") return { graded: true, changed: false };
 
-  let diff: unknown[];
+  const due = nextDueAt(now, chunk.falsifier.window_days);
+  let diff: unknown[] = [];
+
   if (graded.verdict === "refuted") {
     diff = await setBrainState(workspaceId, chunk.id, { status: "demoted", gradeState: "refuted", confidence: 0.05 }, "grading", gradeId);
   } else if (graded.verdict === "promoted") {
-    const { held, refuted } = await gradeCountsForChunk(workspaceId, chunk.id);
-    diff = await setBrainState(workspaceId, chunk.id, { gradeState: "promoted", confidence: earnedConfidence(held, refuted) }, "grading", gradeId);
+    const counts = await gradeCountsForChunk(workspaceId, chunk.id);
+    diff = await setBrainState(workspaceId, chunk.id, { gradeState: "promoted", confidence: earnedConfidence(counts.held, counts.refuted) }, "grading", gradeId);
   } else if (graded.verdict === "holding") {
     diff = await setBrainState(workspaceId, chunk.id, { gradeState: "holding" }, "grading", gradeId);
+    await advanceDueAt(workspaceId, chunk.id, chunk.dueAt, due);
   } else {
-    // insufficient — stays retrievable (plan §5 B5): no status change.
-    diff = await setBrainState(workspaceId, chunk.id, { gradeState: "insufficient" }, "grading", gradeId);
+    // insufficient — "no change, report as insufficient" (plan §5 B5) until
+    // the retry cap: grade_state is left exactly as it is (no setBrainState
+    // call at all — there is nothing to journal) and only due_at advances,
+    // UNLESS this grade pushed the chunk's insufficient count to the cap, in
+    // which case the grader itself sets it terminal (still retrievable).
+    const counts = await gradeCountsForChunk(workspaceId, chunk.id);
+    if (insufficientAttemptsExhausted(counts.insufficient)) {
+      diff = await setBrainState(workspaceId, chunk.id, { gradeState: "insufficient" }, "grading", gradeId);
+    }
+    await advanceDueAt(workspaceId, chunk.id, chunk.dueAt, due);
   }
 
   if (LEDGER_VERDICTS.includes(graded.verdict)) {

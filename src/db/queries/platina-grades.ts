@@ -23,7 +23,15 @@ import type { FalsifierClaim, Plane } from "@/lib/platina/falsifier-metrics";
 
 /** Only these two kinds ever carry a falsifier (B1 analysis-writes.ts, market-insight-writer.ts). Facts and legacy rows are excluded structurally by `falsifier is not null` below, not by this list alone. */
 const GRADABLE_KINDS = ["claim", "measured"] as const;
-/** Insufficient is NOT re-queried (plan §5 B5 names only untested|holding); a chunk whose interrogation itself failed validation is never retried by this job. */
+/**
+ * Insufficient is terminal and NOT re-queried (plan §5 B5 names only
+ * untested|holding) — reached two ways: a chunk whose interrogation itself
+ * failed validation gets gradeState="insufficient" at write time and is
+ * never graded at all (analysis-writes.ts), or a chunk that keeps measuring
+ * "not enough data" stays untested/holding (still due) through
+ * MAX_INSUFFICIENT_ATTEMPTS grading attempts before the grader itself sets
+ * it terminal (falsifier-grade.ts insufficientAttemptsExhausted).
+ */
 const DUE_GRADE_STATES: BrainChunkGradeState[] = ["untested", "holding"];
 
 export type DueFalsifierChunk = {
@@ -88,7 +96,7 @@ export async function listDueFalsifierChunks(
 }
 
 // ---------------------------------------------------------------------------
-// Writing a grade — once per (chunk, window, metric)
+// Writing a grade — once per (chunk, metric, window, due date)
 // ---------------------------------------------------------------------------
 
 export type InsertGradeInput = {
@@ -97,6 +105,8 @@ export type InsertGradeInput = {
   metric: string;
   scaleVersion: number;
   windowDays: number;
+  /** The chunk's due_at THIS grade tested — part of the unique key (see platina-schema.ts platinaInsightGrades comment). */
+  dueAt: Date;
   threshold: number;
   direction: "above" | "below";
   measuredValue: number | null;
@@ -106,11 +116,14 @@ export type InsertGradeInput = {
 };
 
 /**
- * Idempotent per (brain_chunk_id, window_days, metric) — ON CONFLICT DO
- * NOTHING on exactly that unique key, so a crash-replay of the same page
- * (plan §12) never writes a second grade for a chunk already graded.
- * `inserted: false` on a conflict means "already graded"; the caller skips
- * any further state change rather than re-deciding it.
+ * Idempotent per (brain_chunk_id, metric, window_days, due_at) — ON
+ * CONFLICT DO NOTHING on exactly that unique key, so a crash-replay of the
+ * same page (plan §12) never writes a second grade for the SAME due date,
+ * and a shadow-mode chunk (whose due_at never advances — see
+ * advanceDueAtQuery) writes exactly one row no matter how many days the
+ * daily sweep re-measures it. `inserted: false` on a conflict means "this
+ * exact due date was already graded"; the caller skips any further state
+ * change or due_at push rather than re-deciding it.
  */
 export async function insertGrade(input: InsertGradeInput): Promise<{ id: string; inserted: boolean }> {
   const [row] = await db.insert(platinaInsightGrades).values(input).onConflictDoNothing().returning({ id: platinaInsightGrades.id });
@@ -121,12 +134,47 @@ export async function insertGrade(input: InsertGradeInput): Promise<{ id: string
     .where(
       and(
         eq(platinaInsightGrades.brainChunkId, input.brainChunkId),
-        eq(platinaInsightGrades.windowDays, input.windowDays),
         eq(platinaInsightGrades.metric, input.metric),
+        eq(platinaInsightGrades.windowDays, input.windowDays),
+        eq(platinaInsightGrades.dueAt, input.dueAt),
       ),
     )
     .limit(1);
   return { id: existing.id, inserted: false };
+}
+
+// ---------------------------------------------------------------------------
+// Advancing a chunk's due_at — the re-test schedule, not journaled state
+// ---------------------------------------------------------------------------
+
+/**
+ * Pushes a chunk's due_at forward (holding/insufficient, plan §5 B5 "it is
+ * re-measured next window"). This is a plain, workspace-filtered update, NOT
+ * through setBrainState: due_at is a schedule, not one of the four
+ * journaled state fields (status/confidence/agreementState/gradeState), so
+ * undoing a grading run never needs to "undo" a due date.
+ *
+ * Guarded on `fromDueAt` still being the chunk's current due_at: on a
+ * crash-replay where the grade insert conflicted (already graded for that
+ * due date) but an EARLIER attempt already advanced due_at, this WHERE
+ * clause matches nothing and the call is a safe no-op — due_at can only
+ * ever be pushed forward once per grade.
+ */
+export function advanceDueAtQuery(workspaceId: string, chunkId: string, fromDueAt: Date, toDueAt: Date) {
+  return db
+    .update(platinaBrainChunks)
+    .set({ dueAt: toDueAt })
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.id, chunkId),
+        eq(platinaBrainChunks.dueAt, fromDueAt),
+      ),
+    );
+}
+
+export async function advanceDueAt(workspaceId: string, chunkId: string, fromDueAt: Date, toDueAt: Date): Promise<void> {
+  await advanceDueAtQuery(workspaceId, chunkId, fromDueAt, toDueAt);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,14 +232,15 @@ export async function gradeCounts(workspaceId: string) {
 }
 
 /**
- * Counts per verdict for ONE chunk — the held/refuted inputs to
- * earnedConfidence (falsifier-grade.ts) when a grade promotes a chunk. In
- * practice at most one grade row exists per chunk (the unique key is
- * per-chunk-per-window, and a chunk's falsifier never changes its window),
- * so this is usually {held: 0, refuted: 0} before the grade just inserted.
- * It is written as a general count, not a boolean, so a future chunk that
- * accumulates more than one grade (e.g. a later metric revision) is already
- * handled correctly.
+ * Counts per verdict for ONE chunk. Two uses: the held/refuted inputs to
+ * earnedConfidence (falsifier-grade.ts) when a grade promotes a chunk, and
+ * the insufficient count that gates MAX_INSUFFICIENT_ATTEMPTS (plan §5 B5 —
+ * a chunk that keeps measuring "not enough data" stops being retried after
+ * `insufficientAttemptsExhausted` says so, falsifier-grade.ts). Because a
+ * holding or insufficient chunk gets its due_at pushed forward and is
+ * re-tested next window (a new row each time, due_at is part of the unique
+ * key), this count can genuinely grow past one over a chunk's life — unlike
+ * refuted/promoted, which are terminal and never get a second row.
  */
 export function gradeCountsForChunkQuery(workspaceId: string, brainChunkId: string) {
   return db
@@ -204,9 +253,10 @@ export function gradeCountsForChunkQuery(workspaceId: string, brainChunkId: stri
 export async function gradeCountsForChunk(
   workspaceId: string,
   brainChunkId: string,
-): Promise<{ held: number; refuted: number }> {
+): Promise<{ held: number; refuted: number; insufficient: number }> {
   const rows = await gradeCountsForChunkQuery(workspaceId, brainChunkId);
   const held = rows.find((r) => r.verdict === "promoted")?.count ?? 0;
   const refuted = rows.find((r) => r.verdict === "refuted")?.count ?? 0;
-  return { held, refuted };
+  const insufficient = rows.find((r) => r.verdict === "insufficient")?.count ?? 0;
+  return { held, refuted, insufficient };
 }

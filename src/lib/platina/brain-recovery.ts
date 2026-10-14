@@ -1,10 +1,20 @@
 /**
- * Recovery planning (B0 — metacognitive Brain, plan §11). Pure: every
- * decision a recovery script makes is computed here and unit tested; the
- * scripts in scripts/platina-brain-*.ts stay thin (parse args, read/write
- * the DB, call these, print the result). Nothing here deletes a row —
- * "restore" and "undo" only ever change status/confidence/agreement_state
- * (through setBrainState, db/queries/platina-brain.ts) or archive a chunk.
+ * Recovery planning (B0 — metacognitive Brain, plan §11; gradeState added in
+ * B5). Pure: every decision a recovery script makes is computed here and
+ * unit tested; the scripts in scripts/platina-brain-*.ts stay thin (parse
+ * args, read/write the DB, call these, print the result). Nothing here
+ * deletes a row — "restore" and "undo" only ever change
+ * status/confidence/agreement_state/grade_state (through setBrainState,
+ * db/queries/platina-brain.ts) or archive a chunk.
+ *
+ * `refuted_by_grade_id` is deliberately NOT part of the snapshot/restore
+ * cycle: it is derived — it just names whichever grade row refuted the
+ * chunk — not independent state a restore could meaningfully set back. A
+ * restored chunk's gradeState can leave it pointing at a grade that no
+ * longer matches (e.g. restored from "refuted" to "holding"); that is a
+ * pre-existing B5 id, not a dangling reference, and setBrainState's own
+ * refutedByGradeIdPatch only ever sets it going forward on a NEW refutation,
+ * never clears it on restore.
  *
  * TODO (B4, §11.1 L3): a `--rebuild-expectations` recompute of
  * platina_expectations from signal-document history is NOT in scope here —
@@ -18,12 +28,18 @@ import { diffBrainState, inverseOf, type BrainState, type BrainStateInverseRow, 
 // Snapshot (plan §11.4)
 // ---------------------------------------------------------------------------
 
-/** A Brain chunk's recoverable fields, as read for a snapshot or a restore comparison. */
+/**
+ * A Brain chunk's recoverable fields, as read for a snapshot or a restore
+ * comparison. `refuted_by_grade_id` is intentionally absent — see this
+ * file's header comment.
+ */
 export type BrainSnapshotChunk = {
   id: string;
   status: string;
   confidence: number;
   agreementState: string;
+  /** B5: untested | holding | promoted | refuted | insufficient. */
+  gradeState: string;
   /** ISO timestamp — the snapshot file is JSON on disk. */
   createdAt: string;
 };
@@ -52,7 +68,7 @@ export type BrainSnapshot = {
 export type BrainRestoreStateChange = { chunkId: string; next: BrainState };
 
 export type BrainRestorePlan = {
-  /** Only chunks whose status/confidence/agreementState differs from the snapshot. */
+  /** Only chunks whose status/confidence/agreementState/gradeState differs from the snapshot. */
   stateChanges: BrainRestoreStateChange[];
   /**
    * Chunk ids created after the snapshot, absent from it, and not already
@@ -91,13 +107,28 @@ export function planRestore(
     const snapChunk = bySnapshotId.get(current.id);
     if (snapChunk) {
       const diff = diffBrainState(
-        { status: current.status, confidence: current.confidence, agreementState: current.agreementState },
-        { status: snapChunk.status, confidence: snapChunk.confidence, agreementState: snapChunk.agreementState },
+        {
+          status: current.status,
+          confidence: current.confidence,
+          agreementState: current.agreementState,
+          gradeState: current.gradeState,
+        },
+        {
+          status: snapChunk.status,
+          confidence: snapChunk.confidence,
+          agreementState: snapChunk.agreementState,
+          gradeState: snapChunk.gradeState,
+        },
       );
       if (diff.length > 0) {
         stateChanges.push({
           chunkId: current.id,
-          next: { status: snapChunk.status, confidence: snapChunk.confidence, agreementState: snapChunk.agreementState },
+          next: {
+            status: snapChunk.status,
+            confidence: snapChunk.confidence,
+            agreementState: snapChunk.agreementState,
+            gradeState: snapChunk.gradeState,
+          },
         });
       }
       continue;

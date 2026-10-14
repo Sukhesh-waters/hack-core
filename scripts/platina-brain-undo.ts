@@ -15,6 +15,7 @@
  * id, so this undo can itself be undone the same way.
  */
 import { parseRecoveryArgs, planUndo } from "@/lib/platina/brain-recovery";
+import type { BrainStateField } from "@/lib/platina/brain-state";
 
 async function main() {
   process.loadEnvFile(".env.local");
@@ -34,10 +35,12 @@ async function main() {
   // Fetch broadly by `since` only — planUndo owns the cause match (and the
   // "never sweep up a prior undo by default" rule) in pure, tested code.
   // field/fromValue/toValue are untyped jsonb/text columns at the DB layer
-  // (same cast setBrainState's own toPatch() makes).
+  // (same cast setBrainState's own toPatch() makes). BrainStateField is all
+  // four journaled fields (B5 added gradeState), so a grading-caused row
+  // undoes exactly like any other.
   const rows = (await listBrainStateLog(workspace.id, { since })).map((r) => ({
     brainChunkId: r.brainChunkId,
-    field: r.field as "status" | "confidence" | "agreementState",
+    field: r.field as BrainStateField,
     fromValue: r.fromValue as string | number | null,
     toValue: r.toValue as string | number | null,
     createdAt: r.createdAt,

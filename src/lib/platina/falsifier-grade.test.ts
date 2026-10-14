@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { earnedConfidence, gradeEventId, gradeInsight, HELD_MARGIN } from "./falsifier-grade";
+import {
+  earnedConfidence,
+  gradeEventId,
+  gradeInsight,
+  HELD_MARGIN,
+  insufficientAttemptsExhausted,
+  MAX_INSUFFICIENT_ATTEMPTS,
+  nextDueAt,
+} from "./falsifier-grade";
 import type { FalsifierClaim } from "./falsifier-metrics";
 
 const now = new Date("2026-11-20T05:00:00Z");
@@ -151,5 +159,108 @@ describe("gradeEventId", () => {
     const t = new Date("2026-11-20T12:00:00Z").getTime();
     expect(gradeEventId("ws_a", t)).not.toBe(gradeEventId("ws_b", t));
     expect(gradeEventId("ws_a", t)).not.toBe(gradeEventId("ws_a", t + 24 * 60 * 60 * 1000));
+  });
+});
+
+describe("nextDueAt", () => {
+  it("is windowDays forward from `now`, not from any prior due_at", () => {
+    const t = new Date("2026-11-20T05:00:00Z");
+    expect(nextDueAt(t, 30).toISOString()).toBe("2026-12-20T05:00:00.000Z");
+    expect(nextDueAt(t, 90).toISOString()).toBe("2027-02-18T05:00:00.000Z");
+  });
+
+  it("gives a full fresh window even when graded very late (catch-up, plan §15.3)", () => {
+    // A chunk due 2026-11-01 but not graded until 2026-12-15 (dev server
+    // down for weeks) still gets +30 days from the actual grading moment,
+    // not from the stale due_at — so it isn't immediately due again.
+    const gradedLate = new Date("2026-12-15T00:00:00Z");
+    const next = nextDueAt(gradedLate, 30);
+    expect(next.getTime()).toBeGreaterThan(gradedLate.getTime());
+    expect(next.toISOString()).toBe("2027-01-14T00:00:00.000Z");
+  });
+});
+
+describe("insufficientAttemptsExhausted / MAX_INSUFFICIENT_ATTEMPTS", () => {
+  it("is documented as 3", () => {
+    expect(MAX_INSUFFICIENT_ATTEMPTS).toBe(3);
+  });
+
+  it("is not exhausted below the cap", () => {
+    expect(insufficientAttemptsExhausted(0)).toBe(false);
+    expect(insufficientAttemptsExhausted(1)).toBe(false);
+    expect(insufficientAttemptsExhausted(2)).toBe(false);
+  });
+
+  it("is exhausted at and beyond the cap", () => {
+    expect(insufficientAttemptsExhausted(3)).toBe(true);
+    expect(insufficientAttemptsExhausted(4)).toBe(true);
+  });
+});
+
+describe("the re-test lifecycle: holding is not terminal (plan §5 B5)", () => {
+  it("a chunk graded holding, then re-measured at its pushed-forward due date, can go on to refute", () => {
+    // Day 1: due 2026-11-19, measured just inside the margin -> holding.
+    const day1Due = new Date("2026-11-19T00:00:00Z");
+    const day1Now = new Date("2026-11-20T05:00:00Z");
+    const first = gradeInsight({
+      falsifier: below,
+      measurement: { status: "measured", value: 1.05, n: 9 },
+      now: day1Now,
+      dueAt: day1Due,
+    });
+    expect(first.verdict).toBe("holding");
+
+    // The grader pushes due_at forward by the falsifier's own window (30 d)
+    // from the grading moment — exactly nextDueAt's contract.
+    const day2Due = nextDueAt(day1Now, below.window_days);
+    expect(day2Due.toISOString()).toBe("2026-12-20T05:00:00.000Z");
+
+    // Day 2 (a month later): the SAME chunk, now measured below threshold.
+    const day2Now = new Date("2026-12-21T00:00:00Z");
+    const second = gradeInsight({
+      falsifier: below,
+      measurement: { status: "measured", value: 0.5, n: 9 },
+      now: day2Now,
+      dueAt: day2Due,
+    });
+    expect(second.verdict).toBe("refuted");
+  });
+
+  it("a chunk graded holding, then re-measured, can instead go on to promote", () => {
+    const day1Due = new Date("2026-11-19T00:00:00Z");
+    const day1Now = new Date("2026-11-20T05:00:00Z");
+    expect(
+      gradeInsight({ falsifier: above, measurement: { status: "measured", value: 29, n: 9 }, now: day1Now, dueAt: day1Due })
+        .verdict,
+    ).toBe("holding");
+
+    const day2Due = nextDueAt(day1Now, above.window_days);
+    const second = gradeInsight({
+      falsifier: above,
+      measurement: { status: "measured", value: 20, n: 9 },
+      now: new Date(day2Due.getTime() + 60_000),
+      dueAt: day2Due,
+    });
+    expect(second.verdict).toBe("promoted");
+  });
+
+  it("insufficient grades the SAME chunk across multiple windows until the retry cap is reached", () => {
+    // Simulates what the Inngest handler does across three separate daily
+    // runs: each time, `gradeCountsForChunk`'s insufficient count (not
+    // modelled here directly — this proves the pure decision it feeds)
+    // climbs by one, and only the 3rd attempt is exhausted.
+    let insufficientSoFar = 0;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const result = gradeInsight({
+        falsifier: below,
+        measurement: { status: "not_measured" },
+        now,
+        dueAt,
+      });
+      expect(result.verdict).toBe("insufficient");
+      insufficientSoFar += 1; // the grade row this attempt just inserted
+      const exhausted = insufficientAttemptsExhausted(insufficientSoFar);
+      expect(exhausted).toBe(attempt === 3);
+    }
   });
 });

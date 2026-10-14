@@ -9,10 +9,17 @@
  * Rule table (plan §5 B5):
  *   window not elapsed                         -> pending       (no row written)
  *   not_measured, or n < metric.minN            -> insufficient  ("not enough data to test yet")
- *   falsifier triggered                         -> refuted
- *   not triggered, clears the threshold by      -> promoted      ("effect held")
+ *   falsifier triggered                         -> refuted       (terminal)
+ *   not triggered, clears the threshold by      -> promoted      (terminal, "effect held")
  *     >= HELD_MARGIN of the threshold
  *   not triggered, margin not cleared           -> holding       ("effect weak")
+ *
+ * refuted/promoted are terminal. holding and insufficient are NOT: the
+ * caller (falsifier-grade.ts's Inngest handler) pushes the chunk's due_at
+ * forward by `nextDueAt` so it is re-measured next window and can later
+ * refute or promote — except insufficient stops being retried after
+ * MAX_INSUFFICIENT_ATTEMPTS (`insufficientAttemptsExhausted`), becoming
+ * terminal too (still retrievable, never promoted).
  *
  * "Triggered" mirrors the falsifier's own direction (falsifier-metrics.ts
  * FalsifierClaim.direction is the direction that would prove the claim
@@ -130,6 +137,37 @@ export function earnedConfidence(held: number, refuted: number): number {
   const alpha = 1 + Math.max(0, held);
   const beta = 1 + Math.max(0, refuted);
   return alpha / (alpha + beta);
+}
+
+// ---------------------------------------------------------------------------
+// The re-test schedule — holding and insufficient are not terminal
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The chunk's next due_at after a holding or insufficient grade (plan §5 B5
+ * "it is re-measured next window"): `windowDays` forward from the grading
+ * moment, not from the old due_at. Basing it on `now` rather than the old
+ * due_at matters for catch-up (plan §15.3): a chunk graded late — because
+ * the Inngest dev server was down for a week — still gets a full fresh
+ * window before its next test, instead of coming due again immediately.
+ */
+export function nextDueAt(now: Date, windowDays: number): Date {
+  return new Date(now.getTime() + windowDays * DAY_MS);
+}
+
+/** A chunk whose falsifier keeps reporting "not enough data" stops being retried after this many insufficient grades (plan §5 B5) — terminal, but still retrievable, never promoted. */
+export const MAX_INSUFFICIENT_ATTEMPTS = 3;
+
+/**
+ * Whether `insufficientCount` (this chunk's insufficient-verdict grade rows,
+ * INCLUDING the one just inserted — platina-grades.ts gradeCountsForChunk)
+ * means the grader should stop retrying and set gradeState "insufficient"
+ * (terminal) instead of leaving it as-is for another window.
+ */
+export function insufficientAttemptsExhausted(insufficientCount: number): boolean {
+  return insufficientCount >= MAX_INSUFFICIENT_ATTEMPTS;
 }
 
 /**

@@ -1,5 +1,5 @@
 {
-  "id": "cfd1eea6-9c6a-4c98-a336-287a797f7a94",
+  "id": "35dd9632-93c3-42a9-b55c-d65fd1d794c6",
   "prevId": "4dc318b7-94cc-400e-b8e2-22c84d1dbea8",
   "version": "7",
   "dialect": "postgresql",
@@ -12256,6 +12256,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "due_at": {
+          "name": "due_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
         "threshold": {
           "name": "threshold",
           "type": "real",
@@ -12347,13 +12353,19 @@
               "nulls": "last"
             },
             {
+              "expression": "metric",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
               "expression": "window_days",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
             },
             {
-              "expression": "metric",
+              "expression": "due_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

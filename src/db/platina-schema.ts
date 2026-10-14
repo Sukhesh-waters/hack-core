@@ -577,10 +577,17 @@ export const platinaBrainChunks = pgTable(
 // ---------------------------------------------------------------------------
 // Insight grades (B5 — metacognitive Brain). Append-only: no update/delete
 // query is exported. One row per time a stored falsifier (B1) was actually
-// tested — "insufficient" and "holding" grades are written too, not just
-// refuted/promoted, so "a grade is written once per chunk+window" (the
-// unique index below) is literally true. `verdict` never stores "pending":
-// a window that has not elapsed yet writes no row at all (plan §5 B5).
+// tested against a particular due date — "insufficient" and "holding"
+// grades are written too, not just refuted/promoted. `due_at` is part of
+// the row (the chunk's due_at AT THE TIME OF GRADING, not a live reference):
+// `holding`/`insufficient` push the chunk's own due_at forward and get
+// re-tested next window, so a chunk can accumulate several grade rows over
+// its life, one per due date — "a grade is written once per chunk+window+due
+// date" (the unique index below) is what that actually means. `refuted` and
+// `promoted` are terminal: the grader's write path never advances due_at for
+// either, so no second row ever gets a chance to exist for them. `verdict`
+// never stores "pending": a window that has not elapsed yet writes no row at
+// all (plan §5 B5).
 // ---------------------------------------------------------------------------
 
 export const INSIGHT_GRADE_VERDICTS = ["promoted", "holding", "refuted", "insufficient"] as const;
@@ -598,6 +605,8 @@ export const platinaInsightGrades = pgTable(
     scaleVersion: integer("scale_version").notNull(),
     /** The falsifier's own window_days, frozen on the grade row (it never changes after B1 writes the chunk). */
     windowDays: integer("window_days").notNull(),
+    /** The chunk's due_at this grade actually tested — part of the unique key, so a later retest (holding/insufficient, due_at pushed forward) gets its own row instead of conflicting with the earlier one. */
+    dueAt: timestamp("due_at", { mode: "date" }).notNull(),
     threshold: real("threshold").notNull(),
     /** The falsifier's own trigger direction ("above" | "below") — see falsifier-metrics.ts FalsifierClaim. */
     direction: text("direction").notNull(),
@@ -613,13 +622,16 @@ export const platinaInsightGrades = pgTable(
   (table) => ({
     workspaceIdx: index("platina_insight_grades_workspace_id_idx").on(table.workspaceId),
     chunkIdx: index("platina_insight_grades_ws_chunk_idx").on(table.workspaceId, table.brainChunkId),
-    // "A grade is written once per chunk+window" (plan §5 B5): the grader's
-    // insert is ON CONFLICT DO NOTHING on exactly this key, so a crash-replay
-    // of the same page never double-counts.
+    // "A grade is written once per chunk+metric+window+due date" (plan §5
+    // B5): the grader's insert is ON CONFLICT DO NOTHING on exactly this
+    // key, so a crash-replay of the same page never double-counts, AND a
+    // shadow-mode chunk (whose due_at never advances) writes exactly one row
+    // no matter how many days the daily sweep re-measures it.
     onceUnique: uniqueIndex("platina_insight_grades_once_unique").on(
       table.brainChunkId,
-      table.windowDays,
       table.metric,
+      table.windowDays,
+      table.dueAt,
     ),
   }),
 );
