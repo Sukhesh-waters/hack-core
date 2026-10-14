@@ -5,14 +5,20 @@
  * `it.todo` left for the slice that builds it (B2/B3/B5/B6/B9), so the full
  * table is visible from this one file even before it is all provable.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { routeChatWithProvenance } from "@/lib/ai/router";
+import { dueFalsifierChunksQuery, refutedChunksBySubjectQuery } from "@/db/queries/platina-grades";
+import { lexicalBrainChunksQuery, similarBrainChunksQuery } from "@/db/queries/platina";
 import { analysisWrites, UNTESTABLE_SKIP_CAUSE } from "./analysis-writes";
 import { planAnalysis } from "./analysis-plan";
 import { blindChallengerInput } from "./challenger";
 import { nextRoundAllowed } from "./contradiction";
 import { runContradictionRound, runInterrogationRound } from "./debate";
+import { gradeInsight } from "./falsifier-grade";
 import { assertFalsifiableClaim } from "./falsifier-metrics";
+import type { FalsifierClaim } from "./falsifier-metrics";
 
 // Hoisted, static mock — the same pattern analysis-plan.test.ts already
 // uses successfully; a per-test vi.resetModules()+dynamic-import was tried
@@ -208,8 +214,60 @@ it.todo("B6 — diversify's derived-share cap arithmetic (including cold start) 
 describe.todo("invariant: every metric declares its scale; no cross-scale comparison (B0, re-asserted here)");
 it.todo("every FALSIFIER_METRICS entry has a scaleVersion, windows and minN; compareMeasurements throws across scale/window/segment");
 
-describe.todo("invariant: refuted insights are demoted, never deleted (B5)");
-it.todo("no delete query is exported for platina_brain_chunks; a grader refutation keeps the row (status=demoted, refuted_by_grade_id set)");
+describe("invariant: refuted insights are demoted, never deleted (B5)", () => {
+  it("no delete query is exported for platina_brain_chunks anywhere in db/queries/platina.ts", () => {
+    const source = readFileSync(join(__dirname, "..", "..", "db", "queries", "platina.ts"), "utf-8");
+    expect(source).not.toMatch(/\.delete\(\s*platinaBrainChunks\s*\)/);
+  });
+
+  it("a triggered falsifier is refuted (plan §5 B5's rule table) — the grader's decision, proved on the pure path", () => {
+    const falsifier: FalsifierClaim = {
+      metric: "topic_momentum",
+      subject: { topic: "pfas analysis" },
+      direction: "below",
+      threshold: 1.0,
+      window_days: 30,
+    };
+    const graded = gradeInsight({
+      falsifier,
+      measurement: { status: "measured", value: 0.4, n: 8 },
+      now: new Date("2026-11-20T05:00:00Z"),
+      dueAt: new Date("2026-11-19T00:00:00Z"),
+    });
+    expect(graded.verdict).toBe("refuted");
+    // The grader's write path (falsifier-grade.ts in the Inngest handler)
+    // turns this into setBrainState({ status: "demoted", gradeState:
+    // "refuted", confidence: 0.05 }, "grading", gradeId) — an UPDATE, never a
+    // DELETE; the row-keeping half of this invariant is the test above.
+  });
+
+  it("a fact (kind='fact', no falsifier) is structurally excluded from the due-chunks query the grader reads", () => {
+    const { sql, params } = dueFalsifierChunksQuery("ws_a", new Date("2026-11-20T05:00:00Z")).toSQL();
+    // Facts always have kind="fact" and falsifier=null (analysis-writes.ts
+    // brainChunkV2Fields; market-insight-writer.ts never writes one either):
+    // both conditions below exclude them, independent of grade_state.
+    expect(sql).toContain('"platina_brain_chunks"."kind" in');
+    expect(params).not.toContain("fact");
+    expect(sql).toMatch(/"falsifier" is not null/);
+  });
+
+  it("a refuted (demoted) chunk is excluded by both support-retrieval queries, which filter status='active'", () => {
+    const vector = similarBrainChunksQuery("ws_a", [0.1, 0.2]).toSQL();
+    expect(vector.sql).toContain('"platina_brain_chunks"."status" = ');
+    expect(vector.params).toContain("active");
+
+    const lexical = lexicalBrainChunksQuery("ws_a", "pfas").toSQL();
+    expect(lexical.sql).toContain('"platina_brain_chunks"."status" = ');
+    expect(lexical.params).toContain("active");
+  });
+
+  it("a refuted chunk IS returned by the subject-scoped refuted query (B6's counter-evidence slot reads status=demoted, grade_state=refuted)", () => {
+    const { sql, params } = refutedChunksBySubjectQuery("ws_a", "brand:acme|topic:pfas analysis").toSQL();
+    expect(sql).toContain('"platina_brain_chunks"."status" = ');
+    expect(sql).toContain('"platina_brain_chunks"."grade_state" = ');
+    expect(params).toEqual(expect.arrayContaining(["demoted", "refuted"]));
+  });
+});
 
 describe.todo("invariant: a human approves every output that leaves (B9, re-asserted here)");
 it.todo("existing gate tests (gates.ts, publish gate) — unchanged by the Brain work; an insight also gains approve/edit/reject-with-reason");

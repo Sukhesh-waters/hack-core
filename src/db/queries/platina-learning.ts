@@ -723,6 +723,32 @@ export function latestSuggestionsForSubjectsQuery(workspaceId: string, kind: Sug
     .orderBy(desc(platinaSuggestions.createdAt));
 }
 
+/**
+ * Suggestions whose `inputs` cite this Brain chunk (B5 ledger link, C8.5).
+ * `ref` for a Brain chunk is written as `"brain:<chunkId>"` everywhere else
+ * this is read (consolidate.ts's trust lookup), so that is the exact string
+ * matched here — not a prefix or a jsonb containment guess. One suggestion
+ * can be found this way even though `inputs` is a free-form jsonb array: the
+ * check runs over its elements in SQL rather than assuming a shape Postgres
+ * can index.
+ */
+export function suggestionsCitingBrainChunkQuery(workspaceId: string, brainChunkId: string) {
+  const ref = `brain:${brainChunkId}`;
+  return db
+    .select({ id: platinaSuggestions.id, inputs: platinaSuggestions.inputs, features: platinaSuggestions.features })
+    .from(platinaSuggestions)
+    .where(
+      and(
+        eq(platinaSuggestions.workspaceId, workspaceId),
+        sql`exists (select 1 from jsonb_array_elements(${platinaSuggestions.inputs}) elem where elem->>'ref' = ${ref})`,
+      ),
+    );
+}
+
+export async function listSuggestionsCitingBrainChunk(workspaceId: string, brainChunkId: string) {
+  return suggestionsCitingBrainChunkQuery(workspaceId, brainChunkId);
+}
+
 export function suggestionEventsQuery(workspaceId: string, suggestionId?: string) {
   return db
     .select()

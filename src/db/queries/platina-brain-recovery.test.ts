@@ -6,6 +6,10 @@ describe("B0 recovery queries filter workspace_id in the generated SQL", () => {
     const { sql, params } = brainChunkStatesQuery("ws_a").toSQL();
     expect(sql).toContain('"platina_brain_chunks"."workspace_id" = ');
     expect(params).toEqual(["ws_a"]);
+    // B5: gradeState is a snapshot/restore field now too.
+    expect(sql).toContain('"grade_state"');
+    // refuted_by_grade_id is derived (points at a grade row), not restored.
+    expect(sql).not.toContain("refuted_by_grade_id");
   });
 
   it("skippedSignalsQuery filters workspace, terminal state, skip cause, and since", () => {

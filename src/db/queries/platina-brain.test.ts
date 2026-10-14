@@ -62,6 +62,9 @@ describe("B0 brain queries filter workspace_id in the generated SQL", () => {
     // A concurrent grader/undo/restore must block on this row, not diff a
     // stale read (see the file-header comment on setBrainState).
     expect(sql.toLowerCase()).toContain("for update");
+    // B5: gradeState must be part of what this diffs against, or a grading
+    // transition would silently no-op.
+    expect(sql).toContain('"grade_state"');
   });
 
   it("updateBrainChunkStateQuery (setBrainState's write) filters workspace AND chunk id", () => {
@@ -70,5 +73,17 @@ describe("B0 brain queries filter workspace_id in the generated SQL", () => {
     expect(sql).toContain('"workspace_id" = ');
     expect(sql).toContain('"id" = ');
     expect(params).toEqual(expect.arrayContaining(["ws_a", "chunk1", 0.6]));
+  });
+
+  it("updateBrainChunkStateQuery accepts gradeState and refutedByGradeId together (B5's refuted write)", () => {
+    const { sql, params } = updateBrainChunkStateQuery("ws_a", "chunk1", {
+      status: "demoted",
+      confidence: 0.05,
+      gradeState: "refuted",
+      refutedByGradeId: "grade1",
+    }).toSQL();
+    expect(sql).toContain('"grade_state" = ');
+    expect(sql).toContain('"refuted_by_grade_id" = ');
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "chunk1", "demoted", 0.05, "refuted", "grade1"]));
   });
 });

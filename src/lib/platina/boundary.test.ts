@@ -72,6 +72,7 @@ const ALLOWED_EXACT = new Set([
   "@/db/queries/platina-learning", // C6 own-site + learning loop queries
   "@/db/queries/platina-ops", // C7.1 ops board rows (read by Admin -> Health)
   "@/db/queries/platina-brain", // B0 metacognitive Brain: telemetry, undo journal, modes
+  "@/db/queries/platina-grades", // B5 metacognitive Brain: falsifier grades, due chunks, refutation-by-subject
   "@/db/queries/platina-brain-quality", // B0 Admin -> Health "Brain quality" card queries
   "@/db/queries/memberships",
   "@/db/queries/workspaces", // identity enumeration for cron fan-out

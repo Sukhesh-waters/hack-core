@@ -15,6 +15,7 @@ const chunk = (over: Partial<BrainSnapshotChunk>): BrainSnapshotChunk => ({
   status: "active",
   confidence: 0.6,
   agreementState: "agreed",
+  gradeState: "untested",
   createdAt: "2026-01-01T00:00:00.000Z",
   ...over,
 });
@@ -44,7 +45,25 @@ describe("planRestore", () => {
     const live = [chunk({ confidence: 0.2, status: "active" })];
     const plan = planRestore(snap, live);
     expect(plan.stateChanges).toEqual([
-      { chunkId: "c1", next: { status: "demoted", confidence: 0.9, agreementState: "agreed" } },
+      { chunkId: "c1", next: { status: "demoted", confidence: 0.9, agreementState: "agreed", gradeState: "untested" } },
+    ]);
+  });
+
+  it("a gradeState-only difference (B5) also produces a state change", () => {
+    const snap = snapshot({ chunks: [chunk({ gradeState: "holding" })] });
+    const live = [chunk({ gradeState: "refuted", status: "demoted", confidence: 0.05 })];
+    const plan = planRestore(snap, live);
+    expect(plan.stateChanges).toEqual([
+      { chunkId: "c1", next: { status: "active", confidence: 0.6, agreementState: "agreed", gradeState: "holding" } },
+    ]);
+  });
+
+  it("a matching gradeState on both sides does not block detecting a confidence change elsewhere", () => {
+    const snap = snapshot({ chunks: [chunk({ confidence: 0.9 })] });
+    const live = [chunk({ confidence: 0.2 })];
+    const plan = planRestore(snap, live);
+    expect(plan.stateChanges).toEqual([
+      { chunkId: "c1", next: { status: "active", confidence: 0.9, agreementState: "agreed", gradeState: "untested" } },
     ]);
   });
 

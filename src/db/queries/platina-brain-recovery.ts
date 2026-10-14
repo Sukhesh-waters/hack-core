@@ -15,7 +15,14 @@ import { platinaBrainChunks, platinaSignalDocuments, type BrainSkipCause } from 
 // Brain chunk states — the snapshot's and restore's view of a chunk
 // ---------------------------------------------------------------------------
 
-/** A Brain chunk's recoverable fields for a whole workspace, oldest first. */
+/**
+ * A Brain chunk's recoverable fields for a whole workspace, oldest first.
+ * `gradeState` (B5) joins status/confidence/agreementState here because
+ * `setBrainState` now journals it too (brain-state.ts BrainStateField).
+ * `refuted_by_grade_id` is deliberately NOT selected: it is derived from
+ * whichever grade row refuted the chunk, not independent state, so a
+ * restore never tries to set it back — see planRestore's doc comment.
+ */
 export function brainChunkStatesQuery(workspaceId: string) {
   return db
     .select({
@@ -23,6 +30,7 @@ export function brainChunkStatesQuery(workspaceId: string) {
       status: platinaBrainChunks.status,
       confidence: platinaBrainChunks.confidence,
       agreementState: platinaBrainChunks.agreementState,
+      gradeState: platinaBrainChunks.gradeState,
       createdAt: platinaBrainChunks.createdAt,
     })
     .from(platinaBrainChunks)
