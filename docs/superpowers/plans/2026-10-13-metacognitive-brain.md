@@ -1,8 +1,11 @@
 # Metacognitive Brain — build plan (B0–B9)
 
 Status: **APPROVED 2026-10-13. Final dev plan.** The owner accepted every
-recommendation (D1–D7, §10). **B0 built** (branch `feat/b0`, merged to `main`);
-migration 0087 waits for the database (§15). Environment and the code-verified
+recommendation (D1–D7, §10). **PAUSED at ~60% on 2026-10-14:** B0, B1, B2,
+B3 and B5 are built and on `main`, and the B4/B6/B7 pure modules are built
+but not wired. Continue from
+[2026-10-14-brain-continuation.md](2026-10-14-brain-continuation.md).
+Migrations 0087–0089 wait for the database (§15). Environment and the code-verified
 flow are in §15 and override any Vercel-specific step above while hosting is
 paused.
 Source brief: [docs/newbrain.md](../../newbrain.md) (architecture, principles, invariants).
