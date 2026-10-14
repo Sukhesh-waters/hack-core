@@ -336,6 +336,16 @@ insights. Each one now carries a code-built falsifier, e.g. "PFAS analysis
 engagement index (median, per company, 30 d) below 1.0 within 30 days". This
 costs nothing and puts the existing measured Brain under the same loop.
 
+*As built (2026-10-14):*
+- **Interest insights** are tested on the trend their text states, in its
+  direction: an "up" trend is refuted if `topic_momentum` falls below 1.0
+  within 30 days, a "down" trend if it rises above 1.0. With no stated trend
+  (no baseline) there is no falsifier.
+- **Ad-pressure and event insights** carry no falsifier. They describe what
+  exists now and predict nothing. A first draft tested pressure against the
+  longest-running ad's days, but the registry's own measure is the median,
+  which would have refuted almost every one.
+
 **Shadow → on.** In shadow, invalid replies are written as today and flagged
 `grade_state = 'insufficient'` with the reason in telemetry. When on, an invalid
 claim produces a transcript (kept for audit) and a skipped signal with the
