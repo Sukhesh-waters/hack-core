@@ -340,6 +340,48 @@ describe("invariant: deterministic gates override every model (B3)", () => {
     // ...it just was not read by the decision above.
   });
 
+  it("resolveV2 does not penalise a long page: the same cited support scores the same on a 2-span and a 40-span input", async () => {
+    const cited = {
+      e1: "Acme Roasters today announced a 48-hour roast guarantee for all wholesale customers.",
+      e2: "The guarantee applies to all wholesale orders placed after June 1, 2026.",
+    };
+    const filler = Object.fromEntries(
+      Array.from({ length: 38 }, (_, i) => [`e${i + 3}`, `Navigation and boilerplate line ${i + 3} about the company.`]),
+    );
+    const asInput = (spans: Record<string, string>) => ({
+      input: Object.entries(spans).map(([id, text]) => `[${id}] ${text}`).join("\n"),
+      spans,
+    });
+    const reply = JSON.stringify({
+      headline: "Acme now guarantees a 48-hour roast",
+      what: "Acme now guarantees a 48-hour roast turnaround for wholesale orders.",
+      why: ["e1", "e2"],
+      how: "A faster guarantee than the industry standard signals a capacity investment.",
+      kind: "claim",
+      falsifier: { metric: "topic_momentum", subject: { topic: "roast speed" }, direction: "below", threshold: 1.0, window_days: 30 },
+      confidence: "medium",
+    });
+    const challengerReply = JSON.stringify({
+      text: "No material defect found.",
+      confounders: [],
+      strongestObjection: "none",
+      confounderStrength: 0,
+      verdict: "no_material_objection",
+    });
+    const run = async (spans: Record<string, string>) => {
+      routeMock.mockReset();
+      routeMock
+        .mockResolvedValueOnce({ text: reply, provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+        .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+      return runInterrogationRound(asInput(spans), undefined, undefined, undefined, { mode: "on" });
+    };
+
+    const short = await run(cited);
+    const long = await run({ ...cited, ...filler });
+    expect(long.result).toEqual(short.result);
+    expect(short.result.state).toBe("agreed");
+  });
+
   it("gate mode 'off': resolveV2 is never consulted — result equals a plain resolve(), and no gateShadow is returned", async () => {
     const spans = { e1: "Acme Roasters today announced a 48-hour roast guarantee for all wholesale customers." };
     const numbered = {

@@ -80,7 +80,7 @@ export function nextRoundAllowed(): false {
 // ---------------------------------------------------------------------------
 
 export type ResolveV2Input = {
-  /** Validated cited-span coverage: interrogation.ts's validated `why` ids over the spans the input offered. 0 when nothing validated (an invalid reply, or no spans cited). */
+  /** Validated evidence support, 0-1: interrogation.ts's validated `why` ids over SUPPORTING_SPANS (debate.ts), capped at 1 — never divided by the page's span count, so page length cannot lower a claim's score. 0 when nothing validated. */
   evidenceCoverage: number;
   /** The challenger's own confounder strength (0-1) — the same deterministic input resolve() already uses. */
   confounderStrength: number;

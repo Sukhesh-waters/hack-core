@@ -236,6 +236,9 @@ export type GateResolveShadow = {
  * parameter to read it from, which is what drops it from the decision; the
  * model's stated `confidence` stays on the return value for telemetry only.
  */
+/** Validated citations at which resolveV2's evidence support is full (1.0). */
+export const SUPPORTING_SPANS = 2;
+
 export async function runInterrogationRound(
   numbered: { input: string; spans: Record<string, string> },
   floors?: { contestedFloor?: number; qualifiedFloor?: number },
@@ -323,9 +326,11 @@ export async function runInterrogationRound(
   // (not what the model claimed to cite), `falsifierValid` is a registry
   // lookup (facts are falsifier-exempt, D1), `confounderStrength` is the
   // challenger's own judgement — the same value resolve() already uses.
-  const totalSpans = Object.keys(numbered.spans).length;
+  // Support strength, not page coverage: dividing by every span the page
+  // offered made a sound claim on a long page (2 of 40 spans) score 0.05 and
+  // land "contested" for the page's length, not the claim's support.
   const citedValidated = interrogation.ok ? interrogation.value.why.length : 0;
-  const evidenceCoverage = totalSpans > 0 ? citedValidated / totalSpans : 0;
+  const evidenceCoverage = Math.min(1, citedValidated / SUPPORTING_SPANS);
   const falsifierValid =
     parsed === null
       ? false
