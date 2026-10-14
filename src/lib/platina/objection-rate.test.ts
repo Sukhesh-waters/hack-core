@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AGREEMENT_GAP_CEILING,
+  BRAIN_OBJECTION_CEILING,
   OBJECTION_RATE_CEILING,
   agreementGapAlarm,
   objectionCeilingExceeded,
@@ -27,9 +28,16 @@ describe("objectionRate", () => {
   });
 });
 
-describe("OBJECTION_RATE_CEILING (B2 — moved from 0.8 to the brief's 0.7)", () => {
-  it("is 0.7, not the pre-B2 0.8", () => {
-    expect(OBJECTION_RATE_CEILING).toBe(0.7);
+describe("OBJECTION_RATE_CEILING (the live v1 path's ceiling — untouched by B2)", () => {
+  it("stays 0.8: contradict-sweep.ts and findings/page.tsx read this constant on today's non-blind debate, and B2 does not touch the live path", () => {
+    expect(OBJECTION_RATE_CEILING).toBe(0.8);
+  });
+});
+
+describe("BRAIN_OBJECTION_CEILING (B2 — the Brain quality card's own, lower ceiling)", () => {
+  it("is 0.7, and is a different constant from the live OBJECTION_RATE_CEILING (0.8)", () => {
+    expect(BRAIN_OBJECTION_CEILING).toBe(0.7);
+    expect(BRAIN_OBJECTION_CEILING).not.toBe(OBJECTION_RATE_CEILING);
   });
 });
 
@@ -39,18 +47,21 @@ describe("objectionCeilingExceeded", () => {
     expect(objectionCeilingExceeded(rounds("refuted", 2))).toBe(false);
   });
 
-  it("alarms at or above the ceiling (0.7) with enough rounds", () => {
+  it("alarms at or above the ceiling with enough rounds", () => {
     expect(objectionCeilingExceeded(rounds("contested", 10))).toBe(true);
-    const atCeiling = [...rounds("contested", 7), ...rounds("agreed", 3)];
+    const atCeiling = [...rounds("contested", 8), ...rounds("agreed", 2)];
     expect(objectionCeilingExceeded(atCeiling)).toBe(true);
   });
 
-  it("stays quiet below the ceiling (0.7)", () => {
-    // Was 7/10 (0.7) under the old 0.8 ceiling; the new 0.7 ceiling makes
-    // that rate an alarm (see the test above), so "below" now needs a
-    // lower rate — 6/10 (0.6).
-    const below = [...rounds("contested", 6), ...rounds("agreed", 4)];
+  it("stays quiet below the ceiling", () => {
+    const below = [...rounds("contested", 7), ...rounds("agreed", 3)];
     expect(objectionCeilingExceeded(below)).toBe(false);
+  });
+
+  it("the Brain quality card's lower ceiling (0.7) is passed explicitly, never the default", () => {
+    const sevenOfTen = [...rounds("contested", 7), ...rounds("agreed", 3)];
+    expect(objectionCeilingExceeded(sevenOfTen, BRAIN_OBJECTION_CEILING)).toBe(true);
+    expect(objectionCeilingExceeded(sevenOfTen)).toBe(false);
   });
 });
 

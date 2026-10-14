@@ -12,7 +12,7 @@ import { summariseFunnel, type BrainFunnelRow } from "./brain-telemetry";
 import type { ResolveState } from "./contradiction";
 import {
   AGREEMENT_GAP_CEILING,
-  OBJECTION_RATE_CEILING,
+  BRAIN_OBJECTION_CEILING,
   agreementGapAlarm,
   objectionRate,
   objectionRateBy,
@@ -54,8 +54,15 @@ export type BrainQualityInput = {
   modes: Record<BrainStage, BrainMode>;
 };
 
-/** The B2 alarm ceiling (plan §5 B2) — the same value objection-rate.ts's OBJECTION_RATE_CEILING now uses; kept as one named constant rather than two numbers that happen to match. */
-export const OBJECTION_WATCH_CEILING = OBJECTION_RATE_CEILING;
+/**
+ * The B2 alarm ceiling (plan §5 B2) — `objection-rate.ts`'s
+ * `BRAIN_OBJECTION_CEILING`, re-exported under this card-specific name.
+ * Deliberately NOT `OBJECTION_RATE_CEILING` (0.8): that constant is the live
+ * v1 path's (`contradict-sweep.ts`, `findings/page.tsx`), which this slice
+ * does not touch. This card watches the challenger's OWN per-prompt-version
+ * and per-blinded-arm rates, where 0.7 is the meaningful ceiling.
+ */
+export const OBJECTION_WATCH_CEILING = BRAIN_OBJECTION_CEILING;
 
 /** The plan's N >= 20 floor for agreement-by-proposer-model (plan §5 B2, §8). */
 export const AGREEMENT_MIN_ROUNDS = 20;

@@ -9,17 +9,23 @@ import type { ResolveState } from "./contradiction";
 
 export type ObjectionRound = { state: ResolveState };
 
-/**
- * The brief's ceiling (plan §5 B2). Was 0.8 before B2; moved to 0.7 once the
- * challenger is actually blind, because a challenger that could see the
- * proposer's own confidence score could never climb much past "mostly
- * agrees with whatever sounded sure of itself" — 0.7 is only a meaningful
- * ceiling once agreement reflects the evidence rather than the proposer's
- * own tone.
- */
-export const OBJECTION_RATE_CEILING = 0.7;
+export const OBJECTION_RATE_CEILING = 0.8;
 export const OBJECTION_MIN_ROUNDS = 10;
 export const OBJECTION_WINDOW = 20;
+
+/**
+ * The brief's ceiling for the Brain (plan §5 B2) — deliberately NOT the same
+ * constant as `OBJECTION_RATE_CEILING` above, and never used by the live v1
+ * path (`contradict-sweep.ts`, `findings/page.tsx`): those alarm the
+ * operator on today's non-blind debate, which this slice does not touch.
+ * `BRAIN_OBJECTION_CEILING` is the Brain quality card's threshold for the
+ * per-prompt-version and per-blinded-arm rates (`objectionRateBy`), lower
+ * than the live ceiling because a challenger that could see the proposer's
+ * own confidence score could never climb much past "mostly agrees with
+ * whatever sounded sure of itself" — 0.7 is only a meaningful ceiling once
+ * agreement reflects the evidence rather than the proposer's own tone.
+ */
+export const BRAIN_OBJECTION_CEILING = 0.7;
 
 /**
  * The brief's "blinding failed" alarm (plan §5 B2): proposer models whose
