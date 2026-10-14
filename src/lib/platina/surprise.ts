@@ -17,6 +17,12 @@
  * The caller MUST persist `next` after every call, surprising or not — an
  * expectation that only updates on "analyse" decisions would be a biased
  * sample of the quiet days, not a true running mean.
+ *
+ * W3a wiring fix (continuation handoff §2, open finding 1): novelty is
+ * one-sided (`sided: "up"`, see `SurpriseSided` below) — a page that reuses
+ * MORE of its own history than usual is "less new than usual", never a
+ * reason to analyse, and the reason text now says so correctly instead of
+ * calling a downward move "bigger".
  */
 import { words, similarity } from "./consolidate";
 import { findDateRanges } from "./events";
@@ -107,6 +113,19 @@ export function hasDateOrPrice(text: string): boolean {
 // The decision
 // ---------------------------------------------------------------------------
 
+/**
+ * Which side of the mean counts as "surprising" (continuation handoff §2,
+ * open finding 1). `novelty` only has a meaningful UP side: a page whose new
+ * text overlaps its own history MORE than usual is "less new than usual",
+ * never a reason to spend a model call — so `nov:` keys use "up", and a
+ * downward deviation there falls straight through to the ordinary
+ * skip/audit path, the same as a small one. `eng:`/`ads:` keys keep "both":
+ * a company whose post did unusually WORSE than its own median is still a
+ * real deviation from what is usual, just as a post that did unusually
+ * better is.
+ */
+export type SurpriseSided = "up" | "both";
+
 export type SurpriseInput = {
   /** This key's expectation BEFORE this observation (null = never observed). */
   expectation: Expectation | null;
@@ -125,6 +144,8 @@ export type SurpriseInput = {
   auditShare?: number;
   /** Id the audit sample is drawn deterministically from (the signal document id). */
   docId: string;
+  /** Default "both" — see `SurpriseSided`. Novelty callers pass "up". */
+  sided?: SurpriseSided;
 };
 
 export type SurpriseDecision = {
@@ -154,6 +175,7 @@ export function decideSurprise(input: SurpriseInput): SurpriseDecision {
     hasDateOrPrice: datedOrPriced = false,
     auditShare = 0.1,
     docId,
+    sided = "both",
   } = input;
 
   const next = updateExpectation(expectation, observed);
@@ -169,10 +191,22 @@ export function decideSurprise(input: SurpriseInput): SurpriseDecision {
   }
 
   const spread = Math.max(sd(expectation), floorSd);
-  const deviation = Math.abs(observed - expectation.mean) / spread;
+  const signedDeviation = (observed - expectation.mean) / spread;
+  const deviation = Math.abs(signedDeviation);
 
-  if (deviation >= floor) {
-    return { action: "analyse", reason: "bigger than this page's usual change", deviation, next };
+  // "up": a downward deviation never earns a second look on its own — it is
+  // "less new than usual", not a reason to spend a model call — so only the
+  // upward side is tested. "both": either side counts, but the reason text
+  // must not call a downward move "bigger" when it is smaller/different.
+  const triggers = sided === "up" ? signedDeviation >= floor : deviation >= floor;
+  if (triggers) {
+    const reason =
+      sided === "up"
+        ? "more new than usual"
+        : signedDeviation > 0
+          ? "bigger than this page's usual change"
+          : "different from the usual";
+    return { action: "analyse", reason, deviation, next };
   }
   if (deterministicShare(docId, auditShare, "surprise-audit")) {
     return { action: "audit", reason: "checked anyway (spot check)", deviation, next };

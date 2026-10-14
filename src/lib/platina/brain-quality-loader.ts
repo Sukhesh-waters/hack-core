@@ -6,7 +6,11 @@
  * model in brain-quality-view.ts. Read-only.
  */
 import { brainFunnelCounts, getBrainModes } from "@/db/queries/platina-brain";
-import { fetchedDocumentCount, listBrainQualityTranscripts } from "@/db/queries/platina-brain-quality";
+import {
+  fetchedDocumentCount,
+  listAuditSampleDetail,
+  listBrainQualityTranscripts,
+} from "@/db/queries/platina-brain-quality";
 import { buildBrainQualityCard, type BrainQualityRow } from "./brain-quality-view";
 
 const FUNNEL_WINDOW_DAYS = 7;
@@ -30,13 +34,14 @@ export async function loadBrainQualityCard(workspaceId: string, now: Date = new 
   const funnelSince = new Date(now.getTime() - FUNNEL_WINDOW_DAYS * DAY_MS);
   const transcriptSince = new Date(now.getTime() - TRANSCRIPT_WINDOW_DAYS * DAY_MS);
   try {
-    const [funnel, fetchedCount, transcripts, modes] = await Promise.all([
+    const [funnel, fetchedCount, transcripts, modes, auditSamples] = await Promise.all([
       brainFunnelCounts(workspaceId, funnelSince),
       fetchedDocumentCount(workspaceId, funnelSince),
       listBrainQualityTranscripts(workspaceId, transcriptSince),
       getBrainModes(workspaceId),
+      listAuditSampleDetail(workspaceId, funnelSince),
     ]);
-    return buildBrainQualityCard({ funnel, fetchedCount, transcripts, modes });
+    return buildBrainQualityCard({ funnel, fetchedCount, transcripts, modes, auditSamples });
   } catch (error) {
     console.warn("[platina] brain quality card unavailable:", error instanceof Error ? error.message : error);
     return [BRAIN_QUALITY_UNAVAILABLE];

@@ -637,6 +637,37 @@ export const platinaInsightGrades = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Expectations (B4 — metacognitive Brain surprise filter, wired in W3a). One
+// running Welford mean/variance per (workspace, key) — "key" is one of
+// src/lib/platina/surprise.ts's `expectationKey` shapes (`nov:<canonicalUrl>`,
+// `eng:<brandId>`, `ads:<brandId>`). Upserted once per observation,
+// surprising or not (see that file's header for why a biased sample would be
+// worse than no filter at all): `n`/`mean`/`m2` are the Welford running
+// state surprise.ts's pure `updateExpectation` already computes, this table
+// only persists it.
+// ---------------------------------------------------------------------------
+
+export const platinaExpectations = pgTable(
+  "platina_expectations",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    key: text("key").notNull(),
+    n: integer("n").notNull(),
+    mean: real("mean").notNull(),
+    m2: real("m2").notNull(),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_expectations_workspace_id_idx").on(table.workspaceId),
+    keyUnique: uniqueIndex("platina_expectations_workspace_key_unique").on(
+      table.workspaceId,
+      table.key,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
 // Gates — append-only. No update/delete query is exported.
 // ---------------------------------------------------------------------------
 
@@ -1332,6 +1363,7 @@ export const platinaWorkspaceScopedTables = {
   platinaBrainStateLog,
   platinaBrainChunks,
   platinaInsightGrades,
+  platinaExpectations,
   platinaGateEvents,
   platinaScanSpecs,
   platinaReceipts,

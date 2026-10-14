@@ -52,6 +52,15 @@ export type BrainQualityInput = {
   transcripts: BrainQualityTranscriptRow[];
   /** Per-stage mode (getBrainModes()). */
   modes: Record<BrainStage, BrainMode>;
+  /**
+   * B4 — raw stage="analysis" decision="audit_sample" telemetry rows for the
+   * same 7-day window, each carrying whether that spot check's analysis
+   * actually found something (recorded in signal-analyze.ts next to the
+   * write it describes). Grouped counts (`funnel`) cannot answer this — it
+   * needs the per-row `detail.foundSomething`, so it is read separately.
+   * Omitted entirely (or empty) reads the same as "never run yet".
+   */
+  auditSamples?: { foundSomething: boolean }[];
 };
 
 /**
@@ -75,6 +84,11 @@ const STOP_REASON_LABEL: Record<string, string> = {
   untestable: "The claim could not be tested",
   gate: "Didn't pass the quality check",
   surprise: "Nothing unusual compared with this page's normal changes",
+  // B4 — stage "surprise"'s OWN shadow-mode decision code (never a stop in
+  // the funnel sense: the document is always analysed in shadow). Mapped
+  // here defensively, same reasoning as "surprise" above, in case it is
+  // ever read alongside stage="analysis" rows by a generic funnel view.
+  surprise_shadow: "Nothing unusual compared with this page's normal changes (not yet filtering)",
 };
 
 /** B3 — telemetry stage "gate"'s own decision codes, plain-worded (plan §8 "Gate rejections", §9). */
@@ -284,6 +298,64 @@ function gateHeldRow(funnel: BrainFunnelRow[]): BrainQualityRow | null {
   return { label, value: total, detail: parts.join("; "), status: "ok" };
 }
 
+/**
+ * B4 — "Pages skipped as nothing unusual" (plan §5 B4, §8 "Surprise
+ * false-negative rate" row's sibling count). Reads telemetry stage
+ * "analysis" decision "surprise" ONLY — the surprise filter's OWN mode="on"
+ * skips (the §9 copy: "nothing unusual compared with this page's normal
+ * changes"). Omitted entirely while the stage has never skipped anything
+ * (off, or shadow/on but still cold-starting) — never a phantom 0, same
+ * convention as `gateHeldRow`.
+ */
+function surpriseSkippedRow(funnel: BrainFunnelRow[], fetchedCount: number): BrainQualityRow | null {
+  const count = funnel
+    .filter((row) => row.stage === "analysis" && row.decision === "surprise")
+    .reduce((sum, row) => sum + row.count, 0);
+  if (count === 0) return null;
+  const share = fetchedCount > 0 ? count / fetchedCount : null;
+  const sharePart = share !== null ? ` (${Math.round(share * 100)}% of ${fetchedCount} fetched)` : "";
+  return {
+    label: "Pages skipped as nothing unusual",
+    value: count,
+    detail: `${count} over the last 7 days${sharePart}.`,
+    status: "ok",
+  };
+}
+
+/** Below this many spot checks, "not enough data yet" rather than a rate that one or two documents could swing. */
+export const AUDIT_SAMPLE_MIN_N = 20;
+
+/**
+ * B4 — "Spot checks that found something" (plan §5 B4, §8 "Surprise
+ * false-negative rate"). A spot check (`audit_sample`) is a document the
+ * statistic said to skip, analysed anyway (plan §5 B4's deterministic
+ * sample); this is how many of those checks actually surfaced a finding or
+ * a Brain chunk, in plain words — the false-negative rate the filter's own
+ * honesty depends on being measured, not assumed (CLAUDE.md: never a
+ * synthesised number). Reads `input.auditSamples` (raw rows with
+ * `detail.foundSomething`), not `funnel` — a grouped count cannot answer
+ * "how many of these found something" (handoff-noted limitation: an audit
+ * sample whose debate concluded "nothing new" before the final write is
+ * counted there, under `nothing_new`, not here — this row's denominator is
+ * spot checks that reached a concluding debate state, not every spot check
+ * drawn).
+ */
+function auditHitRow(samples: { foundSomething: boolean }[] | undefined): BrainQualityRow | null {
+  if (!samples || samples.length === 0) return null;
+  const label = "Spot checks that found something";
+  if (samples.length < AUDIT_SAMPLE_MIN_N) {
+    return { label, value: null, detail: `${samples.length} spot check(s) so far — not enough data yet.`, status: "not_enough" };
+  }
+  const hits = samples.filter((s) => s.foundSomething).length;
+  const rate = hits / samples.length;
+  return {
+    label,
+    value: rate,
+    detail: `${hits} of ${samples.length} spot checks over the last 7 days found something worth a closer look.`,
+    status: "ok",
+  };
+}
+
 /** Each stage's mode in plain words. */
 function stageRows(modes: Record<BrainStage, BrainMode>): BrainQualityRow[] {
   return BRAIN_STAGES.map((stage) => {
@@ -301,6 +373,8 @@ function stageRows(modes: Record<BrainStage, BrainMode>): BrainQualityRow[] {
 export function buildBrainQualityCard(input: BrainQualityInput): BrainQualityRow[] {
   const legacy = legacyRow(input.transcripts);
   const gateHeld = gateHeldRow(input.funnel);
+  const surpriseSkipped = surpriseSkippedRow(input.funnel, input.fetchedCount);
+  const auditHit = auditHitRow(input.auditSamples);
   return [
     documentsReadRow(input.funnel, input.fetchedCount),
     ...objectionRows(input.transcripts),
@@ -309,6 +383,8 @@ export function buildBrainQualityCard(input: BrainQualityInput): BrainQualityRow
     agreementGapRow(input.transcripts),
     ...(legacy ? [legacy] : []),
     ...(gateHeld ? [gateHeld] : []),
+    ...(surpriseSkipped ? [surpriseSkipped] : []),
+    ...(auditHit ? [auditHit] : []),
     ...stageRows(input.modes),
   ];
 }

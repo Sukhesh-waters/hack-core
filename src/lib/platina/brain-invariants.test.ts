@@ -71,6 +71,58 @@ describe("invariant: no model call on unchanged content", () => {
     }
     expect(routeMock).not.toHaveBeenCalled();
   });
+
+  it("the surprise filter's (B4) own leg: mode='on' and the statistic says skip -> cause 'surprise', and the provider is never reached", async () => {
+    routeMock.mockReset();
+
+    const previousBody =
+      "Bluebird Roasters has introduced a 48-hour roast guarantee for wholesale buyers. ".repeat(8);
+    const signal = {
+      title: "Roast guarantee",
+      // Digit-only change (48 -> 49): change-diff.ts's cosmetic rule reads
+      // this as no substantive change, so the surprise filter's observed
+      // novelty is 0 (see analysis-plan.ts surpriseObservation) — the LEAST
+      // novel case, not the most.
+      body: previousBody.replace("48-hour", "49-hour"),
+      sourceUrl: "https://bluebird.example/news/roast-guarantee",
+      canonicalUrl: "https://bluebird.example/news/roast-guarantee",
+      sourceKind: "competitor_site",
+      fetchedAt: new Date("2026-09-21T09:00:00Z"),
+    };
+    const competitor = {
+      kind: "competitor",
+      brandName: "Bluebird Roasters",
+      clientName: "Northwind Coffee",
+      sourceKind: "competitor_site",
+    };
+    // A warm, near-zero-variance history of cosmetic-only changes — exactly
+    // the realistic shape of a page that rarely says anything new.
+    const warmQuietNovelty = { n: 30, mean: 0, m2: 29 * 0.01 ** 2 };
+    const store = new Map([[`nov:${signal.canonicalUrl}`, warmQuietNovelty]]);
+
+    const plan = await planAnalysis({
+      signal,
+      subject: competitor,
+      loadPrevious: () =>
+        Promise.resolve({ title: signal.title, body: previousBody, fetchedAt: new Date("2026-09-14T09:00:00Z") }),
+      surprise: {
+        mode: "on",
+        loadExpectation: async (key) => store.get(key) ?? null,
+        saveExpectation: async (key, next) => {
+          store.set(key, next);
+        },
+        docId: "sig_surprise_1",
+        auditShare: 0, // isolates the skip leg from the audit-sample leg
+      },
+    });
+
+    expect(plan.action).toBe("skip");
+    expect(plan.action === "skip" && plan.cause).toBe("surprise");
+    // Same guarantee as the block above: no caller may debate a skip, and
+    // this proves the router is never reached either way.
+    if (plan.action === "analyse") await runContradictionRound(plan.input);
+    expect(routeMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("invariant: no insight without a testable falsifier", () => {

@@ -7,7 +7,7 @@
  */
 import { and, eq, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { platinaDebateTranscripts, platinaSignalDocuments } from "@/db/platina-schema";
+import { platinaBrainTelemetry, platinaDebateTranscripts, platinaSignalDocuments } from "@/db/platina-schema";
 
 export type BrainQualityTranscriptRow = {
   promptVersion: string | null;
@@ -61,4 +61,35 @@ export function fetchedDocumentCountQuery(workspaceId: string, since: Date) {
 export async function fetchedDocumentCount(workspaceId: string, since: Date): Promise<number> {
   const [row] = await fetchedDocumentCountQuery(workspaceId, since);
   return row?.n ?? 0;
+}
+
+export type AuditSampleRow = { foundSomething: boolean };
+
+/**
+ * B4 — stage "analysis" decision "audit_sample" telemetry rows for the
+ * window: the "Spot checks that found something" row's raw input. Grouped
+ * counts (`brainFunnelCountsQuery`) cannot answer "how many of these found
+ * something" — that lives only in each row's `detail.foundSomething`
+ * (signal-analyze.ts writes it next to the chunk/finding it describes), so
+ * this reads the raw rows instead of a count.
+ */
+export function auditSampleDetailQuery(workspaceId: string, since: Date) {
+  return db
+    .select({ detail: platinaBrainTelemetry.detail })
+    .from(platinaBrainTelemetry)
+    .where(
+      and(
+        eq(platinaBrainTelemetry.workspaceId, workspaceId),
+        eq(platinaBrainTelemetry.stage, "analysis"),
+        eq(platinaBrainTelemetry.decision, "audit_sample"),
+        gte(platinaBrainTelemetry.createdAt, since),
+      ),
+    );
+}
+
+export async function listAuditSampleDetail(workspaceId: string, since: Date): Promise<AuditSampleRow[]> {
+  const rows = await auditSampleDetailQuery(workspaceId, since);
+  return rows.map((row) => ({
+    foundSomething: Boolean((row.detail as Record<string, unknown> | null)?.foundSomething),
+  }));
 }

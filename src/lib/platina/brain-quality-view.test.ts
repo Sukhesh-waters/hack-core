@@ -246,6 +246,77 @@ describe("buildBrainQualityCard — held by the quality check (B3)", () => {
   });
 });
 
+describe("buildBrainQualityCard — pages skipped as nothing unusual (B4)", () => {
+  it("is omitted entirely when stage='analysis' decision='surprise' has never fired — never a phantom 0", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [{ stage: "analysis", decision: "analysed", count: 5 }],
+      fetchedCount: 5,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    expect(rows.some((r) => r.label === "Pages skipped as nothing unusual")).toBe(false);
+  });
+
+  it("reports the count and share once the surprise filter has skipped something", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [
+        { stage: "analysis", decision: "surprise", count: 12 },
+        { stage: "analysis", decision: "analysed", count: 8 },
+      ],
+      fetchedCount: 20,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    const row = rows.find((r) => r.label === "Pages skipped as nothing unusual")!;
+    expect(row.status).toBe("ok");
+    expect(row.value).toBe(12);
+    expect(row.detail).toContain("12");
+    expect(row.detail).toContain("60%"); // 12/20
+  });
+
+  it("a different stage's 'surprise' decision is never pooled in (only stage='analysis' counts)", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [{ stage: "surprise", decision: "surprise_shadow", count: 99 }],
+      fetchedCount: 0,
+      transcripts: [],
+      modes: ALL_OFF,
+    });
+    expect(rows.some((r) => r.label === "Pages skipped as nothing unusual")).toBe(false);
+  });
+});
+
+describe("buildBrainQualityCard — spot checks that found something (B4)", () => {
+  it("is omitted entirely when no audit samples were drawn", () => {
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts: [], modes: ALL_OFF });
+    expect(rows.some((r) => r.label === "Spot checks that found something")).toBe(false);
+  });
+
+  it("is not_enough below the N floor", () => {
+    const rows = buildBrainQualityCard({
+      funnel: [],
+      fetchedCount: 0,
+      transcripts: [],
+      modes: ALL_OFF,
+      auditSamples: [{ foundSomething: true }, { foundSomething: false }],
+    });
+    const row = rows.find((r) => r.label === "Spot checks that found something")!;
+    expect(row.status).toBe("not_enough");
+    expect(row.value).toBeNull();
+  });
+
+  it("reports the hit rate once above the N floor", () => {
+    const samples = [
+      ...Array.from({ length: 5 }, () => ({ foundSomething: true })),
+      ...Array.from({ length: 15 }, () => ({ foundSomething: false })),
+    ];
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts: [], modes: ALL_OFF, auditSamples: samples });
+    const row = rows.find((r) => r.label === "Spot checks that found something")!;
+    expect(row.status).toBe("ok");
+    expect(row.value).toBeCloseTo(0.25, 5);
+    expect(row.detail).toContain("5 of 20");
+  });
+});
+
 describe("buildBrainQualityCard — no internal vocabulary leaks into the card", () => {
   it("never shows a banned internal term anywhere in the card's text", () => {
     const rounds = [
@@ -257,15 +328,21 @@ describe("buildBrainQualityCard — no internal vocabulary leaks into the card",
     const rows = buildBrainQualityCard({
       funnel: [
         { stage: "analysis", decision: "surprise", count: 3 },
+        { stage: "analysis", decision: "audit_sample", count: 4 },
         { stage: "analysis", decision: "untestable", count: 1 },
         { stage: "analysis", decision: "gate", count: 1 },
         { stage: "analysis", decision: "analysed", count: 5 },
         { stage: "gate", decision: "testability", count: 6 },
         { stage: "gate", decision: "significance", count: 5 },
+        { stage: "surprise", decision: "surprise_shadow", count: 7 },
       ],
       fetchedCount: 10,
       transcripts: rounds,
       modes,
+      auditSamples: [
+        ...Array.from({ length: 6 }, () => ({ foundSomething: true })),
+        ...Array.from({ length: 14 }, () => ({ foundSomething: false })),
+      ],
     });
     const banned = [
       "falsifier",
