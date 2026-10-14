@@ -11,6 +11,15 @@ import {
   type Claim,
   type ResolveResult,
 } from "./contradiction";
+import {
+  INTERROGATION_PROMPT_VERSION,
+  INTERROGATION_SYSTEM,
+  TEMPORARY_CONFIDENCE_SPECIFICITY,
+  parseInterrogation,
+  validateInterrogation,
+  type ValidateInterrogationOptions,
+  type ValidateInterrogationResult,
+} from "./interrogation";
 
 /**
  * The challenger may honestly find nothing. An empty or "NONE" objection
@@ -154,6 +163,98 @@ export async function runContradictionRound(
     objected: attack.strongestObjection !== NO_MATERIAL_OBJECTION,
     headline: parseHeadline(proposal.text),
     nothingNew: isNothingNew(parseHeadline(proposal.text)),
+  };
+}
+
+/**
+ * B1 — the interrogation v2 round (plan §5 B1). Same one-call-then-challenge
+ * shape as `runContradictionRound` (kept untouched above, for mode="off");
+ * the challenger stays exactly as it is today — B2 is what blinds it. The
+ * proposer's reply is parsed and validated (interrogation.ts) against the
+ * numbered input's span map before `resolve()` ever sees it:
+ * `Claim.text = what`, `evidenceSpans` = the cited spans' own texts, and
+ * `specificity` = the TEMPORARY confidence mapping (D7/B3 replaces this).
+ * An invalid reply still produces a `Claim`/`Attack`/`ResolveResult` (the
+ * caller needs *something* to write a transcript from), but `interrogation`
+ * on the return carries the validation failure so `signal-analyze.ts` can
+ * act on it (shadow: grade_state "insufficient"; on: skip, no Brain write).
+ */
+export async function runInterrogationRound(
+  numbered: { input: string; spans: Record<string, string> },
+  floors?: { contestedFloor?: number; qualifiedFloor?: number },
+  validateOpts?: ValidateInterrogationOptions,
+) {
+  if (nextRoundAllowed()) {
+    throw new Error("unreachable: a second contradiction round is forbidden");
+  }
+
+  const proposal = await routeChatWithProvenance({
+    kind: "chat",
+    json: true,
+    system: INTERROGATION_SYSTEM,
+    prompt: numbered.input.slice(0, SIGNAL_BUDGET),
+  });
+
+  const challenge = (routing: { avoid?: ProviderId[]; prefer?: ProviderId }) =>
+    routeChatWithProvenance({
+      kind: "chat",
+      ...routing,
+      json: true,
+      system: CHALLENGER_SYSTEM,
+      prompt: `Signal:\n${numbered.input.slice(0, SIGNAL_BUDGET / 2)}\n\nClaim:\n${proposal.text}`,
+    });
+
+  let challengerRaw: string;
+  let challengerProvider: ProviderId;
+  let challengerModel: string;
+  try {
+    const independentReply = await challenge({ avoid: [proposal.provider] });
+    challengerRaw = independentReply.text;
+    challengerProvider = independentReply.provider;
+    challengerModel = independentReply.model;
+  } catch (error) {
+    if (!(error instanceof AIRouterError)) throw error;
+    const fallback = await challenge({ prefer: proposal.provider });
+    challengerRaw = fallback.text;
+    challengerProvider = fallback.provider;
+    challengerModel = fallback.model;
+  }
+  const independent = challengerProvider !== proposal.provider;
+
+  const parsed = parseInterrogation(proposal.text);
+  const interrogation: ValidateInterrogationResult = validateInterrogation(
+    parsed,
+    numbered.spans,
+    validateOpts,
+  );
+
+  // A transcript is written whether or not the interrogation validated —
+  // the audit trail (plan §11) keeps every model reply, valid or not.
+  const claim: Claim = {
+    text: interrogation.ok ? interrogation.value.what : parsed?.what ?? proposal.text.slice(0, 400),
+    evidenceSpans: interrogation.ok
+      ? interrogation.value.why.map((id) => numbered.spans[id]).filter((text): text is string => Boolean(text))
+      : [],
+    specificity: TEMPORARY_CONFIDENCE_SPECIFICITY[parsed?.confidence ?? "medium"],
+  };
+  const attack = parseAttack(challengerRaw);
+  const result = downgradeIfNotIndependent(resolve(claim, attack, floors), independent);
+
+  return {
+    claim,
+    attack,
+    result,
+    independent,
+    providers: { proposer: proposal.provider, challenger: challengerProvider },
+    models: { proposer: proposal.model, challenger: challengerModel },
+    objected: attack.strongestObjection !== NO_MATERIAL_OBJECTION,
+    headline: parsed?.headline ?? null,
+    nothingNew: parsed !== null && /^nothing new\.?$/i.test(parsed.what.trim()),
+    /** The B1 validation outcome — what signal-analyze.ts branches on for shadow/on. */
+    interrogation,
+    /** The best-effort parse, valid or not — analysis-writes.ts's v2 path needs it even when `interrogation.ok` is false (shadow still writes a chunk off it). */
+    parsed,
+    promptVersion: INTERROGATION_PROMPT_VERSION,
   };
 }
 

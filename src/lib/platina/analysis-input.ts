@@ -105,3 +105,82 @@ export function buildAnalysisInput(input: AnalysisInputParts): string {
 
   return sections.join("\n\n");
 }
+
+// ---------------------------------------------------------------------------
+// Numbered input (B1 — interrogation schema + falsifier, plan §5)
+// ---------------------------------------------------------------------------
+
+/** id -> the exact span text it tags, e.g. { e1: "...", e2: "..." }. */
+export type SpanMap = Record<string, string>;
+
+export type NumberedAnalysisInput = {
+  /** Same shape as buildAnalysisInput's output, with [e1]..[eN] tags inline. */
+  input: string;
+  spans: SpanMap;
+};
+
+/**
+ * `buildAnalysisInput` unchanged above (the mode="off" path stays
+ * byte-identical). This is the mode shadow/on twin: every diff line, every
+ * metric line and every paragraph of page text gets its own `[eN]` tag, and
+ * `spans[id]` holds the exact (untagged) text so `why` ids can be checked
+ * against real input later (interrogation.ts validateInterrogation) — the
+ * same "code verifies the words are on the page" approach as
+ * `plan/evidence.ts findCitationProblem`.
+ *
+ * The identity block (competitor/client/source/date/title) is never tagged:
+ * it is who the input is about, not evidence a claim cites.
+ */
+export function buildNumberedAnalysisInput(input: AnalysisInputParts): NumberedAnalysisInput {
+  const { subject } = input;
+  const spans: SpanMap = {};
+  let n = 0;
+  const tag = (text: string): string => {
+    n += 1;
+    const id = `e${n}`;
+    spans[id] = text;
+    return `[${id}] ${text}`;
+  };
+
+  const sections: string[] = [];
+
+  const identity = [
+    `Competitor: ${subject.competitorName ?? UNLINKED_SUBJECT}`,
+    ...(subject.clientName ? [`Watched for client: ${subject.clientName}`] : []),
+    `Source: ${KIND_LABEL[subject.sourceKind ?? ""] ?? subject.sourceKind ?? "a public web page"} — ${subject.url}`,
+    `Collected: ${date(subject.collectedAt)}`,
+    ...(input.title ? [`Page title: ${input.title}`] : []),
+  ];
+  sections.push(identity.join("\n"));
+
+  if (input.change) {
+    const lines = input.change.summary
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+    sections.push(`WHAT CHANGED — this is the signal:\n${lines.map(tag).join("\n")}`);
+  } else {
+    sections.push(
+      "WHAT CHANGED: nothing was collected for this page before, so this is a first look, not a change.",
+    );
+  }
+
+  const metrics = describeMetrics(input.metrics);
+  if (metrics) {
+    sections.push(`MEASURED ENGAGEMENT (real numbers from the platform, not claims): ${tag(metrics)}`);
+  }
+
+  const body = input.body.trim();
+  const truncated = body.length > BODY_BUDGET;
+  const bodyText = truncated ? body.slice(0, BODY_BUDGET) : body;
+  const paragraphs = bodyText
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  const taggedBody = paragraphs.length > 0 ? paragraphs.map(tag).join("\n\n") : "";
+  sections.push(
+    `PAGE TEXT${truncated ? ` (first ${BODY_BUDGET} of ${body.length} characters)` : ""}:\n${taggedBody}${truncated ? "\n[…truncated]" : ""}`,
+  );
+
+  return { input: sections.join("\n\n"), spans };
+}

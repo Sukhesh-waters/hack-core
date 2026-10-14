@@ -35,6 +35,9 @@ import {
   platinaWorkspaceConfig,
   platinaWorkspaceProfiles,
   PLATINA_EMBEDDING_MODEL_VERSION,
+  type BrainChunkDirection,
+  type BrainChunkGradeState,
+  type BrainChunkKind,
   type BrainSkipCause,
   type PlanDoc,
   type PlanOrigin,
@@ -49,6 +52,7 @@ import type { GateWrite } from "@/lib/platina/gates";
 import type { RawSignalDoc } from "@/lib/platina/fetch/registry";
 import type { FindingStatus } from "@/lib/platina/findings";
 import type { RunStatus } from "@/lib/platina/run-status";
+import { assertFalsifiableClaim, type FalsifierClaim } from "@/lib/platina/falsifier-metrics";
 
 export function similarBrandChunksQuery(
   workspaceId: string,
@@ -498,7 +502,25 @@ export async function insertBrainChunk(input: {
   embedding?: number[];
   /** Measured market insights only (C5): one active chunk per key. */
   insightKey?: string;
+  // B1 (metacognitive Brain) — all optional; omitted by every caller that
+  // predates this slice, which stores them as null/default (plan §4, 0088).
+  kind?: BrainChunkKind;
+  mechanism?: string;
+  evidenceRefs?: string[];
+  falsifier?: FalsifierClaim | null;
+  subjectKey?: string | null;
+  direction?: BrainChunkDirection;
+  gradeState?: BrainChunkGradeState;
+  dueAt?: Date | null;
+  promptVersion?: string;
+  writtenBy?: string;
 }) {
+  // Structural invariant (plan §7), enforced here regardless of mode or
+  // caller: a row declared kind="claim" must carry a registry-valid
+  // falsifier. Thrown, not swallowed — a caller that hits this has a bug,
+  // not a workspace it should silently skip.
+  assertFalsifiableClaim(input.kind, input.falsifier);
+
   const [row] = await db
     .insert(platinaBrainChunks)
     .values({
@@ -512,6 +534,16 @@ export async function insertBrainChunk(input: {
       transcriptId: input.transcriptId,
       embedding: input.embedding,
       insightKey: input.insightKey ?? null,
+      kind: input.kind,
+      mechanism: input.mechanism,
+      evidenceRefs: input.evidenceRefs,
+      falsifier: input.falsifier,
+      subjectKey: input.subjectKey,
+      direction: input.direction,
+      ...(input.gradeState ? { gradeState: input.gradeState } : {}),
+      dueAt: input.dueAt,
+      promptVersion: input.promptVersion,
+      writtenBy: input.writtenBy,
     })
     .returning({ id: platinaBrainChunks.id });
   return row.id;

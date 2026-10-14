@@ -77,6 +77,7 @@ export async function syncClientInsights(
         documentId: s.documentId,
         brandId: s.brandId,
       })),
+      now,
     }),
   );
   return announce(workspaceId, result);
@@ -121,7 +122,7 @@ export async function syncAdInsights(
   const loaded = await loadAdsView(workspaceId, now, clientId);
   if (!loaded) return { status: "not_a_client" };
   const result = await runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
-    writeAdInsights(deps, { workspaceId, clientId: loaded.client.id, insights: adInsights(loaded.client, loaded.view, now) }),
+    writeAdInsights(deps, { workspaceId, clientId: loaded.client.id, insights: adInsights(loaded.client, loaded.view, now), now }),
   );
   return announce(workspaceId, result);
 }

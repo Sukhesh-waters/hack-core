@@ -451,3 +451,49 @@ export function validateFalsifier(
 
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Subject keys (B1) — the stored, retrievable form of a falsifier's subject
+// ---------------------------------------------------------------------------
+
+/**
+ * `platina_brain_chunks.subject_key` (plan §4), e.g. "brand:Acme|topic:pfas
+ * analysis". Stable key order (brand, topic, creativeId, eventId) regardless
+ * of the segment object's own key order, so the same subject always produces
+ * the same string. Used by B1 writes and, later, by B6's disconfirming-slot
+ * lookup (same subject, opposite direction) and B5's grading query.
+ */
+export function subjectKeyFor(segment: MetricSegment): string {
+  const parts: string[] = [];
+  if (segment.brand) parts.push(`brand:${segment.brand}`);
+  if (segment.topic) parts.push(`topic:${segment.topic}`);
+  if (segment.creativeId) parts.push(`creative:${segment.creativeId}`);
+  if (segment.eventId) parts.push(`event:${segment.eventId}`);
+  return parts.join("|");
+}
+
+// ---------------------------------------------------------------------------
+// Insert-time guard (B1) — "no insight without a testable falsifier"
+// ---------------------------------------------------------------------------
+
+/**
+ * The structural invariant (plan §7) enforced at the one place every Brain
+ * chunk write passes through: a chunk declared `kind: "claim"` must carry a
+ * falsifier whose metric is actually in this registry. This is independent
+ * of any workspace's Brain mode — it is a data-integrity rule for the table,
+ * not a feature flag — so `insertBrainChunk` (db/queries/platina.ts) calls it
+ * unconditionally and throws rather than writing a claim nothing can test.
+ * `kind` values other than "claim" (measured, fact, compacted, legacy null)
+ * are never required to carry a falsifier.
+ */
+export function assertFalsifiableClaim(
+  kind: string | null | undefined,
+  falsifier: { metric: string } | null | undefined,
+): void {
+  if (kind !== "claim") return;
+  if (!falsifier || !(falsifier.metric in FALSIFIER_METRICS)) {
+    throw new Error(
+      `insertBrainChunk: kind="claim" requires a falsifier whose metric is in the registry (got ${JSON.stringify(falsifier)})`,
+    );
+  }
+}

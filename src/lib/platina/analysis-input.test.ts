@@ -3,6 +3,7 @@ import {
   BODY_BUDGET,
   UNLINKED_SUBJECT,
   buildAnalysisInput,
+  buildNumberedAnalysisInput,
   describeMetrics,
 } from "./analysis-input";
 
@@ -115,5 +116,54 @@ describe("the page text", () => {
 
   it("is deterministic", () => {
     expect(buildAnalysisInput(parts)).toBe(buildAnalysisInput(parts));
+  });
+});
+
+describe("buildNumberedAnalysisInput (B1 — interrogation why-ids)", () => {
+  it("tags each diff line, the metric line and each paragraph, in that order, and never the identity block", () => {
+    const { input, spans } = buildNumberedAnalysisInput({
+      ...parts,
+      body: "First paragraph about the move.\n\nSecond paragraph, a different point.",
+      change: { summary: "Line one changed.\nLine two changed." },
+      metrics: { likes: 5 },
+    });
+    expect(input).not.toMatch(/\[e\d+\] Competitor:/);
+    expect(spans).toEqual({
+      e1: "Line one changed.",
+      e2: "Line two changed.",
+      e3: "5 likes",
+      e4: "First paragraph about the move.",
+      e5: "Second paragraph, a different point.",
+    });
+    expect(input).toContain("[e1] Line one changed.");
+    expect(input).toContain("[e5] Second paragraph, a different point.");
+  });
+
+  it("every id in the map is findable verbatim in the rendered input", () => {
+    const { input, spans } = buildNumberedAnalysisInput({
+      ...parts,
+      body: "Para A.\n\nPara B.",
+      change: { summary: "Changed." },
+    });
+    for (const [id, text] of Object.entries(spans)) {
+      expect(input).toContain(`[${id}] ${text}`);
+    }
+  });
+
+  it("a first look (no previous version) still numbers the page text, with no diff-line ids", () => {
+    const { spans } = buildNumberedAnalysisInput(parts);
+    expect(Object.keys(spans)).toEqual(["e1"]);
+    expect(spans.e1).toBe(parts.body);
+  });
+
+  it("truncation is not itself tagged as a span", () => {
+    const body = Array.from({ length: 5 }, (_, i) => `Paragraph ${i}.`).join("\n\n").repeat(400);
+    const { input, spans } = buildNumberedAnalysisInput({ ...parts, body });
+    expect(input).toContain("[…truncated]");
+    expect(Object.values(spans).every((s) => !s.includes("[…truncated]"))).toBe(true);
+  });
+
+  it("is deterministic", () => {
+    expect(buildNumberedAnalysisInput(parts)).toEqual(buildNumberedAnalysisInput(parts));
   });
 });

@@ -22,6 +22,8 @@ import { users, workspaces } from "./schema";
 // B0 (metacognitive Brain): type-only import — brain-modes.ts is a pure,
 // DB-free module, so this cannot become a circular import.
 import type { BrainModes } from "@/lib/platina/brain-modes";
+// B1: type-only import — falsifier-metrics.ts is pure/DB-free (same reasoning).
+import type { FalsifierClaim } from "@/lib/platina/falsifier-metrics";
 
 const id = () =>
   text("id")
@@ -401,6 +403,28 @@ export type BrainSkipCause =
   | "gate";
 
 /**
+ * B1 (metacognitive Brain) — what kind of insight a Brain chunk is.
+ * `null` (the column's default for every pre-B1 row) means "legacy": written
+ * before this slice, by code that never declared a kind. `claim` and `fact`
+ * come from the interrogation schema (src/lib/platina/interrogation.ts);
+ * `measured` is a code-built insight (market-insight-writer.ts);
+ * `compacted` is reserved for monthly consolidation (not written by B1).
+ */
+export type BrainChunkKind = "claim" | "measured" | "fact" | "compacted";
+
+/** The claim's own asserted direction (not the falsifier's trigger direction — see interrogation.ts chunkDirectionFor). `none` for facts and legacy rows. */
+export type BrainChunkDirection = "up" | "down" | "none";
+
+/**
+ * Where a Brain chunk's falsifier stands: `untested` (default — window not
+ * elapsed, or no falsifier at all, e.g. a fact), `holding` (tested, effect
+ * weak), `promoted` (tested, held up), `refuted` (tested, triggered) or
+ * `insufficient` (B1: the interrogation itself failed validation — see
+ * analysis-writes.ts). Only B5's grader ever moves a row out of `untested`.
+ */
+export type BrainChunkGradeState = "untested" | "holding" | "promoted" | "refuted" | "insufficient";
+
+/**
  * One funnel event per stage decision: "this document/claim/chunk stopped
  * (or passed) here, for this reason." Read by `brainFunnelCountsQuery` into
  * the Brain quality card (plan §8). Kept 120 days; the monthly consolidation
@@ -506,6 +530,25 @@ export const platinaBrainChunks = pgTable(
      * claims.
      */
     insightKey: text("insight_key"),
+    // B1 (metacognitive Brain) — all nullable/defaulted, so every row and
+    // every caller written before this slice is untouched (plan §4, 0088).
+    kind: text("kind").$type<BrainChunkKind>(),
+    /** The "how" — why the claim follows from its evidence. Null for legacy rows. */
+    mechanism: text("mechanism"),
+    /** Validated `why` ids, e.g. "sig:<docId>#e3". Null for legacy rows. */
+    evidenceRefs: jsonb("evidence_refs").$type<string[]>(),
+    /** Required for kind=claim; null for fact/measured-without-a-fitting-metric/legacy. */
+    falsifier: jsonb("falsifier").$type<FalsifierClaim>(),
+    /** e.g. "brand:<name>|topic:pfas analysis" — falsifierMetrics.subjectKeyFor(). */
+    subjectKey: text("subject_key"),
+    direction: text("direction").$type<BrainChunkDirection>(),
+    gradeState: text("grade_state").$type<BrainChunkGradeState>().notNull().default("untested"),
+    /** created + the falsifier's window_days. Null when there is no falsifier to test. */
+    dueAt: timestamp("due_at", { mode: "date" }),
+    /** The prompt version that produced this chunk, e.g. "analysis-v2". Null for legacy. */
+    promptVersion: text("prompt_version"),
+    /** e.g. "interrogation-v1", "insight-writer-v2". Null for legacy — the marker B0's §11.2 archive-by-writer tooling keys on. */
+    writtenBy: text("written_by"),
     createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
   },
   (table) => ({
@@ -515,6 +558,12 @@ export const platinaBrainChunks = pgTable(
     insightKeyIdx: index("platina_brain_chunks_ws_insight_key_idx").on(
       table.workspaceId,
       table.insightKey,
+    ),
+    // B1: the daily grader's read path (plan §4, §12 "indexes for every new read path").
+    gradeStateIdx: index("platina_brain_chunks_ws_grade_state_due_idx").on(
+      table.workspaceId,
+      table.gradeState,
+      table.dueAt,
     ),
   }),
 );

@@ -7,7 +7,7 @@
  * ("cheap checks first") is provable in a unit test rather than asserted in a
  * comment.
  */
-import { buildAnalysisInput, type AnalysisSubject } from "./analysis-input";
+import { buildAnalysisInput, type AnalysisInputParts, type AnalysisSubject } from "./analysis-input";
 import { summariseChange, type ChangeSide } from "./change-diff";
 import { scoreSignal } from "./signal-value";
 import type { PlatinaSignalMetrics } from "@/db/platina-schema";
@@ -31,7 +31,22 @@ export type AnalysisSignalRow = {
 
 export type AnalysisPlan =
   | { action: "skip"; reason: string; cause: "own_brand" | "low_value" }
-  | { action: "analyse"; input: string; changed: boolean };
+  | {
+      action: "analyse";
+      input: string;
+      changed: boolean;
+      /**
+       * B1 — the same parts `buildAnalysisInput` just turned into `input`,
+       * kept so a mode shadow/on caller can additionally number them
+       * (analysis-input.ts buildNumberedAnalysisInput) without re-deriving
+       * the subject/change/metrics this function already assembled. Unused
+       * (and free to ignore) on the mode="off" path. Optional only so that
+       * pre-B1 test fixtures constructing an `AnalysisPlan` literal by hand
+       * (analysis-writes.test.ts) still type-check; `planAnalysis` itself
+       * always sets it.
+       */
+      parts?: AnalysisInputParts;
+    };
 
 export const OWN_BRAND_SKIP = "the client's own page — used for its profile";
 
@@ -78,15 +93,18 @@ export async function planAnalysis(params: {
     collectedAt: signal.fetchedAt,
   };
 
+  const parts: AnalysisInputParts = {
+    subject: analysisSubject,
+    title: signal.title,
+    body: signal.body,
+    change,
+    metrics: signal.metrics ?? null,
+  };
+
   return {
     action: "analyse",
     changed: change !== null,
-    input: buildAnalysisInput({
-      subject: analysisSubject,
-      title: signal.title,
-      body: signal.body,
-      change,
-      metrics: signal.metrics ?? null,
-    }),
+    input: buildAnalysisInput(parts),
+    parts,
   };
 }
