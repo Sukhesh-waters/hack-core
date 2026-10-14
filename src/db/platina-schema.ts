@@ -23,7 +23,8 @@ import { users, workspaces } from "./schema";
 // DB-free module, so this cannot become a circular import.
 import type { BrainModes } from "@/lib/platina/brain-modes";
 // B1: type-only import — falsifier-metrics.ts is pure/DB-free (same reasoning).
-import type { FalsifierClaim } from "@/lib/platina/falsifier-metrics";
+// B5 also uses this module's Plane type for platina_insight_grades.plane.
+import type { FalsifierClaim, Plane } from "@/lib/platina/falsifier-metrics";
 
 const id = () =>
   text("id")
@@ -521,6 +522,11 @@ export const platinaBrainChunks = pgTable(
     // hypothesis. The record is retained, floored, and excluded from
     // retrieval — never deleted.
     demotedByReceiptId: text("demoted_by_receipt_id"),
+    // B5 (metacognitive Brain): which platina_insight_grades row refuted
+    // this chunk's own falsifier — sits beside demotedByReceiptId (both kept;
+    // one is a measured outcome, the other a tested prediction). Null unless
+    // the daily grader actually refuted this row (plan §4, 0089).
+    refutedByGradeId: text("refuted_by_grade_id"),
     lastRetrievedAt: timestamp("last_retrieved_at", { mode: "date" }),
     status: platinaBrainStatus("status").notNull().default("active"),
     /**
@@ -564,6 +570,56 @@ export const platinaBrainChunks = pgTable(
       table.workspaceId,
       table.gradeState,
       table.dueAt,
+    ),
+  }),
+);
+
+// ---------------------------------------------------------------------------
+// Insight grades (B5 — metacognitive Brain). Append-only: no update/delete
+// query is exported. One row per time a stored falsifier (B1) was actually
+// tested — "insufficient" and "holding" grades are written too, not just
+// refuted/promoted, so "a grade is written once per chunk+window" (the
+// unique index below) is literally true. `verdict` never stores "pending":
+// a window that has not elapsed yet writes no row at all (plan §5 B5).
+// ---------------------------------------------------------------------------
+
+export const INSIGHT_GRADE_VERDICTS = ["promoted", "holding", "refuted", "insufficient"] as const;
+export type InsightGradeVerdict = (typeof INSIGHT_GRADE_VERDICTS)[number];
+
+export const platinaInsightGrades = pgTable(
+  "platina_insight_grades",
+  {
+    id: id(),
+    workspaceId: workspaceFk(),
+    brainChunkId: text("brain_chunk_id").notNull(),
+    /** A FalsifierMetricId (falsifier-metrics.ts) — plain text, not an enum: the registry is code, not the schema. */
+    metric: text("metric").notNull(),
+    /** The metric definition's scaleVersion at grading time (falsifier-metrics.ts FalsifierMetricDef.scaleVersion). */
+    scaleVersion: integer("scale_version").notNull(),
+    /** The falsifier's own window_days, frozen on the grade row (it never changes after B1 writes the chunk). */
+    windowDays: integer("window_days").notNull(),
+    threshold: real("threshold").notNull(),
+    /** The falsifier's own trigger direction ("above" | "below") — see falsifier-metrics.ts FalsifierClaim. */
+    direction: text("direction").notNull(),
+    /** Null when the metric could not be measured at all (not_measured) or had too few observations (insufficient). Never a synthesised number. */
+    measuredValue: real("measured_value"),
+    /** Observations behind measuredValue; 0 when not_measured. */
+    n: integer("n").notNull(),
+    verdict: text("verdict").$type<InsightGradeVerdict>().notNull(),
+    /** Which plane the metric read from (FalsifierMetricDef.plane) — kept on the grade so a report can never quietly mix planes. */
+    plane: text("plane").$type<Plane>().notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index("platina_insight_grades_workspace_id_idx").on(table.workspaceId),
+    chunkIdx: index("platina_insight_grades_ws_chunk_idx").on(table.workspaceId, table.brainChunkId),
+    // "A grade is written once per chunk+window" (plan §5 B5): the grader's
+    // insert is ON CONFLICT DO NOTHING on exactly this key, so a crash-replay
+    // of the same page never double-counts.
+    onceUnique: uniqueIndex("platina_insight_grades_once_unique").on(
+      table.brainChunkId,
+      table.windowDays,
+      table.metric,
     ),
   }),
 );
@@ -1263,6 +1319,7 @@ export const platinaWorkspaceScopedTables = {
   platinaBrainTelemetry,
   platinaBrainStateLog,
   platinaBrainChunks,
+  platinaInsightGrades,
   platinaGateEvents,
   platinaScanSpecs,
   platinaReceipts,

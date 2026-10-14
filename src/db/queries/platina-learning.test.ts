@@ -18,6 +18,7 @@ import {
   learningSnapshotsQuery,
   suggestionByIdQuery,
   suggestionEventsQuery,
+  suggestionsCitingBrainChunkQuery,
   suggestionsQuery,
 } from "./platina-learning";
 
@@ -108,6 +109,13 @@ describe("C8.5 ledger queries filter workspace_id in the generated SQL", () => {
     const { sql, params } = query.toSQL();
     expect(sql).toMatch(/"workspace_id" = /);
     expect(params).toContain("ws_a");
+  });
+
+  it("suggestionsCitingBrainChunkQuery (B5 ledger link): workspace filtered, matches the exact brain:<id> ref", () => {
+    const { sql, params } = suggestionsCitingBrainChunkQuery("ws_a", "chunk1").toSQL();
+    expect(sql).toContain('"platina_suggestions"."workspace_id" = ');
+    expect(sql).toMatch(/jsonb_array_elements/);
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "brain:chunk1"]));
   });
 
   it("the consolidation only reads unkeyed (debate and idea) insights, active or archived", () => {

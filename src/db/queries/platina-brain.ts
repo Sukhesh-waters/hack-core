@@ -16,6 +16,7 @@ import {
   platinaBrainStateLog,
   platinaBrainTelemetry,
   platinaWorkspaceConfig,
+  type BrainChunkGradeState,
   type BrainSkipCause,
 } from "@/db/platina-schema";
 import {
@@ -25,7 +26,13 @@ import {
   type BrainModes,
   type BrainStage,
 } from "@/lib/platina/brain-modes";
-import { diffBrainState, type BrainState, type BrainStateDiffRow, type BrainStateField } from "@/lib/platina/brain-state";
+import {
+  diffBrainState,
+  refutedByGradeIdPatch,
+  type BrainState,
+  type BrainStateDiffRow,
+  type BrainStateField,
+} from "@/lib/platina/brain-state";
 
 // ---------------------------------------------------------------------------
 // Telemetry
@@ -232,6 +239,11 @@ type BrainChunkStatePatch = Partial<{
   status: BrainChunkStatus;
   confidence: number;
   agreementState: BrainChunkAgreementState;
+  gradeState: BrainChunkGradeState;
+  // Not a diffed/undoable BrainStateField (see brain-state.ts
+  // refutedByGradeIdPatch) — set alongside gradeState -> "refuted" in the
+  // same write, never on its own.
+  refutedByGradeId: string;
 }>;
 
 /** Shared so the tested builders below and `setBrainState`'s transaction never drift apart. */
@@ -252,6 +264,7 @@ export function brainChunkStateQuery(workspaceId: string, chunkId: string, execu
       status: platinaBrainChunks.status,
       confidence: platinaBrainChunks.confidence,
       agreementState: platinaBrainChunks.agreementState,
+      gradeState: platinaBrainChunks.gradeState,
     })
     .from(platinaBrainChunks)
     .where(chunkFilter(workspaceId, chunkId))
@@ -270,17 +283,21 @@ function toPatch(diff: BrainStateDiffRow[]): BrainChunkStatePatch {
     if (row.field === "status") patch.status = row.toValue as BrainChunkStatus;
     else if (row.field === "confidence") patch.confidence = row.toValue as number;
     else if (row.field === "agreementState") patch.agreementState = row.toValue as BrainChunkAgreementState;
+    else if (row.field === "gradeState") patch.gradeState = row.toValue as BrainChunkGradeState;
   }
   return patch;
 }
 
 /**
- * Applies `next` to a Brain chunk's status/confidence/agreement_state, but
- * only the fields that actually change, and logs each change in
- * platina_brain_state_log in the same transaction. A chunk outside this
- * workspace, or not found, changes nothing and returns []. `cause` is the
- * stage + prompt_version or script name that made the change (e.g.
- * "grading", "undo:<run id>").
+ * Applies `next` to a Brain chunk's status/confidence/agreement_state/
+ * grade_state, but only the fields that actually change, and logs each
+ * change in platina_brain_state_log in the same transaction. When a change
+ * moves grade_state to "refuted" and `gradeId` is given, refuted_by_grade_id
+ * is set in the same write (brain-state.ts refutedByGradeIdPatch) — it is
+ * not itself a diffed/journaled field. A chunk outside this workspace, or
+ * not found, changes nothing and returns []. `cause` is the stage +
+ * prompt_version or script name that made the change (e.g. "grading",
+ * "undo:<run id>").
  */
 export async function setBrainState(
   workspaceId: string,
@@ -296,7 +313,8 @@ export async function setBrainState(
     const diff = diffBrainState(current, next);
     if (diff.length === 0) return [];
 
-    await tx.update(platinaBrainChunks).set(toPatch(diff)).where(chunkFilter(workspaceId, chunkId));
+    const patch: BrainChunkStatePatch = { ...toPatch(diff), ...refutedByGradeIdPatch(diff, gradeId) };
+    await tx.update(platinaBrainChunks).set(patch).where(chunkFilter(workspaceId, chunkId));
 
     await tx.insert(platinaBrainStateLog).values(
       diff.map((row) => ({

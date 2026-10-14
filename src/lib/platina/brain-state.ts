@@ -1,13 +1,14 @@
 /**
- * Brain state diffing + undo (B0 — metacognitive Brain). Every status,
- * confidence or agreement_state change a new stage makes is written through
- * one path (`setBrainState` in db/queries/platina-brain.ts), which logs the
- * change here, in `platina_brain_state_log` — the undo journal (plan §11.2).
- * Pure: no DB, no dates beyond what is handed in.
+ * Brain state diffing + undo (B0 — metacognitive Brain; `gradeState` added in
+ * B5). Every status, confidence, agreement_state or grade_state change a new
+ * stage makes is written through one path (`setBrainState` in
+ * db/queries/platina-brain.ts), which logs the change here, in
+ * `platina_brain_state_log` — the undo journal (plan §11.2). Pure: no DB, no
+ * dates beyond what is handed in.
  */
 
-/** Extensible later for gradeState (B5) — kept as a closed union so a typo cannot silently no-op. */
-export type BrainStateField = "status" | "confidence" | "agreementState";
+/** Closed union so a typo cannot silently no-op. B5 added "gradeState" (grade_state). */
+export type BrainStateField = "status" | "confidence" | "agreementState" | "gradeState";
 
 export type BrainStateValue = string | number | null;
 
@@ -86,4 +87,26 @@ export function inverseOf(logRows: BrainStateLogRow[]): BrainStateInverseRow[] {
     void latestAt;
     return rest;
   });
+}
+
+// ---------------------------------------------------------------------------
+// B5 — refuted_by_grade_id side-write
+// ---------------------------------------------------------------------------
+
+/**
+ * `platina_brain_chunks.refuted_by_grade_id` is not one of the four diffed
+ * state fields (it is set once, never undone by `inverseOf`), but it must be
+ * written in the SAME transaction as the `gradeState -> "refuted"` change, so
+ * it cannot drift from it. Pure so the rule — "only when this diff actually
+ * moves gradeState to refuted, and only when the caller gave a grade id" — is
+ * unit tested without a transaction; `setBrainState` merges this onto its
+ * normal column patch.
+ */
+export function refutedByGradeIdPatch(
+  diff: BrainStateDiffRow[],
+  gradeId: string | null | undefined,
+): { refutedByGradeId: string } | Record<string, never> {
+  if (!gradeId) return {};
+  const refuted = diff.some((row) => row.field === "gradeState" && row.toValue === "refuted");
+  return refuted ? { refutedByGradeId: gradeId } : {};
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diffBrainState, inverseOf, type BrainStateLogRow } from "./brain-state";
+import { diffBrainState, inverseOf, refutedByGradeIdPatch, type BrainStateLogRow } from "./brain-state";
 
 describe("diffBrainState", () => {
   it("returns a row only for fields that change", () => {
@@ -35,6 +35,39 @@ describe("diffBrainState", () => {
   it("a next value of null is a real change, not a no-op", () => {
     const diff = diffBrainState({ confidence: 0.4 }, { confidence: null });
     expect(diff).toEqual([{ field: "confidence", fromValue: 0.4, toValue: null }]);
+  });
+
+  it("diffs gradeState too (B5)", () => {
+    const diff = diffBrainState({ gradeState: "untested" }, { gradeState: "refuted" });
+    expect(diff).toEqual([{ field: "gradeState", fromValue: "untested", toValue: "refuted" }]);
+  });
+});
+
+describe("refutedByGradeIdPatch (B5)", () => {
+  const refutedDiff = [{ field: "gradeState" as const, fromValue: "untested", toValue: "refuted" }];
+  const promotedDiff = [{ field: "gradeState" as const, fromValue: "untested", toValue: "promoted" }];
+
+  it("is empty when no gradeId is given, even on a refuted diff", () => {
+    expect(refutedByGradeIdPatch(refutedDiff, undefined)).toEqual({});
+    expect(refutedByGradeIdPatch(refutedDiff, null)).toEqual({});
+  });
+
+  it("is empty when the diff does not move gradeState to refuted", () => {
+    expect(refutedByGradeIdPatch(promotedDiff, "grade1")).toEqual({});
+    expect(refutedByGradeIdPatch([], "grade1")).toEqual({});
+  });
+
+  it("sets refutedByGradeId when the diff moves gradeState to refuted and a gradeId is given", () => {
+    expect(refutedByGradeIdPatch(refutedDiff, "grade1")).toEqual({ refutedByGradeId: "grade1" });
+  });
+
+  it("still fires when gradeState->refuted is one of several changed fields", () => {
+    const diff = [
+      { field: "status" as const, fromValue: "active", toValue: "demoted" },
+      { field: "confidence" as const, fromValue: 0.6, toValue: 0.05 },
+      ...refutedDiff,
+    ];
+    expect(refutedByGradeIdPatch(diff, "grade1")).toEqual({ refutedByGradeId: "grade1" });
   });
 });
 

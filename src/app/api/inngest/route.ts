@@ -33,6 +33,7 @@ import { platinaIdeaTrigger } from "@/inngest/functions/platina/idea-trigger";
 import { platinaEventExtract } from "@/inngest/functions/platina/event-extract";
 import { platinaOwnSite } from "@/inngest/functions/platina/own-site";
 import { platinaLearning } from "@/inngest/functions/platina/learning";
+import { platinaFalsifierGrade, platinaFalsifierGradeSweep } from "@/inngest/functions/platina/falsifier-grade";
 import { opsCheck } from "@/inngest/functions/ops-check";
 
 const handler = serve({
@@ -70,6 +71,8 @@ const handler = serve({
     platinaEventExtract,
     platinaOwnSite,
     platinaLearning,
+    platinaFalsifierGradeSweep,
+    platinaFalsifierGrade,
     opsCheck,
   ],
 });
