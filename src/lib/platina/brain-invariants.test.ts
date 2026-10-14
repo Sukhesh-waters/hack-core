@@ -9,7 +9,9 @@ import { describe, expect, it, vi } from "vitest";
 import { routeChatWithProvenance } from "@/lib/ai/router";
 import { analysisWrites, UNTESTABLE_SKIP_CAUSE } from "./analysis-writes";
 import { planAnalysis } from "./analysis-plan";
-import { runContradictionRound } from "./debate";
+import { blindChallengerInput } from "./challenger";
+import { nextRoundAllowed } from "./contradiction";
+import { runContradictionRound, runInterrogationRound } from "./debate";
 import { assertFalsifiableClaim } from "./falsifier-metrics";
 
 // Hoisted, static mock — the same pattern analysis-plan.test.ts already
@@ -108,13 +110,94 @@ describe("invariant: no insight without a testable falsifier", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Not yet provable — each row is the later slice that builds it (plan §7)
+// invariant: challenger blind, exactly once (B2)
 // ---------------------------------------------------------------------------
 
-describe.todo("invariant: challenger blind, exactly once (B2)");
-it.todo(
-  "B2 — the blinded prompt string contains none of: proposer provider id, model id, specificity, confidence, http, source domain; nextRoundAllowed() === false",
-);
+describe("invariant: challenger blind, exactly once (B2)", () => {
+  const spans = {
+    e1: "Acme Roasters today announced a 48-hour roast guarantee for all wholesale customers.",
+    e2: "The guarantee applies to orders placed after June 1, 2026.",
+  };
+  const numbered = {
+    input:
+      "Competitor: Acme Roasters\n" +
+      "Source: a page on the competitor's own website — https://acme-roasters.example/news/guarantee\n\n" +
+      `WHAT CHANGED — this is the signal:\n[e1] ${spans.e1}\n[e2] ${spans.e2}`,
+    spans,
+  };
+  const interrogationReply = JSON.stringify({
+    headline: "Acme now guarantees a 48-hour roast",
+    what: "Acme now guarantees a 48-hour roast turnaround for wholesale orders.",
+    why: ["e1", "e2"],
+    how: "A faster guarantee than the industry standard signals a capacity investment.",
+    kind: "claim",
+    falsifier: { metric: "topic_momentum", subject: { topic: "roast speed" }, direction: "below", threshold: 1.0, window_days: 30 },
+    confidence: "high",
+  });
+  const challengerReply = JSON.stringify({
+    text: "No material defect found.",
+    confounders: [],
+    strongestObjection: "none",
+    confounderStrength: 0,
+    verdict: "no_material_objection",
+  });
+
+  it("blindChallengerInput itself carries only what/how/cited span texts — proposer provenance has no parameter to leak through", () => {
+    const prompt = blindChallengerInput(
+      { what: "Acme now guarantees a 48-hour roast turnaround.", how: "A faster guarantee signals a capacity investment.", why: ["e1", "e2"] },
+      spans,
+    );
+    expect(prompt).toContain("Acme now guarantees a 48-hour roast turnaround.");
+    expect(prompt).toContain("A faster guarantee signals a capacity investment.");
+    expect(prompt).toContain(spans.e1);
+    expect(prompt).toContain(spans.e2);
+    for (const banned of ["groq", "gemini", "bedrock", "nvidia", "specificity", "confidence", "http", "acme-roasters.example"]) {
+      expect(prompt.toLowerCase()).not.toContain(banned);
+    }
+  });
+
+  it("mode='on': the live challenger call is sent the blind prompt, and the challenger is called exactly once", async () => {
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce({ text: interrogationReply, provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+      .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+
+    const out = await runInterrogationRound(numbered, undefined, undefined, { signalId: "sig_1", mode: "on" });
+
+    expect(out.blinded).toBe(true);
+    // Exactly two router calls total for the whole round: one proposer, one
+    // challenger — never a second challenger attempt once the first answers.
+    expect(routeMock).toHaveBeenCalledTimes(2);
+    const challengerCall = routeMock.mock.calls[1][0] as { system: string; prompt: string };
+    const sent = `${challengerCall.system}\n${challengerCall.prompt}`;
+    expect(sent).toContain(spans.e1);
+    expect(sent).toContain(spans.e2);
+    for (const banned of ["groq", "llama-3-70b", "specificity", "confidence", "http", "acme-roasters.example"]) {
+      expect(sent.toLowerCase()).not.toContain(banned);
+    }
+  });
+
+  it("mode='off' (or no challengerOpts): the live challenger call keeps today's unblinded prompt, unchanged", async () => {
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce({ text: interrogationReply, provider: "groq", model: "llama-3-70b", latencyMs: 1 })
+      .mockResolvedValueOnce({ text: challengerReply, provider: "gemini", model: "gemini-1.5-flash", latencyMs: 1 });
+
+    const out = await runInterrogationRound(numbered);
+
+    expect(out.blinded).toBe(false);
+    const challengerCall = routeMock.mock.calls[1][0] as { system: string; prompt: string };
+    expect(challengerCall.prompt).toContain("https://acme-roasters.example/news/guarantee");
+  });
+
+  it("a second contradiction round is forbidden, blind or not", () => {
+    expect(nextRoundAllowed()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Not yet provable — each row is the later slice that builds it (plan §7)
+// ---------------------------------------------------------------------------
 
 describe.todo("invariant: deterministic gates override every model (B3)");
 it.todo("B3 — a gate refusal (min-N, significance, schema) produces no Brain write regardless of the debate's agreement state");

@@ -52,6 +52,16 @@ import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
  * one — same one proposer + one challenger call, not an extra one — and
  * `analysisWrites`'s 4th (`v2`) argument layers in the falsifier/kind/etc.
  * fields and the mode="on" "untestable" skip (plan §5 B1).
+ *
+ * B2: `modeOf(config, "challenger")` is the challenger's OWN mode, read
+ * alongside `mode` and passed into `runInterrogationRound` as its 4th
+ * argument. It only matters inside the v2 branch below — the v1 round above
+ * has no numbered spans to build a blind prompt from, so a workspace can
+ * run interrogation "off" and challenger "shadow"/"on" with no effect: the
+ * v1 round that would run is simply never asked to blind. `result.blinded`
+ * (true for "on", a 50/50 split by signal id for "shadow", else false) is
+ * stored on the transcript's `blinded` column — unchanged cost either way,
+ * same one challenger call (plan §5 B2).
  */
 export const platinaSignalAnalyze = inngest.createFunction(
   {
@@ -165,6 +175,12 @@ export const platinaSignalAnalyze = inngest.createFunction(
       // as before this slice (proven by brain-legacy-equivalence.test.ts for
       // the pure decision; this fork is what keeps it true in production).
       const mode = modeOf(config, "interrogation");
+      // B2: the challenger's OWN mode — only consulted inside
+      // runInterrogationRound (the v2/v1 fork below), because the v1 round
+      // (mode="off", immediately below) has no numbered spans to blind
+      // with. A workspace can watch the blind challenger in shadow before
+      // its interrogation is itself "on".
+      const challengerMode = modeOf(config, "challenger");
 
       if (mode === "off") {
         // Inside a cost context so the daily AI cap applies and provider
@@ -183,8 +199,11 @@ export const platinaSignalAnalyze = inngest.createFunction(
             signalIds: [signal.id],
             ...writes.transcript!,
             // B0 provenance: which provider/model answered on each side, and
-            // the prompt version — the before-number for agreement-by-model
-            // and the B2 blind-challenger A/B. `blinded` is false until B2.
+            // the prompt version — the before-number for agreement-by-model.
+            // `blinded` is always false here: this is the v1 round
+            // (runContradictionRound), which B2 never touches — it has no
+            // numbered spans to build a blind prompt from. The B2 blind
+            // challenger lives only in the v2 (interrogation) round below.
             proposerProvider: result.providers.proposer,
             proposerModel: result.models.proposer,
             challengerProvider: result.providers.challenger,
@@ -295,7 +314,10 @@ export const platinaSignalAnalyze = inngest.createFunction(
 
       const result = await step.run("debate", () =>
         runWithAiCost({ workspaceId, purpose: "signal-analysis" }, () =>
-          runInterrogationRound(numbered, floors, { resolvesSubjectKey }),
+          runInterrogationRound(numbered, floors, { resolvesSubjectKey }, {
+            signalId: signal.id,
+            mode: challengerMode,
+          }),
         ),
       );
 
@@ -321,7 +343,10 @@ export const platinaSignalAnalyze = inngest.createFunction(
           challengerModel: result.models.challenger,
           // B1: the prompt actually used on this document, in shadow or on.
           promptVersion: INTERROGATION_PROMPT_VERSION,
-          blinded: false,
+          // B2: whether THIS round's challenger actually saw the blind
+          // prompt (off -> always false; shadow -> the 50/50 split by
+          // signal id; on -> always true). Computed in debate.ts, not here.
+          blinded: result.blinded,
           objected: result.objected,
         }),
       );

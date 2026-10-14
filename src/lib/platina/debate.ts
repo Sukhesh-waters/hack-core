@@ -4,6 +4,8 @@ import {
   routeChatWithProvenance,
   type ProviderId,
 } from "@/lib/ai/router";
+import { deterministicShare, type BrainMode } from "./brain-modes";
+import { BLIND_CHALLENGER_SYSTEM, blindChallengerInput } from "./challenger";
 import {
   nextRoundAllowed,
   resolve,
@@ -17,6 +19,7 @@ import {
   TEMPORARY_CONFIDENCE_SPECIFICITY,
   parseInterrogation,
   validateInterrogation,
+  type Interrogation,
   type ValidateInterrogationOptions,
   type ValidateInterrogationResult,
 } from "./interrogation";
@@ -166,23 +169,49 @@ export async function runContradictionRound(
   };
 }
 
+/** The deterministic 50/50 split salt for the B2 shadow arm (plan §5 B2, §2.1). */
+export const BLIND_CHALLENGER_SHADOW_SALT = "b2-blind";
+
+/** `runInterrogationRound`'s 4th argument — absent/undefined means mode "off" (today's unblinded challenger, unconditionally). */
+export type ChallengerRoundOptions = {
+  /** The signal document id — the input to the shadow arm's deterministic split. */
+  signalId: string;
+  mode: BrainMode;
+};
+
 /**
  * B1 — the interrogation v2 round (plan §5 B1). Same one-call-then-challenge
- * shape as `runContradictionRound` (kept untouched above, for mode="off");
- * the challenger stays exactly as it is today — B2 is what blinds it. The
- * proposer's reply is parsed and validated (interrogation.ts) against the
- * numbered input's span map before `resolve()` ever sees it:
- * `Claim.text = what`, `evidenceSpans` = the cited spans' own texts, and
- * `specificity` = the TEMPORARY confidence mapping (D7/B3 replaces this).
- * An invalid reply still produces a `Claim`/`Attack`/`ResolveResult` (the
- * caller needs *something* to write a transcript from), but `interrogation`
- * on the return carries the validation failure so `signal-analyze.ts` can
- * act on it (shadow: grade_state "insufficient"; on: skip, no Brain write).
+ * shape as `runContradictionRound` (kept untouched above, for mode="off").
+ *
+ * B2 (plan §5 B2) decides, per call, whether the challenger sees today's
+ * prompt (`CHALLENGER_SYSTEM` + the raw signal and proposer JSON) or the
+ * blind one (`BLIND_CHALLENGER_SYSTEM` + `blindChallengerInput` — only
+ * `what`, `how` and the cited spans' texts): `challengerOpts` absent, or its
+ * `mode` "off", always uses today's prompt; "shadow" splits 50/50 by
+ * `deterministicShare(signalId, 0.5, "b2-blind")`; "on" always blinds. This
+ * is the challenger's OWN mode (`modeOf(config, "challenger")`), independent
+ * of the interrogation mode that got this function called in the first
+ * place — there is no code path where interrogation is "off" and this
+ * function runs at all (that is `runContradictionRound`'s v1 round above,
+ * which has no numbered spans to blind with, so a challenger mode is simply
+ * never consulted there).
+ *
+ * The proposer's reply is parsed once, before the challenge call (both the
+ * blind prompt and the return value need `what`/`how`/`why`), and validated
+ * (interrogation.ts) against the numbered input's span map before
+ * `resolve()` ever sees it: `Claim.text = what`, `evidenceSpans` = the cited
+ * spans' own texts, and `specificity` = the TEMPORARY confidence mapping
+ * (D7/B3 replaces this). An invalid reply still produces a
+ * `Claim`/`Attack`/`ResolveResult` (the caller needs *something* to write a
+ * transcript from), but `interrogation` on the return carries the
+ * validation failure so `signal-analyze.ts` can act on it (shadow:
+ * grade_state "insufficient"; on: skip, no Brain write).
  */
 export async function runInterrogationRound(
   numbered: { input: string; spans: Record<string, string> },
   floors?: { contestedFloor?: number; qualifiedFloor?: number },
   validateOpts?: ValidateInterrogationOptions,
+  challengerOpts?: ChallengerRoundOptions,
 ) {
   if (nextRoundAllowed()) {
     throw new Error("unreachable: a second contradiction round is forbidden");
@@ -195,13 +224,33 @@ export async function runInterrogationRound(
     prompt: numbered.input.slice(0, SIGNAL_BUDGET),
   });
 
+  // Parsed once, early: the blind prompt (if this round uses one) and the
+  // return value both need `what`/`how`/`why`, and parseInterrogation is
+  // pure and cheap — no reason to call it twice over the same reply.
+  const parsed: Interrogation | null = parseInterrogation(proposal.text);
+
+  const challengerMode = challengerOpts?.mode ?? "off";
+  const blinded =
+    challengerMode === "on" ||
+    (challengerMode === "shadow" &&
+      challengerOpts !== undefined &&
+      deterministicShare(challengerOpts.signalId, 0.5, BLIND_CHALLENGER_SHADOW_SALT));
+
+  // A failed parse leaves nothing structured to blind with; blinding then
+  // degrades to "the claim as best understood" with no cited evidence
+  // (`why: []`) rather than falling back to the unblinded prompt — a parse
+  // failure must never be the reason a challenger gets to see provenance.
+  const blindBasis = parsed ?? { what: proposal.text.slice(0, 400), how: "", why: [] };
+
   const challenge = (routing: { avoid?: ProviderId[]; prefer?: ProviderId }) =>
     routeChatWithProvenance({
       kind: "chat",
       ...routing,
       json: true,
-      system: CHALLENGER_SYSTEM,
-      prompt: `Signal:\n${numbered.input.slice(0, SIGNAL_BUDGET / 2)}\n\nClaim:\n${proposal.text}`,
+      system: blinded ? BLIND_CHALLENGER_SYSTEM : CHALLENGER_SYSTEM,
+      prompt: blinded
+        ? blindChallengerInput(blindBasis, numbered.spans)
+        : `Signal:\n${numbered.input.slice(0, SIGNAL_BUDGET / 2)}\n\nClaim:\n${proposal.text}`,
     });
 
   let challengerRaw: string;
@@ -221,7 +270,6 @@ export async function runInterrogationRound(
   }
   const independent = challengerProvider !== proposal.provider;
 
-  const parsed = parseInterrogation(proposal.text);
   const interrogation: ValidateInterrogationResult = validateInterrogation(
     parsed,
     numbered.spans,
@@ -255,6 +303,8 @@ export async function runInterrogationRound(
     /** The best-effort parse, valid or not — analysis-writes.ts's v2 path needs it even when `interrogation.ok` is false (shadow still writes a chunk off it). */
     parsed,
     promptVersion: INTERROGATION_PROMPT_VERSION,
+    /** B2 — whether THIS round's challenger saw the blind prompt. False when challengerOpts is absent/"off", or "shadow" lost its coin flip. Stored on the transcript's `blinded` column. */
+    blinded,
   };
 }
 
@@ -298,13 +348,22 @@ function parseClaim(raw: string): Claim {
 /** Exported for tests; the round runner above is the only production caller. */
 export function parseAttack(raw: string): Attack {
   try {
-    const parsed = extractJson<Attack>(raw);
+    const parsed = extractJson<Attack & { verdict?: unknown }>(raw);
     if (!parsed) throw new Error("no JSON in reply");
     const objection = String(parsed.strongestObjection ?? "").trim();
-    const noObjection =
+    const textSaysNoObjection =
       objection === "" ||
       /^none\.?$/i.test(objection) ||
       /^no material objection/i.test(objection);
+    // B2: BLIND_CHALLENGER_SYSTEM asks for an explicit `verdict` field, which
+    // wins over the text heuristic above when present and recognised. A
+    // reply with no `verdict` (every v1 reply, and today's unblinded v2
+    // reply — neither prompt asks for one) falls back to that heuristic
+    // unchanged, so this is additive, not a behaviour change, for every
+    // existing caller.
+    const verdict = typeof parsed.verdict === "string" ? parsed.verdict : null;
+    const noObjection =
+      verdict === "no_material_objection" ? true : verdict === "objection" ? false : textSaysNoObjection;
     return {
       text: String(parsed.text ?? raw),
       confounders: Array.isArray(parsed.confounders) ? parsed.confounders : [],

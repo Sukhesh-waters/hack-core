@@ -14,12 +14,15 @@ export type BrainQualityTranscriptRow = {
   proposerModel: string | null;
   objected: boolean | null;
   state: "agreed" | "qualified" | "contested" | "refuted";
+  /** B2 — whether this round's challenger saw the blind prompt. */
+  blinded: boolean | null;
 };
 
 /**
  * Debate transcripts since a moment — the input to the "Second opinion
- * objected" and "Agreement rate" rows. Null promptVersion/proposerModel mean
- * the transcript predates B0/B2 tracking ("before tracking"), not a 0.
+ * objected", "Agreement rate" and B2's "blind vs. not" / "may not be blind"
+ * rows. Null promptVersion/proposerModel mean the transcript predates
+ * B0/B2 tracking ("before tracking"), not a 0.
  */
 export function brainQualityTranscriptsQuery(workspaceId: string, since: Date) {
   return db
@@ -28,6 +31,7 @@ export function brainQualityTranscriptsQuery(workspaceId: string, since: Date) {
       proposerModel: platinaDebateTranscripts.proposerModel,
       objected: platinaDebateTranscripts.objected,
       state: platinaDebateTranscripts.state,
+      blinded: platinaDebateTranscripts.blinded,
     })
     .from(platinaDebateTranscripts)
     .where(

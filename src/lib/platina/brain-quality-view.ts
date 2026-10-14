@@ -10,7 +10,15 @@
 import { BRAIN_STAGES, type BrainMode, type BrainStage } from "./brain-modes";
 import { summariseFunnel, type BrainFunnelRow } from "./brain-telemetry";
 import type { ResolveState } from "./contradiction";
-import { objectionRate, OBJECTION_MIN_ROUNDS } from "./objection-rate";
+import {
+  AGREEMENT_GAP_CEILING,
+  OBJECTION_RATE_CEILING,
+  agreementGapAlarm,
+  objectionRate,
+  objectionRateBy,
+  OBJECTION_MIN_ROUNDS,
+  type AgreementRound,
+} from "./objection-rate";
 
 export type BrainQualityStatus = "ok" | "watch" | "not_enough";
 
@@ -26,6 +34,13 @@ export type BrainQualityTranscriptRow = {
   proposerModel: string | null;
   objected: boolean | null;
   state: ResolveState;
+  /**
+   * B2 — whether this round's challenger saw the blind prompt. Optional:
+   * every row from before B2 shipped has no such column value at all, which
+   * reads the same as `null` (a round that predates the arm split) rather
+   * than `false` (a round the "off"/today's-prompt arm positively chose).
+   */
+  blinded?: boolean | null;
 };
 
 export type BrainQualityInput = {
@@ -39,8 +54,8 @@ export type BrainQualityInput = {
   modes: Record<BrainStage, BrainMode>;
 };
 
-/** The B2 alarm ceiling (plan §5 B2): today's objection-rate.ts ceiling is 0.8; B2 moves it to 0.7. */
-export const OBJECTION_WATCH_CEILING = 0.7;
+/** The B2 alarm ceiling (plan §5 B2) — the same value objection-rate.ts's OBJECTION_RATE_CEILING now uses; kept as one named constant rather than two numbers that happen to match. */
+export const OBJECTION_WATCH_CEILING = OBJECTION_RATE_CEILING;
 
 /** The plan's N >= 20 floor for agreement-by-proposer-model (plan §5 B2, §8). */
 export const AGREEMENT_MIN_ROUNDS = 20;
@@ -154,6 +169,60 @@ function agreementRows(transcripts: BrainQualityTranscriptRow[]): BrainQualityRo
 }
 
 /**
+ * B2 (plan §5 B2) — the shadow A/B: objection rate for the arm that saw the
+ * blind prompt vs. the arm that saw today's. A gap here is the point of the
+ * experiment, not a problem; "not enough data yet" below OBJECTION_MIN_ROUNDS
+ * in EITHER arm, because comparing one well-measured arm against a thin one
+ * would not mean anything.
+ */
+function blindVsNotRow(transcripts: BrainQualityTranscriptRow[]): BrainQualityRow {
+  const label = "Second opinion, blind vs. not";
+  const tagged = transcripts.filter(
+    (t): t is BrainQualityTranscriptRow & { blinded: boolean } => typeof t.blinded === "boolean",
+  );
+  const byArm = objectionRateBy(tagged, (t) => (t.blinded ? "blind" : "not blind"));
+  const blind = byArm.find((r) => r.key === "blind");
+  const notBlind = byArm.find((r) => r.key === "not blind");
+  if (!blind || !notBlind || blind.n < OBJECTION_MIN_ROUNDS || notBlind.n < OBJECTION_MIN_ROUNDS) {
+    return { label, value: null, detail: "Not enough data yet.", status: "not_enough" };
+  }
+  const pct = (rate: number) => Math.round(rate * 100);
+  return {
+    label,
+    value: null,
+    detail:
+      `Without the first answer's confidence or source: ${pct(blind.rate)}% objected (${blind.n} rounds). ` +
+      `With it: ${pct(notBlind.rate)}% objected (${notBlind.n} rounds).`,
+    status: "ok",
+  };
+}
+
+/**
+ * B2 (plan §5 B2) — the second "blinding failed" alarm: if two proposer
+ * models' agreement rates diverge by more than AGREEMENT_GAP_CEILING once
+ * both have enough rounds, the second opinion is behaving differently
+ * depending on which model proposed — which it should never be able to see.
+ */
+function agreementGapRow(transcripts: BrainQualityTranscriptRow[]): BrainQualityRow {
+  const label = "Second opinion may not be blind";
+  const rounds: AgreementRound[] = transcripts.map((t) => ({ state: t.state, proposerModel: t.proposerModel }));
+  const alarm = agreementGapAlarm(rounds, { minPerModel: AGREEMENT_MIN_ROUNDS, maxGap: AGREEMENT_GAP_CEILING });
+  if (alarm.rates.length < 2) {
+    return { label, value: null, detail: "Not enough data yet.", status: "not_enough" };
+  }
+  if (alarm.alarmed && alarm.gap) {
+    const points = Math.round(alarm.gap.difference * 100);
+    return {
+      label,
+      value: alarm.gap.difference,
+      detail: `"${alarm.gap.models[0]}" and "${alarm.gap.models[1]}" agree with the proposer ${points} points apart — more than expected if the second opinion truly cannot see which model proposed.`,
+      status: "watch",
+    };
+  }
+  return { label, value: 0, detail: "Agreement rates are close across models — no sign of leakage.", status: "ok" };
+}
+
+/**
  * How many transcripts predate prompt/model tracking. Grouped together and
  * shown once, informationally — never folded into a per-version or
  * per-model rate as a phantom 0.
@@ -188,7 +257,9 @@ export function buildBrainQualityCard(input: BrainQualityInput): BrainQualityRow
   return [
     documentsReadRow(input.funnel, input.fetchedCount),
     ...objectionRows(input.transcripts),
+    blindVsNotRow(input.transcripts),
     ...agreementRows(input.transcripts),
+    agreementGapRow(input.transcripts),
     ...(legacy ? [legacy] : []),
     ...stageRows(input.modes),
   ];

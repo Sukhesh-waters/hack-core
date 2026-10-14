@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BRAIN_STAGES, type BrainMode, type BrainStage } from "./brain-modes";
 import { buildBrainQualityCard, type BrainQualityTranscriptRow } from "./brain-quality-view";
-import { OBJECTION_MIN_ROUNDS } from "./objection-rate";
+import { AGREEMENT_GAP_CEILING, OBJECTION_MIN_ROUNDS } from "./objection-rate";
 
 const ALL_OFF: Record<BrainStage, BrainMode> = Object.fromEntries(
   BRAIN_STAGES.map((s) => [s, "off"]),
@@ -11,11 +11,13 @@ const round = (
   promptVersion: string | null,
   proposerModel: string | null,
   state: BrainQualityTranscriptRow["state"],
+  blinded: boolean | null = null,
 ): BrainQualityTranscriptRow => ({
   promptVersion,
   proposerModel,
   objected: state === "contested" || state === "refuted",
   state,
+  blinded,
 });
 
 describe("buildBrainQualityCard — documents read by a model", () => {
@@ -97,6 +99,75 @@ describe("buildBrainQualityCard — agreement rate per proposer model", () => {
     const row = rows.find((r) => r.label === "Agreement rate — groq/llama")!;
     expect(row.status).toBe("ok");
     expect(row.value).toBeCloseTo(0.75);
+  });
+});
+
+describe("buildBrainQualityCard — second opinion, blind vs. not (B2)", () => {
+  it("is not enough data when one arm (or both) is below OBJECTION_MIN_ROUNDS", () => {
+    const transcripts = [
+      ...Array.from({ length: OBJECTION_MIN_ROUNDS - 1 }, () => round("v2", "groq/a", "contested", true)),
+      ...Array.from({ length: OBJECTION_MIN_ROUNDS + 5 }, () => round("v2", "groq/a", "agreed", false)),
+    ];
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion, blind vs. not")!;
+    expect(row.status).toBe("not_enough");
+    expect(row.value).toBeNull();
+  });
+
+  it("reports each arm's objection rate once both clear OBJECTION_MIN_ROUNDS", () => {
+    const transcripts = [
+      ...Array.from({ length: 12 }, () => round("v2", "groq/a", "agreed", true)),
+      ...Array.from({ length: 3 }, () => round("v2", "groq/a", "contested", true)),
+      ...Array.from({ length: 10 }, () => round("v2", "groq/a", "contested", false)),
+      ...Array.from({ length: 5 }, () => round("v2", "groq/a", "agreed", false)),
+    ];
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion, blind vs. not")!;
+    expect(row.status).toBe("ok");
+    // blind arm: 3/15 objected = 20%; not-blind arm: 10/15 objected = 67%.
+    expect(row.detail).toContain("20%");
+    expect(row.detail).toContain("67%");
+  });
+
+  it("never counts a transcript with no recorded blinded value into either arm", () => {
+    const transcripts = Array.from({ length: 30 }, () => round("v2", "groq/a", "agreed", null));
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion, blind vs. not")!;
+    expect(row.status).toBe("not_enough");
+  });
+});
+
+describe("buildBrainQualityCard — second opinion may not be blind (B2 agreement-gap alarm)", () => {
+  it("is not enough data below two models with N >= 20 each", () => {
+    const transcripts = Array.from({ length: 19 }, () => round("v2", "groq/a", "agreed"));
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion may not be blind")!;
+    expect(row.status).toBe("not_enough");
+  });
+
+  it("flags 'watch' when two models' agreement rates differ by more than the gap ceiling", () => {
+    const transcripts = [
+      ...Array.from({ length: 20 }, () => round("v2", "groq/llama", "agreed")),
+      ...Array.from({ length: 16 }, () => round("v2", "groq/other", "contested")),
+      ...Array.from({ length: 4 }, () => round("v2", "groq/other", "agreed")),
+    ];
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion may not be blind")!;
+    expect(row.status).toBe("watch");
+    expect(row.value).toBeGreaterThan(AGREEMENT_GAP_CEILING);
+    expect(row.detail).toContain("groq/llama");
+    expect(row.detail).toContain("groq/other");
+  });
+
+  it("stays 'ok' when models agree closely, once both clear N >= 20", () => {
+    const transcripts = [
+      ...Array.from({ length: 20 }, () => round("v2", "groq/llama", "agreed")),
+      ...Array.from({ length: 19 }, () => round("v2", "groq/other", "agreed")),
+      ...Array.from({ length: 1 }, () => round("v2", "groq/other", "contested")),
+    ];
+    const rows = buildBrainQualityCard({ funnel: [], fetchedCount: 0, transcripts, modes: ALL_OFF });
+    const row = rows.find((r) => r.label === "Second opinion may not be blind")!;
+    expect(row.status).toBe("ok");
   });
 });
 

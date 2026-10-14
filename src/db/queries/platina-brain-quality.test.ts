@@ -10,6 +10,7 @@ describe("B0 brain-quality queries filter workspace_id in the generated SQL", ()
     expect(sql).toContain('"proposer_model"');
     expect(sql).toContain('"objected"');
     expect(sql).toContain('"state"');
+    expect(sql).toContain('"blinded"');
     expect(params).toContain("ws_a");
   });
 
