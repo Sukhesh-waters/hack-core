@@ -242,22 +242,32 @@ export async function planAnalysis(params: {
       raw: signal.raw ?? null,
       fetchedAt: new Date(signal.fetchedAt),
     });
+    // Fails open: a broken expectation read/write (e.g. migration 0090 not
+    // applied yet) analyses the page exactly as with the stage off — the
+    // filter may only ever save a model call, never block the live job.
+    let decision: ReturnType<typeof decideSurprise> | null = null;
     if (observation) {
-      const expectation = await surprise.loadExpectation(observation.key);
-      const decision = decideSurprise({
-        expectation,
-        observed: observation.value,
-        floor: surprise.floor,
-        floorSd: observation.floorSd,
-        auditShare: surprise.auditShare,
-        firstSeen: observation.firstSeen,
-        hasDateOrPrice: observation.hasDateOrPrice,
-        docId: surprise.docId,
-        sided: observation.sided,
-      });
-      // Persisted for EVERY observation, surprising or not — see surprise.ts.
-      await surprise.saveExpectation(observation.key, decision.next);
-
+      try {
+        const expectation = await surprise.loadExpectation(observation.key);
+        decision = decideSurprise({
+          expectation,
+          observed: observation.value,
+          floor: surprise.floor,
+          floorSd: observation.floorSd,
+          auditShare: surprise.auditShare,
+          firstSeen: observation.firstSeen,
+          hasDateOrPrice: observation.hasDateOrPrice,
+          docId: surprise.docId,
+          sided: observation.sided,
+        });
+        // Persisted for EVERY observation, surprising or not — see surprise.ts.
+        await surprise.saveExpectation(observation.key, decision.next);
+      } catch (error) {
+        console.warn("[surprise] filter unavailable, analysing as usual:", error instanceof Error ? error.message : error);
+        decision = null;
+      }
+    }
+    if (decision) {
       if (surprise.mode === "on" && decision.action === "skip") {
         return { action: "skip", reason: decision.reason, cause: "surprise" };
       }

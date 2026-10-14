@@ -214,6 +214,27 @@ describe("B4 surprise filter — mode off / absent (byte-identical today)", () =
     expect(loadExpectation).not.toHaveBeenCalled();
     expect(saveExpectation).not.toHaveBeenCalled();
   });
+
+  it.each(["on", "shadow"] as const)(
+    "mode '%s' fails open: a broken expectation store (table not migrated) analyses as if the stage were off",
+    async (mode) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const { deps } = fakeSurprise(mode);
+      deps.loadExpectation = vi.fn(async () => {
+        throw new Error('relation "platina_expectations" does not exist');
+      });
+      const plan = await planAnalysis({
+        signal,
+        subject: competitor,
+        loadPrevious: () => Promise.resolve({ title: signal.title, body: signal.body, fetchedAt: new Date("2026-09-14T09:00:00Z") }),
+        surprise: deps,
+      });
+      expect(plan.action).toBe("analyse");
+      expect(plan).not.toHaveProperty("surprise");
+      expect(plan).not.toHaveProperty("audit");
+      warn.mockRestore();
+    },
+  );
 });
 
 describe("B4 surprise filter — novelty (web/press/trade pages)", () => {
