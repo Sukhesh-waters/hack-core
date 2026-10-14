@@ -12,6 +12,7 @@ import {
   markSignalSkipped,
   releaseSignal,
 } from "@/db/queries/platina";
+import { getExpectation, upsertExpectation } from "@/db/queries/platina-expectations";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { ANALYSIS_GLOBAL_CONCURRENCY, ANALYSIS_THROTTLE } from "@/lib/platina/analysis";
 import { planAnalysis } from "@/lib/platina/analysis-plan";
@@ -107,6 +108,26 @@ async function measureGateInputs(
  * (true for "on", a 50/50 split by signal id for "shadow", else false) is
  * stored on the transcript's `blinded` column — unchanged cost either way,
  * same one challenger call (plan §5 B2).
+ *
+ * B4: `modeOf(config, "surprise")` is read BEFORE the "plan" step (unlike
+ * challenger/gate above) because `planAnalysis` itself needs it to decide
+ * whether to skip — the surprise dependency's load/save calls run inside
+ * that same step.run, so a replay never double-saves the expectation
+ * (Inngest memoizes a completed step). "off" costs one extra cheap
+ * `getWorkspaceConfig` read (now fetched before, not after, the plan step)
+ * and nothing else — no expectation read/write, byte-identical skip/analyse
+ * decision either way (plan §2.1, §11.5). mode="on" and the statistic says
+ * skip -> `plan.cause === "surprise"`, handled by the EXISTING generic skip
+ * branch below (no special-casing needed: `analysisWrites`/`markSignalSkipped`
+ * already forward any `BrainSkipCause` as-is). mode="shadow" never skips;
+ * `plan.surprise` carries what the filter WOULD have decided, logged once
+ * here, stage "surprise", decision "surprise_shadow" — independent of the
+ * interrogation mode fork below. mode="on" and the statistic said skip but
+ * the audit sample chose to analyse anyway -> `plan.audit === true`; the
+ * final "processed" step below labels that document's funnel decision
+ * "audit_sample" instead of "analysed" (both already counted as "reached a
+ * model" by brain-telemetry.ts's `summariseFunnel` — anticipated when B0
+ * wrote that set).
  */
 export const platinaSignalAnalyze = inngest.createFunction(
   {
@@ -142,7 +163,7 @@ export const platinaSignalAnalyze = inngest.createFunction(
         // One shape either way: an unlinked source is honestly nameless, not
         // a different type the callers below have to narrow.
         if (!brand) {
-          return { kind: null, brandName: null, clientName: null, sourceKind };
+          return { kind: null, brandName: null, clientName: null, sourceKind, brandId: null };
         }
         const parent =
           brand.kind === "competitor" && brand.parentBrandId
@@ -153,12 +174,23 @@ export const platinaSignalAnalyze = inngest.createFunction(
           brandName: brand.name as string | null,
           clientName: parent?.name ?? null,
           sourceKind,
+          // B4 — the entity this scan spec watches, keys the per-brand
+          // engagement/ads expectation (src/lib/platina/surprise.ts
+          // expectationKey). Not used anywhere pre-B4.
+          brandId: brand.id as string | null,
         };
       });
 
+      // B4 — read before "plan" (unlike challenger/gate's modes, read after):
+      // planAnalysis itself needs this to decide whether to skip. "off" costs
+      // one cheap config read and nothing else (see file header).
+      const config = await step.run("config", () => getWorkspaceConfig(workspaceId));
+      const surpriseMode = modeOf(config, "surprise");
+
       // One tested decision (lib/platina/analysis-plan.ts): own-brand page,
-      // low-value page, or an analysis input that names the competitor, the
-      // client and what changed. A skip here means no provider is ever called.
+      // low-value page, surprise-filter skip, or an analysis input that names
+      // the competitor, the client and what changed. A skip here means no
+      // provider is ever called.
       const plan = await step.run("plan", () =>
         planAnalysis({
           signal: {
@@ -169,6 +201,7 @@ export const platinaSignalAnalyze = inngest.createFunction(
             sourceKind: signal.sourceKind,
             fetchedAt: signal.fetchedAt,
             metrics: signal.metrics,
+            raw: signal.raw,
           },
           subject,
           loadPrevious: () =>
@@ -177,6 +210,18 @@ export const platinaSignalAnalyze = inngest.createFunction(
               signal.canonicalUrl,
               new Date(signal.fetchedAt),
             ),
+          ...(surpriseMode !== "off"
+            ? {
+                surprise: {
+                  mode: surpriseMode,
+                  loadExpectation: (key: string) => getExpectation(workspaceId, key),
+                  saveExpectation: (key: string, next) => upsertExpectation(workspaceId, key, next),
+                  docId: signal.id,
+                  floor: config?.surpriseFloor,
+                  auditShare: config?.surpriseAuditShare,
+                },
+              }
+            : {}),
         }),
       );
 
@@ -189,6 +234,9 @@ export const platinaSignalAnalyze = inngest.createFunction(
       };
 
       if (plan.action === "skip") {
+        // Already generic: analysisWrites/markSignalSkipped forward any
+        // BrainSkipCause as-is, so cause "surprise" (mode "on") needs no
+        // special-casing here — same branch as own_brand/low_value.
         const writes = analysisWrites(plan, undefined, writeContext);
         await step.run("processed-skip", async () => {
           if (writes.skip) {
@@ -208,7 +256,31 @@ export const platinaSignalAnalyze = inngest.createFunction(
         return { skipped: plan.reason };
       }
 
-      const config = await step.run("config", () => getWorkspaceConfig(workspaceId));
+      // B4, mode "shadow" only: what the filter would have decided, logged
+      // once here — independent of the interrogation mode fork below, and
+      // never gating anything (the document is always analysed in shadow).
+      if (plan.surprise) {
+        await step.run("surprise-shadow", () =>
+          recordBrainEvent({
+            workspaceId,
+            stage: "surprise",
+            decision: "surprise_shadow",
+            subjectId: signal.id,
+            detail: {
+              wouldSkip: plan.surprise!.wouldSkip,
+              reason: plan.surprise!.reason,
+              deviation: plan.surprise!.deviation,
+            },
+          }),
+        );
+      }
+      // B4, mode "on" only: the statistic said skip, but the deterministic
+      // audit sample analysed it anyway (plan §5 B4). Both "audit_sample"
+      // and "analysed" already count as "reached a model" in
+      // brain-telemetry.ts's summariseFunnel (anticipated when B0 wrote that
+      // set) — this only changes which of the two is recorded below.
+      const analysisOutcomeDecision = plan.audit ? "audit_sample" : "analysed";
+
       const floors = config
         ? {
             contestedFloor: config.contestedFloor,
@@ -332,10 +404,18 @@ export const platinaSignalAnalyze = inngest.createFunction(
           await recordBrainEvent({
             workspaceId,
             stage: "analysis",
-            decision: "analysed",
+            decision: analysisOutcomeDecision,
             subjectId: signal.id,
             promptVersion: ANALYSIS_PROMPT_VERSION,
-            detail: { state: result.result.state, changed: plan.changed, providers: result.providers },
+            detail: {
+              state: result.result.state,
+              changed: plan.changed,
+              providers: result.providers,
+              // B4 — the spot-check's own result (plan §5 B4): did the
+              // model find anything on this would-skip document? Only
+              // meaningful (and only read) when decision is "audit_sample".
+              ...(plan.audit ? { foundSomething: Boolean(writes.finding) || Boolean(brainChunkId) } : {}),
+            },
           });
         });
         return { analysed: signal.id, state: result.result.state };
@@ -571,10 +651,15 @@ export const platinaSignalAnalyze = inngest.createFunction(
         await recordBrainEvent({
           workspaceId,
           stage: "analysis",
-          decision: "analysed",
+          decision: analysisOutcomeDecision,
           subjectId: signal.id,
           promptVersion: INTERROGATION_PROMPT_VERSION,
-          detail: { state: result.result.state, changed: plan.changed, providers: result.providers },
+          detail: {
+            state: result.result.state,
+            changed: plan.changed,
+            providers: result.providers,
+            ...(plan.audit ? { foundSomething: Boolean(writes.finding) || Boolean(brainChunkId) } : {}),
+          },
         });
       });
       return { analysed: signal.id, state: result.result.state };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { brainQualityTranscriptsQuery, fetchedDocumentCountQuery } from "./platina-brain-quality";
+import { auditSampleDetailQuery, brainQualityTranscriptsQuery, fetchedDocumentCountQuery } from "./platina-brain-quality";
 
 describe("B0 brain-quality queries filter workspace_id in the generated SQL", () => {
   it("brainQualityTranscriptsQuery filters workspace and since, selects the tracking columns", () => {
@@ -20,5 +20,14 @@ describe("B0 brain-quality queries filter workspace_id in the generated SQL", ()
     expect(sql).toContain('"platina_signal_documents"."fetched_at" >= ');
     expect(sql).toMatch(/count\(\*\)/i);
     expect(params).toContain("ws_a");
+  });
+
+  it("auditSampleDetailQuery filters workspace, stage='analysis', decision='audit_sample' and since", () => {
+    const { sql, params } = auditSampleDetailQuery("ws_a", new Date("2026-01-01")).toSQL();
+    expect(sql).toContain('"platina_brain_telemetry"."workspace_id" = ');
+    expect(sql).toContain('"platina_brain_telemetry"."stage" = ');
+    expect(sql).toContain('"platina_brain_telemetry"."decision" = ');
+    expect(sql).toContain('"platina_brain_telemetry"."created_at" >= ');
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "analysis", "audit_sample"]));
   });
 });

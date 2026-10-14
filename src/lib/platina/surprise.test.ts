@@ -172,6 +172,8 @@ describe("decideSurprise — the newsroom vs. the rotating widget", () => {
     // text, which is why a magnitude filter would never flag anything here.
     // Novelty (word overlap with recent versions) has real spread instead —
     // some releases reuse more of the page's own boilerplate than others.
+    // Novelty is a `sided: "up"` key (open finding 1): only a MORE-novel-
+    // than-usual release is worth a second look.
     const history = [0.55, 0.7, 0.6, 0.65, 0.58, 0.72];
     let e: Expectation | null = null;
     for (const n of history) e = updateExpectation(e, n);
@@ -182,9 +184,10 @@ describe("decideSurprise — the newsroom vs. the rotating widget", () => {
       floorSd: 0.05,
       auditShare: 0,
       docId: "newsroom-today",
+      sided: "up",
     });
     expect(result.action).toBe("analyse");
-    expect(result.reason).toBe("bigger than this page's usual change");
+    expect(result.reason).toBe("more new than usual");
   });
 
   it("WIDGET: a rotating 'latest posts' block converges to low, tight novelty and is skipped once warm", () => {
@@ -200,9 +203,71 @@ describe("decideSurprise — the newsroom vs. the rotating widget", () => {
       floorSd: 0.05,
       auditShare: 0, // this test is about the skip, not the audit sample (see below)
       docId: "widget-today",
+      sided: "up",
     });
     expect(result.action).toBe("skip");
     expect(result.reason).toBe("nothing unusual compared with this page's normal changes");
+  });
+});
+
+describe("decideSurprise — sided deviation (continuation handoff §2, open finding 1)", () => {
+  const warm: Expectation = { n: 30, mean: 0.5, m2: 29 * 0.05 ** 2 }; // sd = 0.05
+
+  it("sided 'up': a deviation BELOW the mean never triggers analysis on its own — it reads as less new than usual, not a reason to analyse", () => {
+    const result = decideSurprise({
+      expectation: warm,
+      observed: 0.1, // far below the mean — a large |deviation|, but downward
+      floorSd: 0.02,
+      auditShare: 0,
+      docId: "below-mean",
+      sided: "up",
+    });
+    expect(result.action).not.toBe("analyse");
+    expect(result.action).toBe("skip");
+  });
+
+  it("sided 'up': the SAME upward distance from the mean does trigger analysis, worded 'more new than usual'", () => {
+    const result = decideSurprise({
+      expectation: warm,
+      observed: 0.9, // same distance from the mean as 0.1 above, but upward
+      floorSd: 0.02,
+      auditShare: 0,
+      docId: "above-mean",
+      sided: "up",
+    });
+    expect(result.action).toBe("analyse");
+    expect(result.reason).toBe("more new than usual");
+  });
+
+  it("sided 'both' (the default — eng:/ads: keys): a downward deviation DOES trigger analysis, worded 'different from the usual' rather than 'bigger'", () => {
+    const result = decideSurprise({
+      expectation: warm,
+      observed: 0.1,
+      floorSd: 0.02,
+      auditShare: 0,
+      docId: "below-mean-both",
+    });
+    expect(result.action).toBe("analyse");
+    expect(result.reason).toBe("different from the usual");
+    expect(result.reason).not.toContain("bigger");
+  });
+
+  it("sided 'both': an upward deviation keeps the original 'bigger than this page's usual change' wording", () => {
+    const result = decideSurprise({
+      expectation: warm,
+      observed: 0.9,
+      floorSd: 0.02,
+      auditShare: 0,
+      docId: "above-mean-both",
+    });
+    expect(result.action).toBe("analyse");
+    expect(result.reason).toBe("bigger than this page's usual change");
+  });
+
+  it("omitting `sided` defaults to 'both', unchanged from before this fix", () => {
+    const explicit = decideSurprise({ expectation: warm, observed: 0.1, floorSd: 0.02, auditShare: 0, docId: "x", sided: "both" });
+    const defaulted = decideSurprise({ expectation: warm, observed: 0.1, floorSd: 0.02, auditShare: 0, docId: "x" });
+    expect(defaulted).toEqual(explicit);
   });
 });
 
@@ -248,6 +313,10 @@ describe("decideSurprise — never contains the internal vocabulary CLAUDE.md re
       decideSurprise({ expectation: e, observed: 1, floorSd: 0.05, hasDateOrPrice: true, docId: "c" }),
       decideSurprise({ expectation: e, observed: 5, floorSd: 0.05, auditShare: 0, docId: "d" }),
       decideSurprise({ expectation: e, observed: 0.5, floorSd: 0.05, auditShare: 0, docId: "e" }),
+      // Both sides of the sided fix (open finding 1), too.
+      decideSurprise({ expectation: e, observed: 5, floorSd: 0.05, auditShare: 0, docId: "f", sided: "up" }),
+      decideSurprise({ expectation: e, observed: 0.1, floorSd: 0.05, auditShare: 0, docId: "g", sided: "up" }),
+      decideSurprise({ expectation: e, observed: 0.1, floorSd: 0.05, auditShare: 0, docId: "h", sided: "both" }),
     ];
     for (const s of scenarios) expect(s.reason).not.toMatch(banned);
   });
