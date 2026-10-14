@@ -100,12 +100,24 @@ export function interestInsights(input: {
           `compan${companies === 1 ? "y" : "ies"}.${trend} Strongest: ${who}, ${fmt(top.value)}× on ${day(top.observedAt)}.`,
         sourceSignalIds: docsFor(input.signals, m.topic, "interest", m.region),
         confidence: sampleConfidence(m.n),
-        // B1: this IS a topic_momentum reading (recent vs. the 90 days
-        // before) stated in `content` as "that is up/down from …" — refuted
-        // if momentum falls back to parity (ratio below 1.0) within 30 days.
-        falsifier: { metric: "topic_momentum", subject: { topic: m.topic }, direction: "below", threshold: 1.0, window_days: 30 },
-        subjectKey: subjectKeyFor({ topic: m.topic }),
-        direction: "up",
+        // B1: the testable part is the trend `content` states ("up/down
+        // from … in the 90 days before"), checked as topic_momentum in the
+        // stated direction: an "up" claim is refuted if momentum falls back
+        // below parity within 30 days, a "down" claim if it rises above it.
+        // No trend stated (no baseline) → nothing to test, so no falsifier.
+        ...(m.change === null
+          ? { falsifier: null, subjectKey: subjectKeyFor({ topic: m.topic }), direction: "none" as const }
+          : {
+              falsifier: {
+                metric: "topic_momentum" as const,
+                subject: { topic: m.topic },
+                direction: m.change >= 0 ? ("below" as const) : ("above" as const),
+                threshold: 1.0,
+                window_days: 30 as const,
+              },
+              subjectKey: subjectKeyFor({ topic: m.topic }),
+              direction: m.change >= 0 ? ("up" as const) : ("down" as const),
+            }),
       });
     } else {
       out.push({
@@ -116,18 +128,13 @@ export function interestInsights(input: {
           `${Math.round(top.value)} days — an ad kept that long is one the advertiser believes in.`,
         sourceSignalIds: docsFor(input.signals, m.topic, "pressure", m.region),
         confidence: sampleConfidence(m.n),
-        // B1: ad_days_running is the closest registry metric (median days
-        // running, same table). The claim is "pressure holds" — refuted if
-        // the advertiser's days-running falls below what was observed now.
-        falsifier: {
-          metric: "ad_days_running",
-          subject: { brand: who, topic: m.topic },
-          direction: "below",
-          threshold: Math.round(top.value),
-          window_days: 30,
-        },
+        // B1: no falsifier. The insight describes what is running now; it
+        // predicts nothing. A test against the longest-running ad's days
+        // would be refuted by the registry's own measure (the MEDIAN days
+        // running), which almost always sits below the maximum.
+        falsifier: null,
         subjectKey: subjectKeyFor({ brand: who, topic: m.topic }),
-        direction: "up",
+        direction: "none",
       });
     }
   }

@@ -83,8 +83,13 @@ describe("interestInsights", () => {
     expect(a[0].content).toBe(b[0].content);
   });
 
-  it("B1: an interest insight carries a code-built topic_momentum falsifier, direction 'up', content text unchanged", () => {
-    const [insight] = interestInsights({ client: { id: "waters", name: "Waters" }, names, momentum: [ms()], signals });
+  it("B1: a rising interest insight is tested as momentum falling back below parity, content text unchanged", () => {
+    const [insight] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
+      signals,
+    });
     expect(insight.content).toContain("posts about mass spectrometry drew 1.24×"); // unchanged by B1
     expect(insight.falsifier).toEqual({
       metric: "topic_momentum",
@@ -97,7 +102,25 @@ describe("interestInsights", () => {
     expect(insight.direction).toBe("up");
   });
 
-  it("B1: a pressure insight carries a code-built ad_days_running falsifier keyed to the longest-running advertiser", () => {
+  it("B1: a falling interest insight is tested in ITS direction (refuted if momentum rises above parity)", () => {
+    const [insight] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ recent: 0.7, baseline: 1.3, change: -0.6 })],
+      signals,
+    });
+    expect(insight.content).toContain("That is down from");
+    expect(insight.falsifier).toMatchObject({ metric: "topic_momentum", direction: "above", threshold: 1.0 });
+    expect(insight.direction).toBe("down");
+  });
+
+  it("B1: an interest insight with no stated trend (no baseline) has nothing to test", () => {
+    const [insight] = interestInsights({ client: { id: "waters", name: "Waters" }, names, momentum: [ms()], signals });
+    expect(insight.falsifier).toBeNull();
+    expect(insight.direction).toBe("none");
+  });
+
+  it("B1: a pressure insight carries NO falsifier — it describes what runs now and predicts nothing", () => {
     const [p] = interestInsights({
       client: { id: "waters", name: "Waters" },
       names,
@@ -105,15 +128,9 @@ describe("interestInsights", () => {
       signals: [sig({ signalKind: "pressure", region: "AE", value: 64, brandId: "agilent", documentId: "ad1" })],
     });
     expect(p.content).toContain("(Agilent) has run 64 days"); // unchanged by B1
-    expect(p.falsifier).toEqual({
-      metric: "ad_days_running",
-      subject: { brand: "Agilent", topic: "mass spectrometry" },
-      direction: "below",
-      threshold: 64,
-      window_days: 30,
-    });
+    expect(p.falsifier).toBeNull();
     expect(p.subjectKey).toBe("brand:Agilent|topic:mass spectrometry");
-    expect(p.direction).toBe("up");
+    expect(p.direction).toBe("none");
   });
 });
 
@@ -244,7 +261,7 @@ describe("writers", () => {
       workspaceId: "ws",
       client: { id: "waters", name: "Waters" },
       names,
-      momentum: [ms()],
+      momentum: [ms({ baseline: 0.9, change: 0.34 })],
       signals: [sig({})],
       now,
     });
