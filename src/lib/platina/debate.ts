@@ -9,10 +9,13 @@ import { BLIND_CHALLENGER_SYSTEM, blindChallengerInput } from "./challenger";
 import {
   nextRoundAllowed,
   resolve,
+  resolveV2,
   type Attack,
   type Claim,
   type ResolveResult,
+  type ResolveState,
 } from "./contradiction";
+import { validateFalsifier } from "./falsifier-metrics";
 import {
   INTERROGATION_PROMPT_VERSION,
   INTERROGATION_SYSTEM,
@@ -179,6 +182,18 @@ export type ChallengerRoundOptions = {
   mode: BrainMode;
 };
 
+/** `runInterrogationRound`'s 5th argument (B3, D7) — absent/undefined means mode "off" (today's v1 `resolve()`, unconditionally). */
+export type GateRoundOptions = {
+  mode: BrainMode;
+};
+
+/** Shadow-only telemetry (plan §5 B3: "log telemetry (stage 'gate', detail { oldState, newState, changed })"). Present only when gate mode is "shadow". */
+export type GateResolveShadow = {
+  oldState: ResolveState;
+  newState: ResolveState;
+  changed: boolean;
+};
+
 /**
  * B1 — the interrogation v2 round (plan §5 B1). Same one-call-then-challenge
  * shape as `runContradictionRound` (kept untouched above, for mode="off").
@@ -206,12 +221,27 @@ export type ChallengerRoundOptions = {
  * transcript from), but `interrogation` on the return carries the
  * validation failure so `signal-analyze.ts` can act on it (shadow:
  * grade_state "insufficient"; on: skip, no Brain write).
+ *
+ * B3 (D7): the 5th argument, `gateOpts`, is the GATE's own mode
+ * (`modeOf(config, "gate")`), independent of interrogation/challenger mode —
+ * it only has an effect here because this IS the v2 round (the v1 round,
+ * `runContradictionRound` above, never consults it: there is no validated
+ * evidence coverage or falsifier to build a v2 score from there). "off"
+ * (absent/undefined) keeps today's `resolve()` unconditionally. "shadow"
+ * computes BOTH `resolve()` and `resolveV2()`, returns the OLD (v1) result
+ * as `result` (today's behaviour, unchanged), and carries the comparison in
+ * `gateShadow` for the caller to log. "on" returns `resolveV2()`'s result as
+ * `result` — `TEMPORARY_CONFIDENCE_SPECIFICITY` still computes `claim.specificity`
+ * below (so `claim` keeps its shape for callers/tests), but resolveV2 has no
+ * parameter to read it from, which is what drops it from the decision; the
+ * model's stated `confidence` stays on the return value for telemetry only.
  */
 export async function runInterrogationRound(
   numbered: { input: string; spans: Record<string, string> },
   floors?: { contestedFloor?: number; qualifiedFloor?: number },
   validateOpts?: ValidateInterrogationOptions,
   challengerOpts?: ChallengerRoundOptions,
+  gateOpts?: GateRoundOptions,
 ) {
   if (nextRoundAllowed()) {
     throw new Error("unreachable: a second contradiction round is forbidden");
@@ -286,7 +316,40 @@ export async function runInterrogationRound(
     specificity: TEMPORARY_CONFIDENCE_SPECIFICITY[parsed?.confidence ?? "medium"],
   };
   const attack = parseAttack(challengerRaw);
-  const result = downgradeIfNotIndependent(resolve(claim, attack, floors), independent);
+  const v1Result = downgradeIfNotIndependent(resolve(claim, attack, floors), independent);
+
+  // B3 (D7): deterministic inputs ONLY — nothing the proposer reported about
+  // itself. `evidenceCoverage` is checked against the input's own span map
+  // (not what the model claimed to cite), `falsifierValid` is a registry
+  // lookup (facts are falsifier-exempt, D1), `confounderStrength` is the
+  // challenger's own judgement — the same value resolve() already uses.
+  const totalSpans = Object.keys(numbered.spans).length;
+  const citedValidated = interrogation.ok ? interrogation.value.why.length : 0;
+  const evidenceCoverage = totalSpans > 0 ? citedValidated / totalSpans : 0;
+  const falsifierValid =
+    parsed === null
+      ? false
+      : parsed.kind === "fact"
+        ? true
+        : parsed.falsifier !== null && validateFalsifier(parsed.falsifier, validateOpts).ok;
+
+  const gateMode = gateOpts?.mode ?? "off";
+  let result = v1Result;
+  let gateShadow: GateResolveShadow | undefined;
+  if (gateMode !== "off") {
+    const v2Result = downgradeIfNotIndependent(
+      resolveV2(
+        { evidenceCoverage, confounderStrength: attack.confounderStrength, falsifierValid, strongestObjection: attack.strongestObjection },
+        floors,
+      ),
+      independent,
+    );
+    if (gateMode === "shadow") {
+      gateShadow = { oldState: v1Result.state, newState: v2Result.state, changed: v1Result.state !== v2Result.state };
+    } else {
+      result = v2Result;
+    }
+  }
 
   return {
     claim,
@@ -305,6 +368,8 @@ export async function runInterrogationRound(
     promptVersion: INTERROGATION_PROMPT_VERSION,
     /** B2 — whether THIS round's challenger saw the blind prompt. False when challengerOpts is absent/"off", or "shadow" lost its coin flip. Stored on the transcript's `blinded` column. */
     blinded,
+    /** B3 — only set when gate mode is "shadow": what resolveV2 would have decided instead of today's `resolve()`, for signal-analyze.ts to log (stage "gate"). */
+    gateShadow,
   };
 }
 

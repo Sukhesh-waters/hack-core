@@ -14,6 +14,7 @@ import {
   listInterestSignals,
   supersedeBrainChunks,
 } from "@/db/queries/platina";
+import { getBrainModes } from "@/db/queries/platina-brain";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { embedText } from "./embed";
 import { BASELINE_DAYS, RECENT_DAYS, topicMomentum } from "./interest";
@@ -61,7 +62,10 @@ export async function syncClientInsights(
   const competitors = await listCompetitorsOf(workspaceId, client.id);
   const ids = [client.id, ...competitors.map((c) => c.id)];
   const since = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * 86_400_000);
-  const signals = await listInterestSignals(workspaceId, ids, since);
+  const [signals, modes] = await Promise.all([
+    listInterestSignals(workspaceId, ids, since),
+    getBrainModes(workspaceId),
+  ]);
   const result = await runWithAiCost({ workspaceId, purpose: "market-insights" }, () =>
     writeClientInsights(deps, {
       workspaceId,
@@ -78,6 +82,11 @@ export async function syncClientInsights(
         brandId: s.brandId,
       })),
       now,
+      // B3 (gate) — the SAME per-workspace gate mode the debate's claims use
+      // (plan §5 B3: "it applies to market-insight-writer momentum insights
+      // too"), read once here rather than threaded in from a caller that
+      // has no other reason to know about Brain modes.
+      gateMode: modes.gate,
     }),
   );
   return announce(workspaceId, result);

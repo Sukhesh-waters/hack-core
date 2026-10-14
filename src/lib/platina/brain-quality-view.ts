@@ -77,6 +77,16 @@ const STOP_REASON_LABEL: Record<string, string> = {
   surprise: "Nothing unusual compared with this page's normal changes",
 };
 
+/** B3 — telemetry stage "gate"'s own decision codes, plain-worded (plan §8 "Gate rejections", §9). */
+const GATE_REASON_LABEL: Record<string, string> = {
+  schema: "The claim could not be tested",
+  testability: "Not enough data to test yet",
+  significance: "Not clearly different from usual",
+};
+
+/** B3 — below this many stage="gate" refusals in the window, "not enough data yet" rather than a thin breakdown. */
+export const GATE_HELD_MIN_N = 5;
+
 function stopReasonLabel(decision: string): string {
   return STOP_REASON_LABEL[decision] ?? decision;
 }
@@ -245,6 +255,35 @@ function legacyRow(transcripts: BrainQualityTranscriptRow[]): BrainQualityRow | 
   };
 }
 
+/**
+ * B3 — "Held by the quality check" (plan §5 B3, §8 "Gate rejections … per
+ * reason … visible, not zero"). Reads telemetry stage "gate" ONLY (never
+ * stage "analysis") — the gate's own schema/testability/significance
+ * decisions, logged by signal-analyze.ts and market-insight-writer.ts
+ * (B3's measured-insight significance check is the SAME gate, so its holds
+ * are pooled into this one row). A decision code outside
+ * `GATE_REASON_LABEL` (e.g. "pass", "resolve_v2") never reaches here — this
+ * row counts refusals only.
+ */
+function gateHeldRow(funnel: BrainFunnelRow[]): BrainQualityRow | null {
+  const byReason: Record<string, number> = {};
+  let total = 0;
+  for (const row of funnel) {
+    if (row.stage !== "gate" || !(row.decision in GATE_REASON_LABEL)) continue;
+    byReason[row.decision] = (byReason[row.decision] ?? 0) + row.count;
+    total += row.count;
+  }
+  if (total === 0) return null;
+  const label = "Held by the quality check";
+  if (total < GATE_HELD_MIN_N) {
+    return { label, value: null, detail: "Not enough data yet.", status: "not_enough" };
+  }
+  const parts = Object.entries(byReason)
+    .sort((a, b) => b[1] - a[1])
+    .map(([decision, count]) => `${GATE_REASON_LABEL[decision]}: ${count}`);
+  return { label, value: total, detail: parts.join("; "), status: "ok" };
+}
+
 /** Each stage's mode in plain words. */
 function stageRows(modes: Record<BrainStage, BrainMode>): BrainQualityRow[] {
   return BRAIN_STAGES.map((stage) => {
@@ -261,6 +300,7 @@ function stageRows(modes: Record<BrainStage, BrainMode>): BrainQualityRow[] {
 /** Builds every row for the "Brain quality" card. Pure; no I/O. */
 export function buildBrainQualityCard(input: BrainQualityInput): BrainQualityRow[] {
   const legacy = legacyRow(input.transcripts);
+  const gateHeld = gateHeldRow(input.funnel);
   return [
     documentsReadRow(input.funnel, input.fetchedCount),
     ...objectionRows(input.transcripts),
@@ -268,6 +308,7 @@ export function buildBrainQualityCard(input: BrainQualityInput): BrainQualityRow
     ...agreementRows(input.transcripts),
     agreementGapRow(input.transcripts),
     ...(legacy ? [legacy] : []),
+    ...(gateHeld ? [gateHeld] : []),
     ...stageRows(input.modes),
   ];
 }

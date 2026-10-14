@@ -21,8 +21,53 @@ import { modeOf } from "@/lib/platina/brain-modes";
 import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
 import { ANALYSIS_PROMPT_VERSION, runContradictionRound, runInterrogationRound } from "@/lib/platina/debate";
 import { embedText } from "@/lib/platina/embed";
-import { INTERROGATION_PROMPT_VERSION } from "@/lib/platina/interrogation";
+import { measureDeps } from "@/lib/platina/falsifier-metrics-deps";
+import { FALSIFIER_METRICS, measureMetric, type FalsifierClaim, type FalsifierMetricId } from "@/lib/platina/falsifier-metrics";
+import { gateInsight, type GateResult, type GateSignificance, type GateTestability } from "@/lib/platina/insight-gate";
+import { chunkDirectionFor, INTERROGATION_PROMPT_VERSION } from "@/lib/platina/interrogation";
+import { BASELINE_DAYS, RECENT_DAYS } from "@/lib/platina/measurement-scales";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
+import { isSignificant, mannWhitneyOneSided, splitRecentBaseline } from "@/lib/platina/significance";
+
+const DAY_MS = 86_400_000;
+
+/**
+ * B3 — the significance check is scoped to the ONE registry metric that is
+ * actually framed as a recent-vs-baseline trend (`ratio_of_medians`); the
+ * others (`engagement_index`, `ad_days_running`, the per-row counts/latest
+ * metrics) are snapshots, not a stated direction to test against noise.
+ */
+const TREND_METRIC: FalsifierMetricId = "topic_momentum";
+
+/**
+ * B3 — testability and significance for one claim's falsifier, read through
+ * the real `measureDeps` (DB-backed). Pure arithmetic over what comes back
+ * lives in falsifier-metrics.ts/significance.ts; this is only the plumbing
+ * between them and the registry's declared minN — kept here (not in a
+ * shared lib module) because it is the one place a DB-backed reader and the
+ * job's own "now" meet.
+ */
+async function measureGateInputs(
+  workspaceId: string,
+  falsifier: FalsifierClaim,
+  now: Date,
+): Promise<{ testability: GateTestability; significance?: GateSignificance }> {
+  const metricId = falsifier.metric as FalsifierMetricId;
+  const def = FALSIFIER_METRICS[metricId];
+  const measured = await measureMetric(measureDeps, workspaceId, metricId, falsifier.subject, falsifier.window_days, now);
+  const testability: GateTestability = { n: measured.status === "not_measured" ? 0 : measured.n, minN: def.minN };
+
+  if (metricId !== TREND_METRIC) {
+    return { testability };
+  }
+  const lookbackFrom = new Date(now.getTime() - (RECENT_DAYS + BASELINE_DAYS) * DAY_MS);
+  const raw = await measureDeps[metricId](workspaceId, falsifier.subject, lookbackFrom, now);
+  const { recent, baseline } = splitRecentBaseline(raw, now);
+  const direction = chunkDirectionFor(falsifier); // the claim's OWN asserted direction (mirror of falsifier.direction)
+  const alternative = direction === "down" ? "less" : "greater";
+  const significance = isSignificant(mannWhitneyOneSided(recent, baseline, alternative));
+  return { testability, significance };
+}
 
 /**
  * Analyses exactly one signal document: debate -> transcript -> finding and
@@ -181,6 +226,10 @@ export const platinaSignalAnalyze = inngest.createFunction(
       // with. A workspace can watch the blind challenger in shadow before
       // its interrogation is itself "on".
       const challengerMode = modeOf(config, "challenger");
+      // B3 — the gate's OWN mode (plan §5 B3): only consulted inside the v2
+      // branch below, same reasoning as `challengerMode` above — the v1
+      // round has no validated evidence coverage or falsifier to gate.
+      const gateMode = modeOf(config, "gate");
 
       if (mode === "off") {
         // Inside a cost context so the daily AI cap applies and provider
@@ -314,21 +363,81 @@ export const platinaSignalAnalyze = inngest.createFunction(
 
       const result = await step.run("debate", () =>
         runWithAiCost({ workspaceId, purpose: "signal-analysis" }, () =>
-          runInterrogationRound(numbered, floors, { resolvesSubjectKey }, {
-            signalId: signal.id,
-            mode: challengerMode,
-          }),
+          runInterrogationRound(
+            numbered,
+            floors,
+            { resolvesSubjectKey },
+            { signalId: signal.id, mode: challengerMode },
+            { mode: gateMode },
+          ),
         ),
       );
+
+      // B3 (D7) — shadow only: what resolveV2 would have decided instead of
+      // today's resolve(), logged so §14's shadow numbers can be read before
+      // any flip to "on" (plan §5 B3, §10 D7). `result` above already used
+      // the old (v1) state for the write either way.
+      if (result.gateShadow) {
+        await recordBrainEvent({
+          workspaceId,
+          stage: "gate",
+          decision: "resolve_v2",
+          subjectId: signal.id,
+          promptVersion: INTERROGATION_PROMPT_VERSION,
+          detail: result.gateShadow,
+        });
+      }
+
+      const now = new Date();
+      // B3: only a validated claim/fact is worth gating — an invalid
+      // interrogation already has its own, more fundamental, "untestable"
+      // handling above (mode="on" skips before this point; mode="shadow"
+      // continues with grade_state "insufficient", gate or no gate). "off"
+      // costs nothing: no DB reads, gateResult stays undefined.
+      let gateResult: GateResult | undefined;
+      if (gateMode !== "off" && result.interrogation.ok) {
+        gateResult = await step.run("gate", async () => {
+          const value = result.interrogation.ok ? result.interrogation.value : null;
+          const falsifier = value?.kind === "claim" ? value.falsifier : null;
+          const measured = falsifier ? await measureGateInputs(workspaceId, falsifier, now) : undefined;
+          const verdict = gateInsight({
+            interrogation: result.interrogation,
+            falsifier: falsifier ? { metric: falsifier.metric } : null,
+            testability: measured?.testability ?? null,
+            significance: measured?.significance,
+            resolveState: result.result.state,
+          });
+          // One telemetry row per failing reason, coded by WHICH check
+          // failed (the job already knows this — no need to parse the
+          // plain-word `reasons` text back into a category). Pooled with
+          // market-insight-writer.ts's own "significance" holds into the
+          // Brain quality card's "Held by the quality check" row. There is
+          // no "schema" case to log here: this branch only ever runs once
+          // `result.interrogation.ok` is already true (checked above,
+          // before `step.run` is even called) — an invalid interrogation
+          // has its own, more fundamental, handling (see the comment above
+          // this block).
+          if (!verdict.pass) {
+            if (measured?.testability && measured.testability.n < measured.testability.minN) {
+              await recordBrainEvent({ workspaceId, stage: "gate", decision: "testability", subjectId: signal.id, detail: { n: measured.testability.n, minN: measured.testability.minN, mode: gateMode } });
+            }
+            if (measured?.significance && !measured.significance.significant) {
+              await recordBrainEvent({ workspaceId, stage: "gate", decision: "significance", subjectId: signal.id, detail: { reason: measured.significance.reason, mode: gateMode } });
+            }
+          }
+          return verdict;
+        });
+      }
 
       const v2: AnalysisWritesV2Input = {
         mode,
         interrogation: result.interrogation,
         parsed: result.parsed,
         signalDocumentId: signal.id,
-        now: new Date(),
+        now,
         promptVersion: INTERROGATION_PROMPT_VERSION,
         writtenBy: "interrogation-v1",
+        ...(gateResult ? { gate: { mode: gateMode, result: gateResult } } : {}),
       };
       const writes = analysisWrites(plan, result, writeContext, v2);
 

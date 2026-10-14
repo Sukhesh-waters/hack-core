@@ -16,7 +16,9 @@
  * unchanged" provable rather than asserted.
  */
 import type { BrainSkipCause } from "@/db/platina-schema";
+import type { BrainMode } from "./brain-modes";
 import type { Attack, Claim, ResolveResult } from "./contradiction";
+import type { GateResult } from "./insight-gate";
 import { chunkDirectionFor, type ValidateInterrogationResult, type Interrogation } from "./interrogation";
 import { subjectKeyFor, type FalsifierClaim } from "./falsifier-metrics";
 import { findingTitleFor } from "./finding-title";
@@ -90,6 +92,17 @@ export type AnalysisWritesV2Input = {
   now: Date;
   promptVersion: string;
   writtenBy: string;
+  /**
+   * B3 — the gate's OWN mode and already-computed verdict (the job computes
+   * `testability`/`significance` through DB-backed readers before calling
+   * `gateInsight`; this decision layer stays DB-free). "off" or omitted: no
+   * effect, today's v2 behaviour. "shadow": no effect either — the write
+   * proceeds exactly as today; the job logs the verdict for telemetry on
+   * its own, independent of what gets written. "on": a refusal (`!result.pass`)
+   * pre-empts the ordinary debate-state branch below with the "held" finding
+   * and no Brain chunk (plan §5 B3: "deterministic beats model").
+   */
+  gate?: { mode: BrainMode; result: GateResult };
 };
 
 export type FindingWrite = {
@@ -166,6 +179,32 @@ export function analysisWrites(
       transcript,
       skip: { reason: NOTHING_NEW_SKIP_REASON, cause: "nothing_new" },
       processed: false,
+    };
+  }
+
+  // B3, mode "on": a gate refusal pre-empts the ordinary debate-state branch
+  // below — "deterministic beats model" (plan §5 B3). The claim is NOT
+  // skipped (markSignalSkipped is never used here): the operator still sees
+  // it as a finding, with the hold reason in the summary, but it never
+  // becomes a retrievable Brain chunk. No agreement state, however strong
+  // (including "agreed"), reaches this branch and overrides it — the gate's
+  // own `result.pass` is the only thing consulted.
+  if (v2?.gate && v2.gate.mode === "on" && !v2.gate.result.pass) {
+    return {
+      transcript,
+      finding: {
+        title: findingTitleFor({
+          headline: debate.headline,
+          competitorName: context.competitorName,
+          claimText: debate.claim.text,
+          pageTitle: context.pageTitle,
+        }),
+        summary: `Held: ${v2.gate.result.reasons.join("; ")}`,
+        strongestObjection: debate.result.caveat ?? debate.attack.text,
+        status: "new",
+        useCase: findingUseCaseForSourceKind(context.sourceKind),
+      },
+      processed: true,
     };
   }
 

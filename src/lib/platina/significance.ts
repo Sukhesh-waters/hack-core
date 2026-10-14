@@ -12,9 +12,10 @@
  * computed p-value standing in for one.
  */
 
-import { MIN_INTEREST_N } from "./measurement-scales";
+import { BASELINE_DAYS, MIN_INTEREST_N, RECENT_DAYS } from "./measurement-scales";
 
 const EXACT_MAX_N = 20;
+const DAY_MS = 86_400_000;
 
 export type MannWhitneyResult = {
   /** U for the "recent" sample (ties contribute 0.5 each; see rankSumRecent). */
@@ -190,4 +191,30 @@ export function isSignificant(
     return { significant: true, reason: `p=${result.p} is below the ${p} significance level` };
   }
   return { significant: false, reason: `not clearly different from usual: p=${result.p} is at or above ${p}` };
+}
+
+/**
+ * Splits dated observations into the RECENT_DAYS/BASELINE_DAYS windows
+ * `mannWhitneyOneSided` expects (ages measured from `now`, the same ruler
+ * `interest.ts topicMomentum` and `falsifier-metrics.ts`'s `ratio_of_medians`
+ * aggregation already use — measurement-scales.ts, the "coastline" rule).
+ * Shared by market-insights.ts (B3's measured-insight significance check)
+ * and the B3 gate's own significance check on a `topic_momentum` claim, so
+ * both read the recent/baseline split off the same two numbers.
+ */
+export function splitRecentBaseline(
+  observations: { value: number; observedAt: Date }[],
+  now: Date,
+  recentDays: number = RECENT_DAYS,
+  baselineDays: number = BASELINE_DAYS,
+): { recent: number[]; baseline: number[] } {
+  const age = (o: { observedAt: Date }) => (now.getTime() - new Date(o.observedAt).getTime()) / DAY_MS;
+  const recent: number[] = [];
+  const baseline: number[] = [];
+  for (const o of observations) {
+    const a = age(o);
+    if (a >= 0 && a <= recentDays) recent.push(o.value);
+    else if (a > recentDays && a <= recentDays + baselineDays) baseline.push(o.value);
+  }
+  return { recent, baseline };
 }

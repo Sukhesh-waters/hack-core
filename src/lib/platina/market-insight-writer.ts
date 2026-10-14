@@ -8,6 +8,8 @@
  */
 import type { TopicMomentum } from "./interest";
 import type { FalsifierClaim } from "./falsifier-metrics";
+import type { BrainMode } from "./brain-modes";
+import { recordBrainEvent } from "./brain-telemetry";
 import {
   eventInsights,
   interestInsights,
@@ -56,11 +58,27 @@ async function apply(
   prefix: string,
   wanted: MarketInsight[],
   now: Date,
+  gateMode: BrainMode = "off",
 ): Promise<InsightWriteResult> {
   const active = await deps.listActive(workspaceId, prefix);
   const plan = planInsightWrites(wanted, active);
   let unembedded = 0;
   for (const insight of plan.insert) {
+    // B3 (gate): logged for every insight whose stated trend did not clear
+    // the significance check — "off/shadow -> content unchanged (shadow
+    // logs what would change)" (plan §5 B3). `recordBrainEvent` never
+    // throws, so this cannot turn a successful insight write into a failed
+    // one; it is also never awaited into the write path below (fire-and-forget,
+    // same as every other telemetry call in this codebase).
+    if (gateMode !== "off" && insight.gateCheck && !insight.gateCheck.significant) {
+      void recordBrainEvent({
+        workspaceId,
+        stage: "gate",
+        decision: "significance",
+        subjectId: insight.key,
+        detail: { reason: insight.gateCheck.reason, mode: gateMode, wouldChange: gateMode === "shadow" },
+      });
+    }
     // A router outage stores the insight without a vector (keyword search
     // still finds it) rather than dropping it — same as debate claims.
     const embedding = await deps.embed(insight.content).catch(() => null);
@@ -105,15 +123,18 @@ export function writeClientInsights(
     signals: InsightSignal[];
     /** B1: due_at anchor for a written falsifier. Defaults to now. */
     now?: Date;
+    /** B3 (gate) — defaults "off": today's B1 behaviour, byte-identical. */
+    gateMode?: BrainMode;
   },
 ): Promise<InsightWriteResult> {
   const wanted = interestInsights(input);
   const now = input.now ?? new Date();
+  const gateMode = input.gateMode ?? "off";
   // Both prefixes belong to this client; one pass per prefix keeps "no
   // longer holds" scoped to what this pass measured.
   return Promise.all([
-    apply(deps, input.workspaceId, `interest:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("interest:")), now),
-    apply(deps, input.workspaceId, `pressure:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("pressure:")), now),
+    apply(deps, input.workspaceId, `interest:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("interest:")), now, gateMode),
+    apply(deps, input.workspaceId, `pressure:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("pressure:")), now, gateMode),
   ]).then(([a, b]) => ({
     written: a.written + b.written,
     superseded: a.superseded + b.superseded,
