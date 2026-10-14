@@ -4,9 +4,12 @@ import {
   routeChatWithProvenance,
   type ProviderId,
 } from "@/lib/ai/router";
+import { BLIND_CHALLENGER_SYSTEM } from "./challenger";
 import {
+  CHALLENGER_SYSTEM,
   downgradeIfNotIndependent,
   runContradictionRound,
+  runInterrogationRound,
   SAME_PROVIDER_CAVEAT,
 } from "./debate";
 
@@ -188,5 +191,92 @@ describe("downgradeIfNotIndependent", () => {
       expect(out.state).toBe(state);
       expect(out.caveat).toBe(SAME_PROVIDER_CAVEAT);
     }
+  });
+});
+
+describe("runInterrogationRound — B2 challenger mode", () => {
+  const spans = {
+    e1: "Rivals push 48-hour guarantees across the category.",
+    e2: "Three competitors added this claim in the last month.",
+  };
+  const numbered = {
+    input:
+      "Competitor: Rivals\n" +
+      "Source: a page on the competitor's own website — https://rival.example/news\n\n" +
+      `WHAT CHANGED — this is the signal:\n[e1] ${spans.e1}\n[e2] ${spans.e2}`,
+    spans,
+  };
+  const validReply = JSON.stringify({
+    headline: "Rivals push 48-hour guarantees",
+    what: "Three competitors now offer a 48-hour guarantee.",
+    why: ["e1", "e2"],
+    how: "A wave of matching guarantees signals a category-wide response.",
+    kind: "claim",
+    falsifier: { metric: "topic_momentum", subject: { topic: "48h guarantee" }, direction: "below", threshold: 1.0, window_days: 30 },
+    confidence: "medium",
+  });
+  const noObjectionReply = (withVerdict: boolean) =>
+    JSON.stringify({
+      text: "Nothing contradicts this.",
+      confounders: [],
+      strongestObjection: "none",
+      confounderStrength: 0,
+      ...(withVerdict ? { verdict: "no_material_objection" } : {}),
+    });
+
+  it("mode 'off' (challengerOpts omitted): blinded is false, and the challenger sees today's full prompt (signal + raw proposer JSON)", async () => {
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce(reply(validReply, "groq"))
+      .mockResolvedValueOnce(reply(noObjectionReply(false), "gemini"));
+
+    const out = await runInterrogationRound(numbered);
+
+    expect(out.blinded).toBe(false);
+    expect(routeMock.mock.calls[1][0]).toMatchObject({ system: CHALLENGER_SYSTEM });
+    expect((routeMock.mock.calls[1][0] as { prompt: string }).prompt).toContain("rival.example");
+  });
+
+  it("mode 'on': blinded is always true, and the challenger never sees the signal text or raw proposer JSON", async () => {
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce(reply(validReply, "groq"))
+      .mockResolvedValueOnce(reply(noObjectionReply(true), "gemini"));
+
+    const out = await runInterrogationRound(numbered, undefined, undefined, { signalId: "sig-x", mode: "on" });
+
+    expect(out.blinded).toBe(true);
+    expect(routeMock.mock.calls[1][0]).toMatchObject({ system: BLIND_CHALLENGER_SYSTEM });
+    const prompt = (routeMock.mock.calls[1][0] as { prompt: string }).prompt;
+    expect(prompt).not.toContain("rival.example");
+    expect(prompt.toLowerCase()).not.toContain("groq");
+  });
+
+  it("mode 'shadow': which arm a signal lands in is a deterministic function of its id — stable across repeated calls", async () => {
+    const runOnce = async (signalId: string) => {
+      routeMock.mockReset();
+      routeMock
+        .mockResolvedValueOnce(reply(validReply, "groq"))
+        .mockResolvedValueOnce(reply(noObjectionReply(true), "gemini"));
+      return runInterrogationRound(numbered, undefined, undefined, { signalId, mode: "shadow" });
+    };
+    const first = await runOnce("sig-stable");
+    const second = await runOnce("sig-stable");
+    expect(first.blinded).toBe(second.blinded);
+  });
+
+  it("a proposer reply that fails to parse still blinds safely: the fallback basis has no evidence and leaks no signal text or provider id", async () => {
+    routeMock.mockReset();
+    routeMock
+      .mockResolvedValueOnce(reply("not json at all", "groq"))
+      .mockResolvedValueOnce(reply(noObjectionReply(true), "gemini"));
+
+    const out = await runInterrogationRound(numbered, undefined, undefined, { signalId: "sig-y", mode: "on" });
+
+    expect(out.blinded).toBe(true);
+    const prompt = (routeMock.mock.calls[1][0] as { prompt: string }).prompt;
+    expect(prompt).toContain("(no cited evidence)");
+    expect(prompt).not.toContain("rival.example");
+    expect(prompt.toLowerCase()).not.toContain("groq");
   });
 });
