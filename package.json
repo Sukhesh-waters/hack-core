@@ -25,7 +25,8 @@
     "platina:brain-mode": "npx tsx scripts/platina-brain-mode.ts",
     "platina:brain-snapshot": "npx tsx scripts/platina-brain-snapshot.ts",
     "platina:brain-undo": "npx tsx scripts/platina-brain-undo.ts",
-    "platina:brain-replay": "npx tsx scripts/platina-brain-replay.ts"
+    "platina:brain-replay": "npx tsx scripts/platina-brain-replay.ts",
+    "platina:brain-readiness": "npx tsx scripts/brain-readiness.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",
