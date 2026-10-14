@@ -247,13 +247,17 @@ export function diversifyEvidence(input: DiversifyInput): DiversifyResult {
   const derivedShare = input.derivedShare ?? 0.4;
   const sim = input.sim ?? jaccardContentSimilarity;
 
-  const mmrSelected = mmr(candidates, k, lambda, sim);
+  // Only live, unrefuted chunks may SUPPORT anything. Refuted (demoted)
+  // chunks stay in `candidates` for one purpose: the disconfirming slot,
+  // where a recorded failure is exactly the counter-evidence wanted.
+  const supportPool = candidates.filter((c) => isActiveStatus(c) && c.gradeState !== "refuted");
+  const mmrSelected = mmr(supportPool, k, lambda, sim);
 
   // Telemetry: candidates a pure-relevance top-k would have kept, that MMR
   // displaced for diversity (lambda < 1 only; this is "near duplicates
   // dropped" in the loose, operator-facing sense — MMR's whole job).
   const pureTopKIds = new Set(
-    [...candidates]
+    [...supportPool]
       .sort((a, b) => b.relevance - a.relevance || a.id.localeCompare(b.id))
       .slice(0, k)
       .map((c) => c.id),

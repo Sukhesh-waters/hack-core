@@ -5,9 +5,30 @@ import {
   advanceDueAtQuery,
   dueFalsifierChunksQuery,
   gradeCountsForChunkQuery,
+  citedEvidenceVerdictsQuery,
   gradeCountsQuery,
   refutedChunksBySubjectQuery,
+  similarRefutedBrainChunksQuery,
 } from "./platina-grades";
+
+describe("W3b/B8 queries filter workspace_id in the generated SQL", () => {
+  it("similarRefutedBrainChunksQuery: workspace, demoted + refuted only, current embedding version", () => {
+    const { sql, params } = similarRefutedBrainChunksQuery("ws_a", [0.1, 0.2, 0.3], 10).toSQL();
+    expect(sql).toContain('"platina_brain_chunks"."workspace_id" = ');
+    expect(sql).toContain('"platina_brain_chunks"."status" = ');
+    expect(sql).toContain('"platina_brain_chunks"."grade_state" = ');
+    expect(sql).toContain('"platina_brain_chunks"."embedding_model_version" = ');
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "demoted", "refuted"]));
+  });
+
+  it("citedEvidenceVerdictsQuery: workspace on both tables, id-bound, refuted/promoted only", () => {
+    const { sql, params } = citedEvidenceVerdictsQuery("ws_a", ["c1", "c2"]).toSQL();
+    expect(sql).toContain('"platina_brain_chunks"."workspace_id" = ');
+    expect(sql).toContain('"platina_insight_grades"."workspace_id" = ');
+    expect(sql).toContain('"platina_brain_chunks"."grade_state" in');
+    expect(params).toEqual(expect.arrayContaining(["ws_a", "c1", "c2", "refuted", "promoted"]));
+  });
+});
 
 describe("B5 grade queries filter workspace_id in the generated SQL", () => {
   it("dueFalsifierChunksQuery: workspace filtered, kind/falsifier/gradeState/dueAt/status all present", () => {

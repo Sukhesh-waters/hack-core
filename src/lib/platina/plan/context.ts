@@ -21,6 +21,10 @@ import {
   DEFAULT_SIMILARITY_FLOOR,
   relevanceGate,
 } from "@/lib/platina/retrieval";
+import { modeOf } from "@/lib/platina/brain-modes";
+import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
+import { DERIVED_SHARE } from "@/lib/platina/context-budget";
+import { retrieveDiversifiedEvidence } from "./diversified-evidence";
 import { EVIDENCE_TOP_K, type PlanEvidence } from "./evidence";
 
 export type { PlanEvidence } from "./evidence";
@@ -71,6 +75,12 @@ export type PlanContext = {
   patternEvidence: PlanEvidence[];
   /** Plane A: the client's own website pages and confirmed lessons (C6). */
   baselineEvidence: PlanEvidence[];
+  /**
+   * W3b (retrieval mode "on" only): one item that may contradict the
+   * leading hypothesis — an opposite-direction or refuted Brain chunk. It
+   * keeps its plane; the planner weighs it and may cite it like any other.
+   */
+  counterEvidence?: PlanEvidence | null;
   /**
    * What the client's own confirmed results say, past the min-N gate
    * (e.g. carousel posts tend to beat the usual post). First-party
@@ -290,27 +300,69 @@ export async function assemblePlanContext(
   ]);
   const floor = config?.similarityFloor ?? DEFAULT_SIMILARITY_FLOOR;
   const newSince = params.revisionOf?.createdAt ?? null;
-  const [worked, failed, retrieved, baseline, learning] = await Promise.all([
+  // W3b: "off" = today's retrieval, untouched. "shadow" runs the anti-echo
+  // path in the same parallel batch and only logs it. "on" uses it, and
+  // falls back to today's path in this same request if it throws.
+  const retrievalMode = modeOf(config, "retrieval");
+  const useDiversified = retrievalMode === "on";
+  const oldPattern = () =>
+    retrievePatternEvidence({ workspaceId: params.workspaceId, brief: params.brief, floor, scope, newSince, embedding });
+  const oldBaseline = () =>
+    retrieveBaselineEvidence({ workspaceId: params.workspaceId, brandId: params.brandId ?? null, embedding, floor, newSince });
+  const [worked, failed, oldRetrieved, oldBaselineItems, learning, diversified] = await Promise.all([
     listPlanLessons(params.workspaceId, "worked", 3),
     listPlanLessons(params.workspaceId, "failed", 3),
-    retrievePatternEvidence({
-      workspaceId: params.workspaceId,
-      brief: params.brief,
-      floor,
-      scope,
-      newSince,
-      embedding,
-    }),
-    retrieveBaselineEvidence({
-      workspaceId: params.workspaceId,
-      brandId: params.brandId ?? null,
-      embedding,
-      floor,
-      newSince,
-    }),
+    useDiversified ? Promise.resolve(null) : oldPattern(),
+    useDiversified ? Promise.resolve(null) : oldBaseline(),
     learningState(params.workspaceId, params.brandId ?? null),
+    retrievalMode === "off"
+      ? Promise.resolve(null)
+      : retrieveDiversifiedEvidence({
+          workspaceId: params.workspaceId,
+          brief: params.brief,
+          brandId: params.brandId ?? null,
+          floor,
+          scope,
+          newSince,
+          embedding,
+          derivedShare: config?.derivedContextShare ?? DERIVED_SHARE,
+          budgetOn: modeOf(config, "budget") === "on",
+          rerank: useDiversified,
+        }).catch((error: unknown) => ({ error })),
   ]);
   const learnedPatterns = learnedPatternLines(learning);
+
+  const newPath = diversified && !("error" in diversified) ? diversified : null;
+  let retrieved: { items: PlanEvidence[]; status: EvidenceStatus };
+  let baseline: PlanEvidence[];
+  let counterEvidence: PlanEvidence | null = null;
+  if (useDiversified && newPath) {
+    retrieved = { items: newPath.patternEvidence, status: newPath.status };
+    baseline = newPath.baselineEvidence;
+    counterEvidence = newPath.counterEvidence;
+    void recordBrainEvent({ workspaceId: params.workspaceId, stage: "retrieval", decision: "on", detail: { ...newPath.stats } });
+  } else {
+    if (useDiversified) {
+      const error = diversified && "error" in diversified ? diversified.error : null;
+      void recordBrainEvent({
+        workspaceId: params.workspaceId,
+        stage: "retrieval",
+        decision: "fallback",
+        detail: { error: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    [retrieved, baseline] = await Promise.all([oldRetrieved ?? oldPattern(), oldBaselineItems ?? oldBaseline()]);
+    if (newPath) {
+      const oldIds = new Set([...retrieved.items, ...baseline].map((e) => e.id));
+      const newIds = [...newPath.patternEvidence, ...newPath.baselineEvidence].map((e) => e.id);
+      void recordBrainEvent({
+        workspaceId: params.workspaceId,
+        stage: "retrieval",
+        decision: "shadow",
+        detail: { ...newPath.stats, overlap: newIds.filter((id) => oldIds.has(id)).length, oldCount: oldIds.size, newCount: newIds.length },
+      });
+    }
+  }
 
   const context: PlanContext = {
     brief: params.brief,
@@ -318,6 +370,7 @@ export async function assemblePlanContext(
     failed: failed.map(toLesson),
     patternEvidence: retrieved.items,
     baselineEvidence: baseline,
+    ...(counterEvidence ? { counterEvidence } : {}),
     learnedPatterns,
     coldStart: worked.length + failed.length + retrieved.items.length + baseline.length + learnedPatterns.length === 0,
     evidenceStatus: retrieved.status,

@@ -7,9 +7,10 @@
  * `platina_insight_grades` is append-only: no update/delete query is
  * exported here, matching platina_brain_telemetry and platina_brain_state_log.
  */
-import { and, asc, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, cosineDistance, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  PLATINA_EMBEDDING_MODEL_VERSION,
   platinaBrainChunks,
   platinaInsightGrades,
   type BrainChunkGradeState,
@@ -212,6 +213,83 @@ export function refutedChunksBySubjectQuery(workspaceId: string, subjectKey: str
 
 export async function listRefutedChunksBySubject(workspaceId: string, subjectKey: string) {
   return refutedChunksBySubjectQuery(workspaceId, subjectKey);
+}
+
+/**
+ * Refuted chunks nearest a question (W3b). Runs in the same parallel batch
+ * as the support queries, so the counter-evidence slot costs no extra round
+ * trip: diversify.ts keeps the ones on the leading hypothesis's subject.
+ */
+export function similarRefutedBrainChunksQuery(workspaceId: string, embedding: number[], limit = 10) {
+  const distance = cosineDistance(platinaBrainChunks.embedding, embedding);
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      content: platinaBrainChunks.content,
+      subjectKey: platinaBrainChunks.subjectKey,
+      direction: platinaBrainChunks.direction,
+      gradeState: platinaBrainChunks.gradeState,
+      status: platinaBrainChunks.status,
+      sourceSignalIds: platinaBrainChunks.sourceSignalIds,
+      absorbedChunkIds: platinaBrainChunks.absorbedChunkIds,
+      generation: platinaBrainChunks.generation,
+      confidence: platinaBrainChunks.confidence,
+      createdAt: platinaBrainChunks.createdAt,
+      score: sql<number>`(1 - (${distance}))`,
+    })
+    .from(platinaBrainChunks)
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        eq(platinaBrainChunks.status, "demoted"),
+        eq(platinaBrainChunks.gradeState, "refuted"),
+        eq(platinaBrainChunks.embeddingModelVersion, PLATINA_EMBEDDING_MODEL_VERSION),
+      ),
+    )
+    .orderBy(distance)
+    .limit(limit);
+}
+
+export async function listSimilarRefutedBrainChunks(workspaceId: string, embedding: number[], limit = 10) {
+  return similarRefutedBrainChunksQuery(workspaceId, embedding, limit);
+}
+
+/**
+ * How the evidence a plan cited has fared when tested (B8): refuted chunks
+ * with the grade that refuted them, and promoted ones. The plan's evidence
+ * snapshot keeps the ids, so this is one lookup with no plan-table change.
+ */
+export function citedEvidenceVerdictsQuery(workspaceId: string, chunkIds: string[]) {
+  return db
+    .select({
+      id: platinaBrainChunks.id,
+      gradeState: platinaBrainChunks.gradeState,
+      metric: platinaInsightGrades.metric,
+      measuredValue: platinaInsightGrades.measuredValue,
+      threshold: platinaInsightGrades.threshold,
+      direction: platinaInsightGrades.direction,
+      gradedAt: platinaInsightGrades.createdAt,
+    })
+    .from(platinaBrainChunks)
+    .leftJoin(
+      platinaInsightGrades,
+      and(
+        eq(platinaInsightGrades.id, platinaBrainChunks.refutedByGradeId),
+        eq(platinaInsightGrades.workspaceId, workspaceId),
+      ),
+    )
+    .where(
+      and(
+        eq(platinaBrainChunks.workspaceId, workspaceId),
+        inArray(platinaBrainChunks.id, chunkIds),
+        inArray(platinaBrainChunks.gradeState, ["refuted", "promoted"]),
+      ),
+    );
+}
+
+export async function listCitedEvidenceVerdicts(workspaceId: string, chunkIds: string[]) {
+  if (chunkIds.length === 0) return [];
+  return citedEvidenceVerdictsQuery(workspaceId, chunkIds);
 }
 
 // ---------------------------------------------------------------------------

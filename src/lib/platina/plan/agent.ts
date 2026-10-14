@@ -5,6 +5,7 @@ import { routeAI } from "@/lib/ai/router";
 import type { ValidationResult } from "@/lib/orchestrator/run";
 import type { PlanContext, PlanLesson } from "@/lib/platina/plan/context";
 import { renderProfile } from "@/lib/platina/profile";
+import { parsePlanFalsifier, planFalsifierInstruction } from "@/lib/platina/plan/falsifier";
 import {
   findCitationProblem,
   renderEvidenceBlock,
@@ -38,6 +39,8 @@ const planResponseSchema = z.object({
   phases: z.array(phaseSchema).min(1).max(8),
   // Only meaningful when revising an earlier plan.
   revisionNote: z.string().trim().max(240).optional(),
+  // B8: validated by parsePlanFalsifier; a bad test is dropped, never fatal.
+  falsifier: z.unknown().optional(),
 });
 
 function renderLessons(label: string, lessons: PlanLesson[]): string {
@@ -117,11 +120,22 @@ export function buildPlanPrompt(context: PlanContext): string {
           ),
         ]
       : []),
+    // W3b: one item that may contradict the evidence above, in its own
+    // labelled block so it is weighed, not mistaken for support.
+    ...(context.counterEvidence
+      ? [
+          renderEvidenceBlock(
+            "Counter-evidence (may contradict the evidence above; weigh it, and where a phase depends on the point it disputes, say how the phase answers it; cite by id like the public list)",
+            [context.counterEvidence],
+          ),
+        ]
+      : []),
     context.patternEvidence.length + context.baselineEvidence.length > 0
       ? "A phase may cite evidence ids (evidenceIds) from ONE evidence list only — never mix the public list with the first-party list in one phase. Cite only ids shown above; leave evidenceIds empty when a phase rests on no evidence. Never present evidence as proof the plan will work."
       : "There is no collected evidence for this brief. Leave every evidenceIds empty and do not claim market evidence.",
     `Write a phased campaign plan with 3-6 phases on a day timeline (day 1 = launch prep, at most ${MAX_PLAN_DAYS} days in total). Each phase needs a name, startDay, endDay (endDay >= startDay), one channel, and a one-sentence message. Phases may overlap when channels run in parallel. Do not invent budgets, results or metrics.`,
-    'Reply with JSON only: {"title":string,"summary":string,"phases":[{"name":string,"startDay":number,"endDay":number,"channel":string,"message":string,"evidenceIds":string[]}]' +
+    planFalsifierInstruction(),
+    'Reply with JSON only: {"title":string,"summary":string,"phases":[{"name":string,"startDay":number,"endDay":number,"channel":string,"message":string,"evidenceIds":string[]}],"falsifier":object|null' +
       (context.revisionOf ? ',"revisionNote":string' : "") +
       "}. The summary is one or two sentences.",
   ].join("\n\n");
@@ -149,6 +163,7 @@ export async function generateCampaignPlan(
     );
   }
 
+  const falsifier = parsePlanFalsifier(parsed.falsifier);
   const phases = [...parsed.phases]
     .sort((a, b) => a.startDay - b.startDay || a.endDay - b.endDay)
     .map(({ evidenceIds, ...phase }, index) => ({
@@ -168,12 +183,19 @@ export async function generateCampaignPlan(
       ...(context.revisionOf && parsed.revisionNote
         ? { revisionNote: parsed.revisionNote }
         : {}),
-      evidence: snapshotEvidence([
-        ...context.patternEvidence,
-        ...context.baselineEvidence,
-      ]),
+      ...(falsifier ? { falsifier } : {}),
+      evidence: snapshotEvidence(shownEvidence(context)),
     },
   };
+}
+
+/** Everything the planner was shown and may cite, counter item included. */
+function shownEvidence(context: PlanContext) {
+  return [
+    ...context.patternEvidence,
+    ...context.baselineEvidence,
+    ...(context.counterEvidence ? [context.counterEvidence] : []),
+  ];
 }
 
 /** Cross-field invariants the schema cannot express. */
@@ -209,10 +231,7 @@ export function validatePlan(
   }
   // Citations are checked against what the planner was actually shown; an
   // invented id would otherwise render as evidence that does not exist.
-  const problem = findCitationProblem(
-    plan.doc.phases,
-    context ? [...context.patternEvidence, ...context.baselineEvidence] : [],
-  );
+  const problem = findCitationProblem(plan.doc.phases, context ? shownEvidence(context) : []);
   if (problem) return { valid: false, reason: problem };
   return { valid: true };
 }

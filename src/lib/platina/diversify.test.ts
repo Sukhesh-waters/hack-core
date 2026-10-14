@@ -288,6 +288,15 @@ describe("diversifyEvidence", () => {
     expect(result.stats.derivedShare).toBeCloseTo(expectedDerivedTokens / expectedEvidenceTokens, 10);
   });
 
+  it("a refuted chunk never supports anything, even as the most relevant candidate — it can only fill the counter-evidence slot", () => {
+    const candidates = buildPool().map((c) => (c.id === "refuted1" ? { ...c, relevance: 0.99 } : c));
+    const withoutOpposite = candidates.filter((c) => c.id !== "opp1");
+    const result = diversifyEvidence({ candidates: withoutOpposite, k: 4, evidenceTokenBudget: 2000, derivedShare: 0.4, tokensOf });
+    const support = result.items.filter((i) => i.role === "support").map((i) => i.candidate.id);
+    expect(support).not.toContain("refuted1");
+    expect(result.items.find((i) => i.role === "disconfirming")?.candidate.id).toBe("refuted1");
+  });
+
   it("never mixes or relabels planes: the disconfirming item keeps its own plane and is the same object", () => {
     const candidates = buildPool();
     const result = diversifyEvidence({ candidates, k: 4, evidenceTokenBudget: 2000, derivedShare: 0.4, tokensOf });

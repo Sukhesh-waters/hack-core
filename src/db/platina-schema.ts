@@ -1180,6 +1180,20 @@ export type PlanEvidenceSnapshot = {
   sourceUrl: string | null;
   collectedAt: string | null;
   confidence: number | null;
+  /** W3b: the counter-evidence item the planner was shown; absent = support. */
+  role?: "counter";
+};
+
+/**
+ * B8: how the team will know the plan is NOT working, stated by the planner
+ * from the metric registry's first-party result metrics. Stored for display
+ * and later grading; jsonb, so no migration.
+ */
+export type PlanFalsifier = {
+  metric: "creative_leads" | "creative_ctr" | "creative_engagement_rate";
+  direction: "above" | "below";
+  threshold: number;
+  window_days: 30 | 90;
 };
 
 /** The situation that started a plan — shown on the roadmap so it is never anonymous. */
@@ -1203,6 +1217,8 @@ export type PlanDoc = {
   /** Why the evidence list is what it is — lets the roadmap explain an ungrounded plan. */
   evidenceStatus?: "matched" | "none_relevant" | "empty_brain" | "no_client_evidence";
   evidence?: PlanEvidenceSnapshot[];
+  /** B8: the plan's own stated test. Absent on plans written before B8. */
+  falsifier?: PlanFalsifier;
 };
 
 export const PLAN_VERDICTS = ["worked", "mixed", "failed"] as const;

@@ -15,6 +15,8 @@ export type PlanEvidence = {
   confidence: number | null;
   /** Arrived after the plan being revised was written. Prompt-only; not stored. */
   isNew?: boolean;
+  /** W3b: the one counter-evidence item (may contradict the rest). Absent = support. */
+  role?: "counter";
 };
 
 /** Evidence older than this is shown as stale, not hidden. */
@@ -56,6 +58,7 @@ export function snapshotEvidence(items: PlanEvidence[]): PlanEvidenceSnapshot[] 
     sourceUrl: e.sourceUrl,
     collectedAt: e.collectedAt ? e.collectedAt.toISOString() : null,
     confidence: e.confidence,
+    ...(e.role ? { role: e.role } : {}),
   }));
 }
 
