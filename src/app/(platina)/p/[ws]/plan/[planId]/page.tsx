@@ -8,7 +8,8 @@ import { PLAN_VERDICTS } from "@/db/platina-schema";
 import { getPlan, getPlanFeedback, listPlanRevisions } from "@/db/queries/platina";
 import { listCreativesForPlan } from "@/db/queries/platina-learning";
 import { isStale } from "@/lib/platina/plan/evidence";
-import { freshnessMessage } from "@/lib/platina/plan/freshness";
+import { describePlanFalsifier } from "@/lib/platina/plan/falsifier";
+import { freshnessMessage, refutedMessage, verdictLabel } from "@/lib/platina/plan/freshness";
 import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
 import { cn } from "@/lib/utils";
 import { recordPlanFeedbackAction, revisePlanAction } from "../actions";
@@ -44,11 +45,19 @@ export default async function PlanDetailPage(
   ]);
   if (!plan) notFound();
   const [fresh, revisions, creatives] = await Promise.all([
-    readPlanFreshness({ workspaceId: params.ws, brandId: plan.brandId, createdAt: plan.createdAt }),
+    readPlanFreshness({
+      workspaceId: params.ws,
+      brandId: plan.brandId,
+      createdAt: plan.createdAt,
+      evidenceIds: (plan.plan.evidence ?? []).map((e) => e.id),
+    }),
     listPlanRevisions(params.ws, plan.id),
     listCreativesForPlan(params.ws, plan.id),
   ]);
   const doc = plan.plan;
+  const verdictById = new Map(fresh.verdicts.map((v) => [v.id, v]));
+  const refutedCount = fresh.verdicts.filter((v) => v.verdict === "refuted").length;
+  const counterEvidence = (doc.evidence ?? []).filter((e) => e.role === "counter");
 
   return (
     <PlatinaPage eyebrow="Campaign roadmap" title={plan.title} description={doc.summary}>
@@ -101,13 +110,16 @@ export default async function PlanDetailPage(
             : "border-border bg-card",
         )}
       >
+        {refutedCount > 0 ? (
+          <p className="mb-2 text-sm font-medium text-brand-amber">{refutedMessage(refutedCount)}</p>
+        ) : null}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm">{freshnessMessage(fresh.count, fresh.scopeLabel)}</p>
           <form action={revisePlanAction}>
             <input type="hidden" name="workspaceId" value={params.ws} />
             <input type="hidden" name="planId" value={plan.id} />
             <PendingButton pendingLabel="Re-planning…">
-              {fresh.count > 0 ? "Re-plan with the new evidence" : "Re-plan now"}
+              {refutedCount > 0 || fresh.count > 0 ? "Re-plan with the new evidence" : "Re-plan now"}
             </PendingButton>
           </form>
         </div>
@@ -137,6 +149,15 @@ export default async function PlanDetailPage(
       </section>
 
       <PlanTimeline plan={doc} />
+
+      {doc.falsifier ? (
+        <p className="mt-3 rounded-md border border-border bg-card px-4 py-3 text-sm">
+          <span className="block font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+            How we&apos;ll know if this plan is wrong
+          </span>
+          {describePlanFalsifier(doc.falsifier)}
+        </p>
+      ) : null}
 
       <section aria-label="Creatives and results" className="mt-6 rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-medium">What was posted, and what it taught</h2>
@@ -209,10 +230,25 @@ export default async function PlanDetailPage(
                     <p className="mt-1 text-xs text-muted-foreground">No evidence cited for this phase.</p>
                   ) : (
                     <ul className="mt-2 space-y-2">
-                      {cited.map((e) => (
+                      {cited.map((e) => {
+                        const verdict = verdictById.get(e.id);
+                        return (
                         <li key={e.id} className="text-xs">
+                          {verdict ? (
+                            <span
+                              className={cn(
+                                "mb-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                verdict.verdict === "refuted"
+                                  ? "bg-brand-amber/15 text-brand-amber"
+                                  : "bg-brand-success/15 text-brand-success",
+                              )}
+                            >
+                              {verdictLabel(verdict)}
+                            </span>
+                          ) : null}
                           <span className="block">
                             {e.plane === "A" ? <span className="mr-1 rounded border border-primary/40 px-1 text-primary">own data</span> : null}
+                            {e.role === "counter" ? <span className="mr-1 rounded border border-brand-amber/40 px-1 text-brand-amber">counter-evidence</span> : null}
                             {e.content}
                           </span>
                           <span className="text-muted-foreground">
@@ -228,12 +264,41 @@ export default async function PlanDetailPage(
                             {isStale(e.collectedAt, new Date()) ? " · STALE" : ""}
                           </span>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   )}
                 </li>
               );
             })}
+          </ul>
+        </section>
+      ) : null}
+
+      {counterEvidence.length > 0 ? (
+        <section className="mt-6 rounded-md border border-brand-amber/40 bg-brand-amber/5 p-4" aria-label="Counter-evidence">
+          <h2 className="text-sm font-medium">Counter-evidence the planner weighed</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The strongest point against the plan&apos;s main assumption: an opposite reading on the same subject, or
+            one that was proved wrong before. Shown so the plan is not built only on what agrees with it.
+          </p>
+          <ul className="mt-2 space-y-2">
+            {counterEvidence.map((e) => (
+              <li key={e.id} className="text-xs">
+                <span className="block">{e.content}</span>
+                <span className="text-muted-foreground">
+                  {e.sourceUrl ? (
+                    <a href={e.sourceUrl} className="underline underline-offset-2" rel="noreferrer" target="_blank">
+                      Source
+                    </a>
+                  ) : (
+                    "Source unavailable"
+                  )}
+                  {" · "}
+                  {e.collectedAt ? `collected ${e.collectedAt.slice(0, 10)}` : "collection date unknown"}
+                </span>
+              </li>
+            ))}
           </ul>
         </section>
       ) : null}

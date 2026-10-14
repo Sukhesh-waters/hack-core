@@ -7,12 +7,15 @@ import {
   listBrainEvidenceSince,
   listSignalProvenance,
 } from "@/db/queries/platina";
+import { listCitedEvidenceVerdicts } from "@/db/queries/platina-grades";
 import { resolveScope } from "./context";
-import { filterByScope, freshnessLevel, type FreshnessLevel } from "./freshness";
+import { filterByScope, levelWithVerdicts, type CitedVerdict, type FreshnessLevel } from "./freshness";
 
 export type PlanFreshness = {
   count: number;
   level: FreshnessLevel;
+  /** B8: cited evidence the grader has since refuted or promoted. */
+  verdicts: CitedVerdict[];
   scopeLabel: string | null;
   sample: {
     id: string;
@@ -28,11 +31,25 @@ export async function readPlanFreshness(plan: {
   workspaceId: string;
   brandId: string | null;
   createdAt: Date;
+  /** Ids from the plan's evidence snapshot; their verdicts escalate the level. */
+  evidenceIds?: string[];
 }): Promise<PlanFreshness> {
-  const [scope, since] = await Promise.all([
+  const [scope, since, verdictRows] = await Promise.all([
     resolveScope(plan.workspaceId, plan.brandId),
     listBrainEvidenceSince(plan.workspaceId, plan.createdAt, 100),
+    // A grades table that is not there yet (migration pending) must cost the
+    // badges, not the page.
+    listCitedEvidenceVerdicts(plan.workspaceId, plan.evidenceIds ?? []).catch(() => []),
   ]);
+  const verdicts: CitedVerdict[] = verdictRows.map((r) => ({
+    id: r.id,
+    verdict: r.gradeState === "refuted" ? "refuted" : "promoted",
+    at: r.gradedAt ?? null,
+    metric: r.metric ?? null,
+    measuredValue: r.measuredValue ?? null,
+    threshold: r.threshold ?? null,
+    direction: r.direction ?? null,
+  }));
   const fresh = filterByScope(since, scope?.signalIds ?? null);
   const top = fresh.slice(0, SAMPLE);
   const provenance = new Map(
@@ -45,7 +62,8 @@ export async function readPlanFreshness(plan: {
   );
   return {
     count: fresh.length,
-    level: freshnessLevel(fresh.length),
+    level: levelWithVerdicts(fresh.length, verdicts),
+    verdicts,
     scopeLabel: scope?.label ?? null,
     sample: top.map((c) => ({
       id: c.id,

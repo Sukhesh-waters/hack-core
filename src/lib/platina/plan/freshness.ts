@@ -32,6 +32,41 @@ export function freshnessLevel(newCount: number): FreshnessLevel {
   return newCount >= REPLAN_THRESHOLD ? "replan" : "review";
 }
 
+/**
+ * B8: how the evidence a plan cited has fared since, from the grader. A
+ * refuted chunk outweighs any count of new signals: the plan rests on
+ * something the results contradicted, so it is worth re-planning now.
+ */
+export type CitedVerdict = {
+  id: string;
+  verdict: "refuted" | "promoted";
+  /** When the refuting grade was recorded; null when unknown (promoted rows). */
+  at: Date | null;
+  metric: string | null;
+  measuredValue: number | null;
+  threshold: number | null;
+  direction: string | null;
+};
+
+export function levelWithVerdicts(newCount: number, verdicts: CitedVerdict[]): FreshnessLevel {
+  return verdicts.some((v) => v.verdict === "refuted") ? "replan" : freshnessLevel(newCount);
+}
+
+/** Plain words for one verdict badge (plan §9 copy; no internal terms). */
+export function verdictLabel(v: CitedVerdict): string {
+  if (v.verdict === "promoted") return "Held up when tested";
+  const date = v.at ? ` on ${v.at.toISOString().slice(0, 10)}` : "";
+  if (v.measuredValue === null || v.threshold === null || !v.direction) return `Proved wrong${date}`;
+  const round = (x: number) => Math.round(x * 100) / 100;
+  return `Proved wrong${date}: measured ${round(v.measuredValue)}, ${v.direction} the ${round(v.threshold)} it was tested against`;
+}
+
+export function refutedMessage(count: number): string {
+  return count === 1
+    ? "Evidence behind this plan was proved wrong when its results came in. Worth re-planning."
+    : `${count} pieces of evidence behind this plan were proved wrong when their results came in. Worth re-planning.`;
+}
+
 export function freshnessMessage(newCount: number, scopeLabel: string | null): string {
   const where = scopeLabel ? `for ${scopeLabel}` : "in this workspace";
   switch (freshnessLevel(newCount)) {

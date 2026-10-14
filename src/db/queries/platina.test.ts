@@ -298,6 +298,12 @@ describe("platina query isolation", () => {
     }
   });
 
+  it("B8: plan freshness counts only claims that could be tested", () => {
+    const { sql, params } = brainEvidenceSinceQuery("ws_a", new Date("2026-09-20T00:00:00Z")).toSQL();
+    expect(sql).toContain('"platina_brain_chunks"."grade_state" <> ');
+    expect(params).toContain("insufficient");
+  });
+
   it("real-time planning queries are workspace-scoped, including every joined table", () => {
     const since = new Date("2026-09-20T00:00:00Z");
     for (const q of [

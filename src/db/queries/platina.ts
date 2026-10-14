@@ -1,5 +1,5 @@
 import { aiUsage } from "@/db/schema";
-import { and, cosineDistance, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, notInArray, or, sql } from "drizzle-orm";
+import { and, cosineDistance, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, max, ne, notInArray, or, sql } from "drizzle-orm";
 import { STALE_CLAIM_MINUTES } from "@/lib/platina/analysis";
 import { db } from "@/db";
 import {
@@ -2762,6 +2762,9 @@ export function brainEvidenceSinceQuery(
       and(
         eq(platinaBrainChunks.workspaceId, workspaceId),
         eq(platinaBrainChunks.status, "active"),
+        // B8: "new validated signals" — a claim that could not be tested
+        // (grade_state 'insufficient') does not count as one.
+        ne(platinaBrainChunks.gradeState, "insufficient"),
         gte(platinaBrainChunks.createdAt, since),
       ),
     )
