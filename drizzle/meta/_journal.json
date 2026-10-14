@@ -617,6 +617,13 @@
       "when": 1791885292081,
       "tag": "0087_groovy_justice",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1791893500364,
+      "tag": "0088_chemical_proteus",
+      "breakpoints": true
     }
   ]
 }

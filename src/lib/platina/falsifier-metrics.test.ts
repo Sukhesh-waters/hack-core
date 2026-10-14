@@ -4,8 +4,10 @@ import {
   FALSIFIER_METRICS,
   ScaleMismatchError,
   aggregateMetric,
+  assertFalsifiableClaim,
   compareMeasurements,
   measureMetric,
+  subjectKeyFor,
   validateFalsifier,
   type FalsifierClaim,
   type FalsifierMetricDef,
@@ -275,5 +277,48 @@ describe("measureMetric", () => {
   it("throws when the segment is missing a required key", async () => {
     const deps = fakeDeps();
     await expect(measureMetric(deps, "ws1", "engagement_index", { topic: "pfas analysis" }, 30, NOW)).rejects.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B1 — subjectKeyFor, assertFalsifiableClaim
+// ---------------------------------------------------------------------------
+
+describe("subjectKeyFor (B1)", () => {
+  it("stable key order regardless of the segment object's own key order", () => {
+    expect(subjectKeyFor({ topic: "pfas analysis", brand: "Acme" })).toBe("brand:Acme|topic:pfas analysis");
+    expect(subjectKeyFor({ brand: "Acme", topic: "pfas analysis" })).toBe("brand:Acme|topic:pfas analysis");
+  });
+
+  it("includes only the segment keys actually present", () => {
+    expect(subjectKeyFor({ topic: "pfas analysis" })).toBe("topic:pfas analysis");
+    expect(subjectKeyFor({ brand: "Acme" })).toBe("brand:Acme");
+    expect(subjectKeyFor({ creativeId: "c1" })).toBe("creative:c1");
+    expect(subjectKeyFor({ eventId: "e1" })).toBe("event:e1");
+    expect(subjectKeyFor({})).toBe("");
+  });
+});
+
+describe("assertFalsifiableClaim (B1 — the 'no insight without a testable falsifier' guard)", () => {
+  const registryValid: FalsifierClaim = { metric: "topic_momentum", subject: { topic: "x" }, direction: "below", threshold: 1, window_days: 30 };
+  const notRegistered: FalsifierClaim = { ...registryValid, metric: "not_a_real_metric" as FalsifierMetricId };
+
+  it("passes a claim with a registry-valid metric", () => {
+    expect(() => assertFalsifiableClaim("claim", registryValid)).not.toThrow();
+  });
+
+  it("throws for a claim with no falsifier at all", () => {
+    expect(() => assertFalsifiableClaim("claim", null)).toThrow(/falsifier/i);
+    expect(() => assertFalsifiableClaim("claim", undefined)).toThrow(/falsifier/i);
+  });
+
+  it("throws for a claim whose falsifier names a metric outside the registry", () => {
+    expect(() => assertFalsifiableClaim("claim", notRegistered)).toThrow();
+  });
+
+  it("never requires a falsifier for fact, measured, compacted or legacy (null) kind", () => {
+    for (const kind of ["fact", "measured", "compacted", null, undefined] as const) {
+      expect(() => assertFalsifiableClaim(kind, null)).not.toThrow();
+    }
   });
 });

@@ -7,6 +7,7 @@
  * use for every other insight.
  */
 import type { TopicMomentum } from "./interest";
+import type { FalsifierClaim } from "./falsifier-metrics";
 import {
   eventInsights,
   interestInsights,
@@ -15,6 +16,8 @@ import {
   type InsightSignal,
   type MarketInsight,
 } from "./market-insights";
+
+const DAY_MS = 86_400_000;
 
 export type InsightWriterDeps = {
   embed: (text: string) => Promise<number[] | null>;
@@ -30,6 +33,17 @@ export type InsightWriterDeps = {
     sourceSignalIds: string[];
     embedding?: number[];
     insightKey: string;
+    // B1 (metacognitive Brain) — see market-insights.ts MarketInsight and
+    // falsifier-metrics.ts. Always "measured"/"insight-writer-v2" for a
+    // code-built insight; falsifier/subjectKey/direction/dueAt follow
+    // whatever the producer (interestInsights/eventInsights/adInsights) set,
+    // null when that insight kind has no fitting registry metric.
+    kind: "measured";
+    writtenBy: "insight-writer-v2";
+    falsifier: FalsifierClaim | null;
+    subjectKey: string | null;
+    direction: "up" | "down" | "none";
+    dueAt: Date | null;
   }) => Promise<string>;
   supersede: (workspaceId: string, ids: string[]) => Promise<void>;
 };
@@ -41,6 +55,7 @@ async function apply(
   workspaceId: string,
   prefix: string,
   wanted: MarketInsight[],
+  now: Date,
 ): Promise<InsightWriteResult> {
   const active = await deps.listActive(workspaceId, prefix);
   const plan = planInsightWrites(wanted, active);
@@ -50,6 +65,7 @@ async function apply(
     // still finds it) rather than dropping it — same as debate claims.
     const embedding = await deps.embed(insight.content).catch(() => null);
     if (!embedding) unembedded += 1;
+    const falsifier = insight.falsifier ?? null;
     await deps.insert({
       workspaceId,
       content: insight.content,
@@ -59,6 +75,13 @@ async function apply(
       sourceSignalIds: insight.sourceSignalIds,
       ...(embedding ? { embedding } : {}),
       insightKey: insight.key,
+      // B1: code-built falsifier, never a model's (plan §5 B1).
+      kind: "measured",
+      writtenBy: "insight-writer-v2",
+      falsifier,
+      subjectKey: insight.subjectKey ?? null,
+      direction: insight.direction ?? "none",
+      dueAt: falsifier ? new Date(now.getTime() + falsifier.window_days * DAY_MS) : null,
     });
   }
   // Supersede after inserting, so there is never a moment with neither.
@@ -80,14 +103,17 @@ export function writeClientInsights(
     names: Map<string, string>;
     momentum: TopicMomentum[];
     signals: InsightSignal[];
+    /** B1: due_at anchor for a written falsifier. Defaults to now. */
+    now?: Date;
   },
 ): Promise<InsightWriteResult> {
   const wanted = interestInsights(input);
+  const now = input.now ?? new Date();
   // Both prefixes belong to this client; one pass per prefix keeps "no
   // longer holds" scoped to what this pass measured.
   return Promise.all([
-    apply(deps, input.workspaceId, `interest:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("interest:"))),
-    apply(deps, input.workspaceId, `pressure:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("pressure:"))),
+    apply(deps, input.workspaceId, `interest:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("interest:")), now),
+    apply(deps, input.workspaceId, `pressure:${input.client.id}:`, wanted.filter((w) => w.key.startsWith("pressure:")), now),
   ]).then(([a, b]) => ({
     written: a.written + b.written,
     superseded: a.superseded + b.superseded,
@@ -103,9 +129,9 @@ export function writeClientInsights(
  */
 export function writeAdInsights(
   deps: InsightWriterDeps,
-  input: { workspaceId: string; clientId: string; insights: MarketInsight[] },
+  input: { workspaceId: string; clientId: string; insights: MarketInsight[]; now?: Date },
 ): Promise<InsightWriteResult> {
-  return apply(deps, input.workspaceId, `ads:${input.clientId}:`, input.insights);
+  return apply(deps, input.workspaceId, `ads:${input.clientId}:`, input.insights, input.now ?? new Date());
 }
 
 /** Upcoming-event insights for a workspace. */
@@ -113,5 +139,5 @@ export function writeEventInsights(
   deps: InsightWriterDeps,
   input: { workspaceId: string; names: Map<string, string>; events: InsightEvent[]; now: Date },
 ): Promise<InsightWriteResult> {
-  return apply(deps, input.workspaceId, "event:", eventInsights(input));
+  return apply(deps, input.workspaceId, "event:", eventInsights(input), input.now);
 }

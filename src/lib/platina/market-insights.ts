@@ -25,12 +25,22 @@
  */
 import { daysUntil, eventTiming } from "./events";
 import type { TopicMomentum } from "./interest";
+import { subjectKeyFor, type FalsifierClaim } from "./falsifier-metrics";
 
 export type MarketInsight = {
   key: string;
   content: string;
   sourceSignalIds: string[];
   confidence: number;
+  // B1 (metacognitive Brain) — code-built, not model-written: a measured
+  // insight either fits a registry metric (falsifier set, from the SAME
+  // numbers already stated in `content`) or it does not, and says so by
+  // leaving `falsifier` null rather than inventing a test (plan §5 B1).
+  // Undefined on a producer that has not been updated for B1 yet (ads-view.ts
+  // adInsights) — market-insight-writer.ts treats that the same as null.
+  falsifier?: FalsifierClaim | null;
+  subjectKey?: string | null;
+  direction?: "up" | "down" | "none";
 };
 
 export type InsightSignal = {
@@ -90,6 +100,12 @@ export function interestInsights(input: {
           `compan${companies === 1 ? "y" : "ies"}.${trend} Strongest: ${who}, ${fmt(top.value)}× on ${day(top.observedAt)}.`,
         sourceSignalIds: docsFor(input.signals, m.topic, "interest", m.region),
         confidence: sampleConfidence(m.n),
+        // B1: this IS a topic_momentum reading (recent vs. the 90 days
+        // before) stated in `content` as "that is up/down from …" — refuted
+        // if momentum falls back to parity (ratio below 1.0) within 30 days.
+        falsifier: { metric: "topic_momentum", subject: { topic: m.topic }, direction: "below", threshold: 1.0, window_days: 30 },
+        subjectKey: subjectKeyFor({ topic: m.topic }),
+        direction: "up",
       });
     } else {
       out.push({
@@ -100,6 +116,18 @@ export function interestInsights(input: {
           `${Math.round(top.value)} days — an ad kept that long is one the advertiser believes in.`,
         sourceSignalIds: docsFor(input.signals, m.topic, "pressure", m.region),
         confidence: sampleConfidence(m.n),
+        // B1: ad_days_running is the closest registry metric (median days
+        // running, same table). The claim is "pressure holds" — refuted if
+        // the advertiser's days-running falls below what was observed now.
+        falsifier: {
+          metric: "ad_days_running",
+          subject: { brand: who, topic: m.topic },
+          direction: "below",
+          threshold: Math.round(top.value),
+          window_days: 30,
+        },
+        subjectKey: subjectKeyFor({ brand: who, topic: m.topic }),
+        direction: "up",
       });
     }
   }
@@ -163,6 +191,14 @@ export function eventInsights(input: {
       ],
       // A date read on the event's own page is firmer than one in a post.
       confidence: readAt ? 0.8 : 0.65,
+      // B1: `event_participants` only counts — it has no above/below
+      // trigger a "who is going" statement could be wrong against, so this
+      // is left untestable rather than given a test that is not really one
+      // (plan §5 B1: "if a measured insight kind has no fitting registry
+      // metric, leave falsifier null and say so").
+      falsifier: null,
+      subjectKey: null,
+      direction: "none",
     });
   }
   return out;

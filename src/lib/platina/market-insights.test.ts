@@ -82,6 +82,39 @@ describe("interestInsights", () => {
     const b = interestInsights({ client: { id: "waters", name: "Waters" }, names, momentum: [ms()], signals });
     expect(a[0].content).toBe(b[0].content);
   });
+
+  it("B1: an interest insight carries a code-built topic_momentum falsifier, direction 'up', content text unchanged", () => {
+    const [insight] = interestInsights({ client: { id: "waters", name: "Waters" }, names, momentum: [ms()], signals });
+    expect(insight.content).toContain("posts about mass spectrometry drew 1.24×"); // unchanged by B1
+    expect(insight.falsifier).toEqual({
+      metric: "topic_momentum",
+      subject: { topic: "mass spectrometry" },
+      direction: "below",
+      threshold: 1.0,
+      window_days: 30,
+    });
+    expect(insight.subjectKey).toBe("topic:mass spectrometry");
+    expect(insight.direction).toBe("up");
+  });
+
+  it("B1: a pressure insight carries a code-built ad_days_running falsifier keyed to the longest-running advertiser", () => {
+    const [p] = interestInsights({
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms({ signalKind: "pressure", region: "AE", n: 6 })],
+      signals: [sig({ signalKind: "pressure", region: "AE", value: 64, brandId: "agilent", documentId: "ad1" })],
+    });
+    expect(p.content).toContain("(Agilent) has run 64 days"); // unchanged by B1
+    expect(p.falsifier).toEqual({
+      metric: "ad_days_running",
+      subject: { brand: "Agilent", topic: "mass spectrometry" },
+      direction: "below",
+      threshold: 64,
+      window_days: 30,
+    });
+    expect(p.subjectKey).toBe("brand:Agilent|topic:mass spectrometry");
+    expect(p.direction).toBe("up");
+  });
 });
 
 describe("sampleConfidence", () => {
@@ -113,6 +146,12 @@ describe("eventInsights", () => {
     expect(e.content).toContain("No tracked company named on the event page read 2026-09-22");
     expect(e.confidence).toBe(0.8);
     expect(e.sourceSignalIds).toEqual(["page1"]);
+  });
+
+  it("B1: has no falsifier — event_participants is a count, not an above/below test, so this says so rather than inventing one", () => {
+    const [e] = eventInsights({ names, events: [arablab], now });
+    expect(e.falsifier).toBeNull();
+    expect(e.direction).toBe("none");
   });
 
   it("names who is going with the kind of proof, and links their documents", () => {
@@ -196,6 +235,58 @@ describe("writers", () => {
     expect(result).toMatchObject({ written: 1, superseded: 1, unembedded: 0 });
     expect(f.inserted[0]).toMatchObject({ insightKey: "interest:waters:mass spectrometry", embedding: [0.1, 0.2] });
     expect(f.superseded).toEqual(["old"]);
+  });
+
+  it("B1: passes the producer's falsifier/subjectKey/direction through to insert, with kind/writtenBy and a due_at derived from the falsifier's window", async () => {
+    const f = fakeDeps();
+    const now = new Date("2026-10-13T00:00:00Z");
+    await writeClientInsights(f.deps, {
+      workspaceId: "ws",
+      client: { id: "waters", name: "Waters" },
+      names,
+      momentum: [ms()],
+      signals: [sig({})],
+      now,
+    });
+    expect(f.inserted[0]).toMatchObject({
+      kind: "measured",
+      writtenBy: "insight-writer-v2",
+      falsifier: { metric: "topic_momentum", subject: { topic: "mass spectrometry" }, direction: "below", threshold: 1.0, window_days: 30 },
+      subjectKey: "topic:mass spectrometry",
+      direction: "up",
+      dueAt: new Date(now.getTime() + 30 * 86_400_000),
+    });
+  });
+
+  it("B1: an event insight (no fitting metric) is still kind='measured'/written_by, but falsifier/subjectKey/direction/dueAt are null/none", async () => {
+    const f = fakeDeps();
+    await writeEventInsights(f.deps, {
+      workspaceId: "ws",
+      names,
+      now,
+      events: [
+        {
+          eventKey: "arablab-2026",
+          name: "ARABLAB LIVE 2026",
+          format: "in_person",
+          startsOn: "2026-10-26",
+          endsOn: "2026-10-28",
+          location: "Dubai",
+          country: "AE",
+          documentId: "p",
+          detail: null,
+          participants: [],
+        },
+      ],
+    });
+    expect(f.inserted[0]).toMatchObject({
+      kind: "measured",
+      writtenBy: "insight-writer-v2",
+      falsifier: null,
+      subjectKey: null,
+      direction: "none",
+      dueAt: null,
+    });
   });
 
   it("stores an event insight without a vector when embedding fails, rather than dropping it", async () => {
