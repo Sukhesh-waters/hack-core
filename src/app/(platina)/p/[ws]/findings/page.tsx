@@ -16,7 +16,11 @@ import {
   OBJECTION_RATE_CEILING,
   objectionRate,
 } from "@/lib/platina/objection-rate";
-import { reviewFindingAction, reauditDriftAction } from "../actions";
+import {
+  INSIGHT_REJECT_REASON_LABEL,
+  INSIGHT_REJECT_REASONS,
+} from "@/lib/platina/insight-review";
+import { reviewFindingAction, reviewInsightAction, reauditDriftAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Platina findings" };
@@ -320,6 +324,54 @@ export default async function FindingsPage(
                     </div>
                   </dl>
                 </details>
+
+                {f.brainChunkId && linked && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer font-mono text-[11px] text-muted-foreground">
+                      Review linked insight
+                    </summary>
+                    <form
+                      action={reviewInsightAction}
+                      className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-secondary p-3 text-xs"
+                    >
+                      <input type="hidden" name="workspaceId" value={params.ws} />
+                      <input type="hidden" name="chunkId" value={f.brainChunkId} />
+                      <input type="hidden" name="returnTo" value="findings" />
+                      <select
+                        name="rejectReason"
+                        defaultValue="wrong_fact"
+                        className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                      >
+                        {INSIGHT_REJECT_REASONS.map((reason) => (
+                          <option key={reason} value={reason}>
+                            {INSIGHT_REJECT_REASON_LABEL[reason]}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        name="note"
+                        placeholder="Optional note"
+                        className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                      />
+                      <button
+                        type="submit"
+                        name="action"
+                        value="approve"
+                        className="rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground"
+                      >
+                        Approve insight
+                      </button>
+                      <button
+                        type="submit"
+                        name="action"
+                        value="reject"
+                        className="rounded-md border border-border px-2.5 py-1 text-xs"
+                      >
+                        Reject insight
+                      </button>
+                    </form>
+                  </details>
+                )}
               </li>
             );
           })}

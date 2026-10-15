@@ -114,7 +114,14 @@ export function labelEvidence(
   };
 }
 
-export function buildIdeaPrompt(input: { clientName: string; trigger: IdeaTrigger; F: Evidence[]; A: Evidence[]; P: Evidence[] }): string {
+export function buildIdeaPrompt(input: {
+  clientName: string;
+  trigger: IdeaTrigger;
+  F: Evidence[];
+  A: Evidence[];
+  P: Evidence[];
+  counter?: string | null;
+}): string {
   const list = (rows: Evidence[]) => rows.map((r) => `[${r.id}] ${r.text}`).join("\n");
   const follow = IDEAS_PER_RUN - EXPLORE_PER_RUN;
   return [
@@ -122,6 +129,9 @@ export function buildIdeaPrompt(input: { clientName: string; trigger: IdeaTrigge
     `PUBLIC FACTS about the trigger (cite as F-ids):\n${list(input.F)}`,
     `${input.clientName.toUpperCase()}'S BRAND DNA, from its own pages (cite as A-ids):\n${input.A.length ? list(input.A) : "none found"}`,
     `LEARNED PATTERNS, what has worked for ${input.clientName} (cite as P-ids):\n${input.P.length ? list(input.P) : "none yet"}`,
+    ...(input.counter
+      ? [`COUNTER-EVIDENCE (may contradict the above):\n${input.counter}`]
+      : []),
     [
       `Propose ${IDEAS_PER_RUN} campaign ideas that answer the trigger. Each idea:`,
       "- title: a short, specific campaign name (no numbers unless in the facts).",
@@ -148,6 +158,8 @@ export type Idea = {
   fit: IdeaLine | null;
   pattern: IdeaLine | null;
   explore: boolean;
+  /** W3b-rest: opposing or refuted Brain claim on the trigger's subject (when retrieval mode is "on"). */
+  counterEvidence?: string | null;
 };
 
 const lineSchema = z.object({ text: z.string().trim().min(8).max(400), cites: z.array(z.string()).default([]) });

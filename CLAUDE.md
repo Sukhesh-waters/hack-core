@@ -76,7 +76,7 @@
   ticket, Hub, SOP, content, calendar, campaign, or notification modules.
   `platina_campaigns.sop_run_id` and Platina alert actions `hub_message` / `ticket` /
   `email` are archived: never read, never written, never executed.
-- Deploy: Vercel only (Pro plan — this is a real client-facing build, not Hobby/personal use).
+- Deploy / Runtime: Owner decision 2026-10-15 — no Vercel deployment for now; runtime is local (`npm run dev:all` — Next.js + Inngest dev server) focused on showcasing the prototype ideology against Supabase Postgres.
 
 ## Non-negotiable rules
 - workspace_id isolation on every table, every query. No cross-workspace leakage, ever.

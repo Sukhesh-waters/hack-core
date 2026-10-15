@@ -27,6 +27,8 @@ export type ImportedMetricRow = {
   shares: number | null;
   videoViews: number | null;
   leads: number | null;
+  /** B9 (D4): optional qualified-leads column. Null ("not measured") when absent, never estimated. */
+  qualifiedLeads: number | null;
   spend: number | null;
 };
 
@@ -59,6 +61,12 @@ const ALIASES: Record<string, Field> = {
   video_views: "videoViews",
   views: "videoViews",
   leads: "leads",
+  qualified_leads: "qualifiedLeads",
+  qualified: "qualifiedLeads",
+  mql: "qualifiedLeads",
+  mqls: "qualifiedLeads",
+  sql: "qualifiedLeads",
+  sqls: "qualifiedLeads",
   spend: "spend",
   reactions: "reactions",
   likes: "reactions",
@@ -194,6 +202,7 @@ export function parseMetricsSheet(text: string, today: Date): MetricsParse {
       shares: values.shares ?? values.reposts ?? null,
       videoViews: values.videoViews ?? null,
       leads: values.leads ?? null,
+      qualifiedLeads: values.qualifiedLeads ?? null,
       spend: values.spend ?? null,
     });
   }

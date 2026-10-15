@@ -146,6 +146,16 @@ export default async function NewSolutionPage(
               </ul>
             </div>
           </div>
+          {retrieved.counterHypothesis && (
+            <div className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-sm">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                Counter-evidence
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {retrieved.counterHypothesis.content.slice(0, 200)}
+              </p>
+            </div>
+          )}
           <p className="mt-2 font-mono text-[11px] text-muted-foreground">
             {retrieved.reranked
               ? "Ranked by relevance pass"

@@ -12,8 +12,10 @@
  * and a digit in a brief line that is not in its cited evidence drops it.
  */
 import { z } from "zod";
-import { extractJson } from "./json";
 import { CONFERENCE_CALENDAR } from "./conference-calendar";
+import { DERIVED_SHARE, EVIDENCE_TOKEN_BUDGET, estimateTokens, fitSections } from "./context-budget";
+import { diversifyEvidence, type Candidate, type DiversifyStats } from "./diversify";
+import { extractJson } from "./json";
 import type { Campaign } from "./opportunities";
 
 export type BriefEvidence = { id: string; plane: "A" | "B"; text: string; url: string | null };
@@ -28,6 +30,8 @@ export type CampaignBrief = {
   salesAngle: BriefLine | null;
   steps: { when: string; what: string }[];
   dropped: number;
+  /** W3b-rest: opposing or refuted Brain claim on the opportunity's subject (when retrieval mode is "on"). */
+  counterEvidence?: string | null;
 };
 
 /** Public facts behind the opportunity, labelled F1.. (from the computed campaign). */
@@ -59,6 +63,134 @@ export function ownPassages(rows: { content: string; sourceUrl: string | null }[
   }));
 }
 
+export type BriefBrainCandidate = {
+  id: string;
+  content: string;
+  sourceUrl?: string | null;
+  subjectKey?: string | null;
+  direction?: "up" | "down" | "none" | null;
+  gradeState?: "untested" | "holding" | "promoted" | "refuted" | "insufficient" | null;
+  status?: string;
+  generation?: number;
+  sourceSignalIds?: string[];
+  absorbedChunkIds?: string[];
+};
+
+const rankRel = (i: number, len: number) => 1 - i / Math.max(1, len);
+
+/**
+ * W3b-rest — anti-echo + token-budget selection for Opportunity Briefs and
+ * Idea Runs (pure, IO-free). Filters investor/results pages out of own-site
+ * passages first, then runs MMR, lineage dedup, the derived-share cap, the
+ * counter-evidence slot, and (when `budgetOn`) the hard evidence token budget.
+ */
+export function selectBriefEvidence(input: {
+  ownRows: { id?: string; content: string; sourceUrl: string | null }[];
+  brainRows?: BriefBrainCandidate[];
+  refutedRows?: BriefBrainCandidate[];
+  derivedShare?: number;
+  budgetOn?: boolean;
+  k?: number;
+  evidenceTokenBudget?: number;
+}): {
+  own: BriefEvidence[];
+  counter: BriefEvidence | null;
+  stats: DiversifyStats & { budgetDropped: number };
+} {
+  const k = input.k ?? 6;
+  const evidenceTokenBudget = input.evidenceTokenBudget ?? EVIDENCE_TOKEN_BUDGET;
+  const derivedShare = input.derivedShare ?? DERIVED_SHARE;
+  const filteredOwn = input.ownRows
+    .filter((r) => !NOT_PRODUCT.test(r.content))
+    .map((r, i) => ({
+      id: r.id ?? `own_${i + 1}`,
+      content: r.content.replace(/\s+/g, " ").slice(0, 500),
+      sourceUrl: r.sourceUrl,
+    }));
+  const brain = input.brainRows ?? [];
+  const supportIds = new Set(brain.map((b) => b.id));
+  const refuted = (input.refutedRows ?? []).filter((r) => !supportIds.has(r.id));
+
+  const toBrainCand = (b: BriefBrainCandidate, relevance: number): Candidate => ({
+    id: b.id,
+    content: b.content.replace(/\s+/g, " ").slice(0, 500),
+    relevance,
+    derived: true,
+    plane: "B",
+    subjectKey: b.subjectKey ?? null,
+    direction: b.direction ?? null,
+    gradeState: b.gradeState ?? null,
+    status: b.status ?? "active",
+    generation: b.generation ?? 0,
+    lineage: {
+      sourceSignalIds: b.sourceSignalIds ?? [],
+      absorbedChunkIds: b.absorbedChunkIds ?? [],
+    },
+  });
+
+  const candidates: Candidate[] = [
+    ...filteredOwn.map((r, i) => ({
+      id: r.id,
+      content: r.content,
+      relevance: rankRel(i, filteredOwn.length),
+      derived: false,
+      plane: "A" as const,
+    })),
+    ...brain.map((b, i) => toBrainCand(b, rankRel(i, brain.length))),
+    ...refuted.map((r, i) => toBrainCand(r, 0.1 * rankRel(i, refuted.length))),
+  ];
+
+  const result = diversifyEvidence({
+    candidates,
+    k: k + Math.min(4, brain.length),
+    evidenceTokenBudget,
+    derivedShare,
+    tokensOf: (c) => estimateTokens(c.content),
+  });
+
+  let support = result.items.filter((i) => i.role === "support").map((i) => i.candidate);
+  let budgetDropped = 0;
+  if (input.budgetOn) {
+    const ordered = [...support].sort((a, b) => b.relevance - a.relevance);
+    const fitted = fitSections(
+      { evidence: ordered.map((c) => ({ id: c.id, text: c.content })) },
+      { evidence: { cap: evidenceTokenBudget } },
+    );
+    const keptIds = new Set(fitted.sections.evidence.kept.map((i) => i.id));
+    budgetDropped = support.length - keptIds.size;
+    support = support.filter((c) => keptIds.has(c.id));
+  }
+
+  const keptOwnIds = new Set(support.filter((c) => !c.derived).map((c) => c.id));
+  const own = filteredOwn
+    .filter((r) => keptOwnIds.has(r.id))
+    .slice(0, k)
+    .map((r, i) => ({
+      id: `A${i + 1}`,
+      plane: "A" as const,
+      text: r.content,
+      url: r.sourceUrl,
+    }));
+
+  const counterCand = result.items.find((i) => i.role === "disconfirming")?.candidate ?? null;
+  const byBrainId = new Map([...brain, ...refuted].map((b) => [b.id, b]));
+  const counterSource = counterCand ? byBrainId.get(counterCand.id) : null;
+  const counter: BriefEvidence | null = counterCand
+    ? {
+        id: "C1",
+        plane: "B",
+        text: counterCand.content,
+        url: counterSource?.sourceUrl ?? null,
+      }
+    : null;
+
+  return {
+    own,
+    counter,
+    stats: { ...result.stats, budgetDropped },
+  };
+}
+
 /**
  * What to look for on the client's own pages: the subjects the opportunity is
  * about, never the client's own name (live 2026-09-23: "waters" matched every
@@ -80,6 +212,7 @@ export function buildBriefPrompt(input: {
   campaign: Campaign;
   facts: BriefEvidence[];
   own: BriefEvidence[];
+  counter?: BriefEvidence | null;
 }): string {
   const { clientName, campaign: c } = input;
   const list = (rows: BriefEvidence[]) => rows.map((r) => `[${r.id}] ${r.text}`).join("\n");
@@ -87,6 +220,9 @@ export function buildBriefPrompt(input: {
     `Client: ${clientName}. Opportunity: ${c.title}.${c.startBy ? ` Start preparing by: ${c.startBy}.` : ""}`,
     `PUBLIC FACTS about the market (cite as F-ids):\n${list(input.facts)}`,
     `${clientName.toUpperCase()}'S OWN PAGES (cite as A-ids):\n${input.own.length ? list(input.own) : "none found"}`,
+    ...(input.counter
+      ? [`COUNTER-EVIDENCE (may contradict the above):\n[${input.counter.id}] ${input.counter.text}`]
+      : []),
     [
       "Write a short campaign brief a marketing lead can act on this week.",
       "- whyNow: 2-3 lines on why this opportunity matters now. Cite ONLY F-ids.",

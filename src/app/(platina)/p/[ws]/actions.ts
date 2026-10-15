@@ -12,6 +12,7 @@ import {
   createAuditRun,
   demoteBrainChunk,
   findInvalidCitationIds,
+  getBrainChunksByIds,
   getBrandSource,
   getCampaign,
   getFinding,
@@ -45,9 +46,14 @@ import {
   upsertWorkspaceConfig,
   upsertWorkspaceProfile,
 } from "@/db/queries/platina";
+import { setBrainState } from "@/db/queries/platina-brain";
+import { listSuggestionsCitingBrainChunk } from "@/db/queries/platina-learning";
 import { inngest } from "@/inngest/client";
+import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
 import { hashGatePayload } from "@/lib/platina/hash";
 import { GATE_CAPABILITY, assertCompleteGateEvent } from "@/lib/platina/gates";
+import { planInsightReview } from "@/lib/platina/insight-review";
+import { recordDecision } from "@/lib/platina/suggestions-record";
 import { proposeCampaignDetail } from "@/lib/platina/ideation";
 import type { Capability } from "@/lib/permissions";
 import {
@@ -658,6 +664,66 @@ export async function reviewFindingAction(formData: FormData): Promise<void> {
   }
   await broadcastPlatinaSignal(ws, "findings", findingId);
   revalidatePath(`/p/${ws}/findings`);
+  revalidatePath(`/p/${ws}`);
+}
+
+/**
+ * B9 human gate on a Brain insight: approve, edit, or reject with reason
+ * (wrong_fact | not_new | not_testable | other). State changes go through
+ * `setBrainState` (undo journal), and a ledger event is recorded on every
+ * suggestion that cited this insight so `wrong_fact` lowers input trust in
+ * `credit.ts`.
+ */
+export async function reviewInsightAction(formData: FormData): Promise<void> {
+  const ws = String(formData.get("workspaceId"));
+  const chunkId = String(formData.get("chunkId") ?? "").trim();
+  const action = String(formData.get("action") ?? "").trim();
+  const editedContent = String(formData.get("editedContent") ?? "");
+  const rejectReason = String(formData.get("rejectReason") ?? "");
+  const note = String(formData.get("note") ?? "");
+  const returnTo = String(formData.get("returnTo") ?? "findings").trim();
+  await operator(ws, "platina.finding.review");
+
+  if (!chunkId) refuse(ws, returnTo, "Insight not found.");
+  const [chunk] = await getBrainChunksByIds(ws, [chunkId]);
+  if (!chunk) refuse(ws, returnTo, "Insight not found in this workspace.");
+
+  const planned = planInsightReview({
+    chunkId,
+    action,
+    currentContent: chunk.content,
+    editedContent,
+    rejectReason,
+    note,
+  });
+  if (!planned.ok) {
+    refuse(ws, returnTo, planned.error);
+  }
+
+  await setBrainState(ws, chunkId, planned.brainState, planned.cause);
+  const citing = await listSuggestionsCitingBrainChunk(ws, chunkId);
+  const now = new Date();
+  for (const s of citing) {
+    await recordDecision({
+      workspaceId: ws,
+      suggestionId: s.id,
+      kind: planned.ledgerEvent.kind,
+      reason: planned.ledgerEvent.reason ?? undefined,
+      detail: planned.ledgerEvent.detail,
+      now,
+    });
+  }
+  void recordBrainEvent({
+    workspaceId: ws,
+    stage: "gate",
+    decision: `insight_${planned.action}`,
+    subjectId: chunkId,
+    detail: planned.ledgerEvent.detail,
+  });
+  await broadcastPlatinaSignal(ws, "insights", chunkId);
+  revalidatePath(`/p/${ws}/findings`);
+  revalidatePath(`/p/${ws}/brain`);
+  revalidatePath(`/p/${ws}/brain-map`);
   revalidatePath(`/p/${ws}`);
 }
 

@@ -894,7 +894,7 @@ prototype-level slices on `main` behind modes.
 
 | Slice | Shadow window | Result | Snapshot file | Flipped on | Rollbacks |
 |---|---|---|---|---|---|
-| B0 | | | | | |
+| B0 | 2026-10-15 (migrated, all modes off) | 0087–0090 applied; `platina:brain-readiness` OK | `backups/2026-10-15-brain-waters-gcc-internal.json` | — (all modes off per owner decision) | none |
 | B1 | | | | | |
 | B2 | | | | | |
 | B3 | | | | | |

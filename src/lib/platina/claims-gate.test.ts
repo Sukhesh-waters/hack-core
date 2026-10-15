@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claimsDnaFromRules, claimsGate, DEFAULT_CLAIMS_DNA } from "./claims-gate";
+import { claimsDnaFromRules, claimsGate, DEFAULT_CLAIMS_DNA, detectRuleConflicts } from "./claims-gate";
 
 describe("claimsGate", () => {
   it("passes clean copy", () => {
@@ -69,5 +69,39 @@ describe("claimsDnaFromRules", () => {
     ]).dna;
     expect(before.bannedTerms).not.toContain("seamless");
     expect(after.bannedTerms).toContain("seamless");
+  });
+
+  it("B9 Heinz rule conflict: a top-third idea blocked by claimsGate is escalated with both sides shown, and the rule wins", () => {
+    const conflicts = detectRuleConflicts([
+      {
+        id: "idea-1",
+        title: "Guaranteed PFAS compliance in 24 hours",
+        text: "Our workflow is guaranteed to pass every lab audit.",
+        score: 0.92,
+        evidence: ["4 of 5 PFAS posts beat baseline"],
+      },
+      {
+        id: "idea-2",
+        title: "Water lab webinar",
+        text: "Join our technical session on drinking-water workflows.",
+        score: 0.65,
+        evidence: ["ARABLAB attendance"],
+      },
+      {
+        id: "idea-3",
+        title: "Low-scoring banned draft",
+        text: "Best in class instrument.",
+        score: 0.25,
+        evidence: ["Old post"],
+      },
+    ]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toMatchObject({
+      id: "idea-1",
+      ruleWins: true,
+      blocked: true,
+      evidenceSide: { score: 0.92, rank: 1, total: 3, evidence: ["4 of 5 PFAS posts beat baseline"] },
+    });
+    expect(conflicts[0].ruleSide.summary).toContain("guaranteed");
   });
 });

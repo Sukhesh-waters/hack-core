@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBriefPrompt, ownPassages, parseBrief, publicFacts, searchWords } from "./opportunity-brief";
+import { buildBriefPrompt, ownPassages, parseBrief, publicFacts, searchWords, selectBriefEvidence } from "./opportunity-brief";
 import type { Campaign } from "./opportunities";
 
 const campaign: Campaign = {
@@ -117,5 +117,28 @@ describe("opportunity brief (C8.4)", () => {
       "Email key accounts about the HDMS advantage.",
     ]);
     expect(ownPassages([{ content: "Waters Corporation Reports Second Quarter 2023 Financial Results", sourceUrl: null }])).toEqual([]);
+  });
+
+  it("selectBriefEvidence (W3b-rest) drops investor pages, diversifies own passages, and fills the counter-evidence slot", () => {
+    const sel = selectBriefEvidence({
+      ownRows: [
+        { content: "Waters Corporation Reports Second Quarter 2023 Financial Results", sourceUrl: "https://www.waters.com/ir" },
+        { content: "Xevo TQ Absolute tandem quadrupole for PFAS in drinking water.", sourceUrl: "https://www.waters.com/xevo" },
+      ],
+      brainRows: [
+        { id: "b1", content: "PFAS testing demand in UAE labs rose.", subjectKey: "topic:pfas", direction: "up" },
+      ],
+      refutedRows: [
+        { id: "r1", content: "Earlier PFAS webinar series underperformed.", subjectKey: "topic:pfas", direction: "up", status: "demoted", gradeState: "refuted" },
+      ],
+      derivedShare: 0.4,
+      budgetOn: true,
+    });
+    expect(sel.own).toHaveLength(1);
+    expect(sel.own[0].id).toBe("A1");
+    expect(sel.counter).toMatchObject({ id: "C1", plane: "B", text: "Earlier PFAS webinar series underperformed." });
+    const prompt = buildBriefPrompt({ clientName: "Waters", campaign, facts, own: sel.own, counter: sel.counter });
+    expect(prompt).toContain("COUNTER-EVIDENCE (may contradict the above):");
+    expect(prompt).toContain("[C1] Earlier PFAS webinar series underperformed.");
   });
 });

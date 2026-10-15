@@ -41,8 +41,18 @@ describe("parseMetricsSheet", () => {
     );
     expect(r.layout).toBe("platina");
     expect(r.errors).toEqual([]);
-    expect(r.rows[0]).toMatchObject({ ref: "https://x.com/p/1", impressions: 1000, engagements: 30, leads: null });
-    expect(r.rows[1]).toMatchObject({ ref: "c-2", capturedAt: TODAY, engagements: null, leads: 2 });
+    expect(r.rows[0]).toMatchObject({ ref: "https://x.com/p/1", impressions: 1000, engagements: 30, leads: null, qualifiedLeads: null });
+    expect(r.rows[1]).toMatchObject({ ref: "c-2", capturedAt: TODAY, engagements: null, leads: 2, qualifiedLeads: null });
+  });
+
+  it("B9 (D4): parses optional qualified_leads when supplied, and leaves it null ('not measured') when absent", () => {
+    const r = parseMetricsSheet(
+      "creative,impressions,leads,qualified_leads\nc-1,1000,12,5\nc-2,800,4,",
+      TODAY,
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0]).toMatchObject({ ref: "c-1", leads: 12, qualifiedLeads: 5 });
+    expect(r.rows[1]).toMatchObject({ ref: "c-2", leads: 4, qualifiedLeads: null });
   });
 
   it("LinkedIn export: engagements = reactions + comments + reposts; reposts are shares", () => {

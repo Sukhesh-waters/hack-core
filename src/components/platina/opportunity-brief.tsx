@@ -167,6 +167,12 @@ export function OpportunityBrief({ ws, clientId, opportunityKey }: { ws: string;
               </ol>
             </div>
           ) : null}
+          {brief.counterEvidence ? (
+            <div className="rounded border border-border bg-background/60 p-2 text-xs">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Counter-evidence</p>
+              <p className="mt-0.5 text-muted-foreground">{brief.counterEvidence}</p>
+            </div>
+          ) : null}
           <p className="text-[11px] text-muted-foreground">
             F = public evidence, A = your own pages; hover a label to read it, click to open the source. Lines the AI
             could not support were removed{brief.dropped ? ` (${brief.dropped})` : ""}.

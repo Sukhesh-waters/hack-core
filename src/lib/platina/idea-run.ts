@@ -7,6 +7,12 @@
  * recorded in the suggestion ledger. Server-only: DB and model.
  */
 import {
+  getBrainChunksByIds,
+  getWorkspaceConfig,
+  similarBrainChunksQuery,
+} from "@/db/queries/platina";
+import { listSimilarRefutedBrainChunks } from "@/db/queries/platina-grades";
+import {
   countIdeasSince,
   keywordFirstPartyChunksQuery,
   similarFirstPartyChunksQuery,
@@ -14,6 +20,9 @@ import {
 import type { SuggestionInput } from "@/db/platina-schema";
 import { routeAI } from "@/lib/ai/router";
 import { runWithAiCost } from "@/lib/ai/usage-context";
+import { modeOf } from "./brain-modes";
+import { recordBrainEvent } from "./brain-telemetry";
+import { DERIVED_SHARE } from "./context-budget";
 import { embedText } from "./embed";
 import {
   buildIdeaPrompt,
@@ -30,7 +39,7 @@ import { CONFERENCE_CALENDAR } from "./conference-calendar";
 import { clientTopics, isGenericTopic } from "./interest";
 import { learnedPatterns, loadLearning } from "./learning-engine";
 import { possessive } from "./learning-public";
-import { ownPassages } from "./opportunity-brief";
+import { ownPassages, selectBriefEvidence } from "./opportunity-brief";
 import { recordSuggestion } from "./suggestions-record";
 import { normaliseWeights } from "./suggestions";
 
@@ -93,7 +102,12 @@ export async function runIdeaEngine(
       `today's idea budget is used (${drafted} of ${DAILY_IDEA_CAP}); it resets at 00:00 UTC`,
     );
   }
-  const { client, triggers } = await loadTriggers(ws, now);
+  const [{ client, triggers }, config] = await Promise.all([
+    loadTriggers(ws, now),
+    typeof getWorkspaceConfig === "function"
+      ? Promise.resolve(getWorkspaceConfig(ws)).catch(() => null)
+      : Promise.resolve(null),
+  ]);
   if (!client) throw new Error("no client in this workspace");
   const trigger = triggers.find((t) => t.key === key) ?? triggers[0];
   if (!trigger)
@@ -113,7 +127,7 @@ export async function runIdeaEngine(
     .map((f) => f.text)
     .join(" ")}`.replace(name, "");
   const embedding = await embedText(query).catch(() => null);
-  let rows: { content: string; sourceUrl: string | null }[] = [];
+  let rows: { id?: string; content: string; sourceUrl: string | null }[] = [];
   if (embedding) {
     rows = (
       await similarFirstPartyChunksQuery(ws, embedding, {
@@ -161,12 +175,81 @@ export async function runIdeaEngine(
       ...found.filter((f) => !rows.some((r) => r.content === f.content)),
     ];
   }
-  const dna = ownPassages(rows)
+  const legacyDna = ownPassages(rows)
     .slice(0, 6)
     .map((p) => ({
       content: p.text,
       sourceUrl: p.url,
     }));
+  let dna = legacyDna;
+  let counterEvidence: string | null = null;
+  const retrievalMode = modeOf(config, "retrieval");
+  if (retrievalMode !== "off") {
+    try {
+      const [brainNear, refutedNear] = await Promise.all([
+        embedding && typeof similarBrainChunksQuery === "function"
+          ? similarBrainChunksQuery(ws, embedding, 20)
+          : Promise.resolve([]),
+        embedding && typeof listSimilarRefutedBrainChunks === "function"
+          ? listSimilarRefutedBrainChunks(ws, embedding, 10)
+          : Promise.resolve([]),
+      ]);
+      const fullBrain =
+        typeof getBrainChunksByIds === "function"
+          ? await getBrainChunksByIds(ws, [
+              ...brainNear.map((b) => b.id),
+              ...refutedNear.map((r) => r.id),
+            ])
+          : [];
+      const byId = new Map(fullBrain.map((b) => [b.id, b]));
+      const selected = selectBriefEvidence({
+        ownRows: rows,
+        brainRows: brainNear
+          .map((b) => byId.get(b.id))
+          .filter((b): b is NonNullable<typeof b> => Boolean(b)),
+        refutedRows: refutedNear.map((r) => byId.get(r.id) ?? r),
+        derivedShare: config?.derivedContextShare ?? DERIVED_SHARE,
+        budgetOn: modeOf(config, "budget") === "on",
+        k: 6,
+      });
+      if (retrievalMode === "on") {
+        dna = selected.own.map((p) => ({ content: p.text, sourceUrl: p.url }));
+        counterEvidence = selected.counter?.text ?? null;
+        void recordBrainEvent({
+          workspaceId: ws,
+          stage: "retrieval",
+          decision: "on",
+          detail: { caller: "idea-run", ...selected.stats },
+        });
+      } else {
+        const oldTexts = new Set(legacyDna.map((d) => d.content));
+        void recordBrainEvent({
+          workspaceId: ws,
+          stage: "retrieval",
+          decision: "shadow",
+          detail: {
+            caller: "idea-run",
+            ...selected.stats,
+            overlap: selected.own.filter((o) => oldTexts.has(o.text)).length,
+            oldCount: legacyDna.length,
+            newCount: selected.own.length,
+          },
+        });
+      }
+    } catch (err) {
+      if (retrievalMode === "on") {
+        void recordBrainEvent({
+          workspaceId: ws,
+          stage: "retrieval",
+          decision: "fallback",
+          detail: {
+            caller: "idea-run",
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+  }
   step(
     "dna",
     `Read ${possessive(client.name)} Brand DNA`,
@@ -200,7 +283,12 @@ export async function runIdeaEngine(
         json: true,
         system:
           "You draft evidence-cited B2B campaign ideas. Cite ids exactly as given. Never invent facts or numbers.",
-        prompt: buildIdeaPrompt({ clientName: client.name, trigger, ...ev }),
+        prompt: buildIdeaPrompt({
+          clientName: client.name,
+          trigger,
+          ...ev,
+          ...(counterEvidence ? { counter: counterEvidence } : {}),
+        }),
       }),
   );
   const { ideas, dropped } = parseIdeas(raw, ev);
@@ -249,7 +337,11 @@ export async function runIdeaEngine(
       model: null,
       promptVersion: IDEA_PROMPT_VERSION,
     });
-    recorded.push({ ...idea, suggestionId: id });
+    recorded.push({
+      ...idea,
+      ...(counterEvidence ? { counterEvidence } : {}),
+      suggestionId: id,
+    });
   }
   step(
     "ledger",

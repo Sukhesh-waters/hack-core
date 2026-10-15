@@ -154,6 +154,11 @@ export function IdeaRun({ ws, triggerKey, label = "Draft ideas" }: { ws: string;
                     <Cites line={i.pattern} />
                   </li>
                 ) : null}
+                {i.counterEvidence ? (
+                  <li>
+                    <span className="text-muted-foreground">Counter-evidence:</span> {i.counterEvidence}
+                  </li>
+                ) : null}
               </ul>
               {i.suggestionId ? (
                 <Link href={`/p/${ws}/learning/${i.suggestionId}`} className="mt-2 inline-block text-xs text-primary underline-offset-4 hover:underline">

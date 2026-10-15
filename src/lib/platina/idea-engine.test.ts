@@ -63,6 +63,15 @@ describe("parseIdeas", () => {
     expect(p).toContain("[A1]");
     expect(p).toContain("[P1]");
     expect(p).toContain(`exactly ${EXPLORE_PER_RUN} tries something new`);
+
+    const withCounter = buildIdeaPrompt({
+      clientName: "Waters",
+      trigger,
+      ...ev,
+      counter: "Earlier PFAS booth activation in Dubai drew fewer demos than expected.",
+    });
+    expect(withCounter).toContain("COUNTER-EVIDENCE (may contradict the above):");
+    expect(withCounter).toContain("Earlier PFAS booth activation in Dubai drew fewer demos than expected.");
   });
 
   it("keeps cited ideas and drops wrong-list, uncited or invented-number ones", () => {

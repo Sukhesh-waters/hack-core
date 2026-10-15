@@ -14,12 +14,21 @@ import { lexicalBrainChunksQuery, similarBrainChunksQuery } from "@/db/queries/p
 import { analysisWrites, UNTESTABLE_SKIP_CAUSE } from "./analysis-writes";
 import { planAnalysis } from "./analysis-plan";
 import { blindChallengerInput } from "./challenger";
+import { detectRuleConflicts } from "./claims-gate";
 import { nextRoundAllowed } from "./contradiction";
 import { runContradictionRound, runInterrogationRound } from "./debate";
+import { derivedOnlySupport, diversifyEvidence, dropLineageDuplicates } from "./diversify";
 import { gradeInsight } from "./falsifier-grade";
-import { assertFalsifiableClaim } from "./falsifier-metrics";
+import {
+  assertFalsifiableClaim,
+  compareMeasurements,
+  FALSIFIER_METRIC_IDS,
+  FALSIFIER_METRICS,
+} from "./falsifier-metrics";
 import type { FalsifierClaim } from "./falsifier-metrics";
+import { assertCompleteGateEvent } from "./gates";
 import { gateInsight } from "./insight-gate";
+import { planInsightReview } from "./insight-review";
 
 // Hoisted, static mock — the same pattern analysis-plan.test.ts already
 // uses successfully; a per-test vi.resetModules()+dynamic-import was tried
@@ -466,14 +475,64 @@ describe("invariant: deterministic gates override every model (B3)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Not yet provable — each row is the later slice that builds it (plan §7)
+// invariant: derived chunks stay under the context cap and are never self-cited (B6)
 // ---------------------------------------------------------------------------
 
-describe.todo("invariant: derived chunks stay under the context cap and are never self-cited (B6)");
-it.todo("B6 — diversify's derived-share cap arithmetic (including cold start) and the lineage/self-citation refusal");
+describe("invariant: derived chunks stay under the context cap and are never self-cited (B6)", () => {
+  it("B6 — diversify's derived-share cap arithmetic (including cold start) and the lineage/self-citation refusal", () => {
+    const out = diversifyEvidence({
+      candidates: [
+        { id: "b1", content: "alpha beta gamma delta", relevance: 0.9, derived: true, plane: "B", lineage: { sourceSignalIds: ["s1"], absorbedChunkIds: [] } },
+        { id: "b2", content: "epsilon zeta eta theta", relevance: 0.8, derived: true, plane: "B", lineage: { sourceSignalIds: ["s2"], absorbedChunkIds: [] } },
+        { id: "b3", content: "iota kappa lambda mu", relevance: 0.7, derived: true, plane: "B", lineage: { sourceSignalIds: ["s3"], absorbedChunkIds: [] } },
+      ],
+      k: 3,
+      evidenceTokenBudget: 100,
+      derivedShare: 0.4,
+      tokensOf: () => 20, // each is 20 tokens; cap = 40 -> at most 2 derived chunks kept
+    });
+    expect(out.items.filter((i) => i.role === "support")).toHaveLength(2);
+    expect(out.stats.derivedTokens).toBeLessThanOrEqual(40);
 
-describe.todo("invariant: every metric declares its scale; no cross-scale comparison (B0, re-asserted here)");
-it.todo("every FALSIFIER_METRICS entry has a scaleVersion, windows and minN; compareMeasurements throws across scale/window/segment");
+    // Lineage / self-citation: a compacted chunk and its parent never both survive.
+    const deduped = dropLineageDuplicates([
+      { id: "child", content: "compacted", relevance: 0.95, derived: true, plane: "B", lineage: { sourceSignalIds: ["s1"], absorbedChunkIds: ["parent"] } },
+      { id: "parent", content: "original", relevance: 0.8, derived: true, plane: "B", lineage: { sourceSignalIds: ["s1"], absorbedChunkIds: [] } },
+    ]);
+    expect(deduped.map((c) => c.id)).toEqual(["child"]);
+
+    expect(derivedOnlySupport(["brain:1", "brain:2"])).toBe(true);
+    expect(derivedOnlySupport(["brain:1", "sig:doc1#e1"])).toBe(false);
+    expect(derivedOnlySupport(["fp:own1"])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// invariant: every metric declares its scale; no cross-scale comparison (B0, re-asserted here)
+// ---------------------------------------------------------------------------
+
+describe("invariant: every metric declares its scale; no cross-scale comparison (B0, re-asserted here)", () => {
+  it("every FALSIFIER_METRICS entry has a scaleVersion, windows and minN; compareMeasurements throws across scale/window/segment", () => {
+    for (const id of FALSIFIER_METRIC_IDS) {
+      const def = FALSIFIER_METRICS[id];
+      expect(def.scaleVersion).toBeGreaterThanOrEqual(1);
+      expect(def.windows.length).toBeGreaterThan(0);
+      expect(def.minN).toBeGreaterThanOrEqual(1);
+    }
+    const base = {
+      metric: "topic_momentum" as const,
+      scaleVersion: 1,
+      windowDays: 30,
+      segment: { topic: "pfas analysis" },
+      value: 1.4,
+      n: 8,
+    };
+    expect(compareMeasurements(base, { ...base, value: 1.8 }).delta).toBeCloseTo(0.4, 5);
+    expect(() => compareMeasurements(base, { ...base, scaleVersion: 2 })).toThrow(/scale/i);
+    expect(() => compareMeasurements(base, { ...base, windowDays: 90 })).toThrow(/days/i);
+    expect(() => compareMeasurements(base, { ...base, segment: { topic: "lc-ms" } })).toThrow(/segment/i);
+  });
+});
 
 describe("invariant: refuted insights are demoted, never deleted (B5)", () => {
   it("no delete query is exported for platina_brain_chunks anywhere in db/queries/platina.ts", () => {
@@ -530,5 +589,39 @@ describe("invariant: refuted insights are demoted, never deleted (B5)", () => {
   });
 });
 
-describe.todo("invariant: a human approves every output that leaves (B9, re-asserted here)");
-it.todo("existing gate tests (gates.ts, publish gate) — unchanged by the Brain work; an insight also gains approve/edit/reject-with-reason");
+describe("invariant: a human approves every output that leaves (B9, re-asserted here)", () => {
+  it("existing gate tests (gates.ts, publish gate) — unchanged by the Brain work; an insight also gains approve/edit/reject-with-reason", () => {
+    expect(() =>
+      assertCompleteGateEvent({
+        workspaceId: "ws_1",
+        gate: "publish",
+        decision: "approved",
+        approverId: "",
+        payloadHash: "abc",
+        subjectType: "campaign",
+        subjectId: "camp_1",
+      }),
+    ).toThrow(/approver/i);
+
+    const conflicts = detectRuleConflicts([
+      {
+        id: "c1",
+        title: "Guaranteed audit pass",
+        text: "Our system is guaranteed to pass.",
+        score: 0.95,
+        evidence: ["e1"],
+      },
+    ]);
+    expect(conflicts[0]?.ruleWins).toBe(true);
+    expect(conflicts[0]?.blocked).toBe(true);
+
+    const rejected = planInsightReview({
+      chunkId: "chunk_1",
+      action: "reject",
+      currentContent: "Claim text",
+      rejectReason: "wrong_fact",
+    });
+    expect(rejected.ok && rejected.brainState.status).toBe("demoted");
+    expect(rejected.ok && rejected.ledgerEvent.reason).toBe("wrong_fact");
+  });
+});

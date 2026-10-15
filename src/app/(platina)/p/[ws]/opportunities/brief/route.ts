@@ -1,8 +1,17 @@
 import { requireUser } from "@/auth";
 import { requireMembership } from "@/db/queries/memberships";
+import {
+  getBrainChunksByIds,
+  getWorkspaceConfig,
+  similarBrainChunksQuery,
+} from "@/db/queries/platina";
+import { listSimilarRefutedBrainChunks } from "@/db/queries/platina-grades";
 import { keywordFirstPartyChunksQuery, similarFirstPartyChunksQuery } from "@/db/queries/platina-learning";
 import { routeAI } from "@/lib/ai/router";
 import { runWithAiCost } from "@/lib/ai/usage-context";
+import { modeOf } from "@/lib/platina/brain-modes";
+import { recordBrainEvent } from "@/lib/platina/brain-telemetry";
+import { DERIVED_SHARE } from "@/lib/platina/context-budget";
 import { embedText } from "@/lib/platina/embed";
 import { clientTopics } from "@/lib/platina/interest";
 import { loadOpportunities } from "@/lib/platina/opportunities-load";
@@ -12,6 +21,8 @@ import {
   parseBrief,
   publicFacts,
   searchWords,
+  selectBriefEvidence,
+  type BriefEvidence,
 } from "@/lib/platina/opportunity-brief";
 import { normaliseWeights } from "@/lib/platina/suggestions";
 import { recordSuggestion } from "@/lib/platina/suggestions-record";
@@ -41,7 +52,10 @@ export async function POST(request: Request, props: { params: Promise<{ ws: stri
       const step = (id: string, label: string, detail: string) =>
         send({ type: "step", id, label, detail, ms: Date.now() - started });
       try {
-        const data = await loadOpportunities(ws, body.clientId);
+        const [data, config] = await Promise.all([
+          loadOpportunities(ws, body.clientId),
+          Promise.resolve(getWorkspaceConfig(ws)).catch(() => null),
+        ]);
         if (!data.client) throw new Error("no client in this workspace");
         const client = data.client;
         const campaign = [...data.campaigns.events, ...data.campaigns.topics].find((c) => c.key === body.key);
@@ -51,20 +65,91 @@ export async function POST(request: Request, props: { params: Promise<{ ws: stri
 
         const query = `${campaign.creativeTopic}. ${campaign.why.join(" ")}`;
         const embedding = await embedText(query);
-        let rows: { content: string; sourceUrl: string | null }[] = [];
+        const retrievalMode = modeOf(config, "retrieval");
+        const budgetOn = modeOf(config, "budget") === "on";
+        const derivedShare = config?.derivedContextShare ?? DERIVED_SHARE;
+        let rows: { id?: string; content: string; sourceUrl: string | null }[] = [];
         let how = "";
         if (embedding) {
-          const near = await similarFirstPartyChunksQuery(ws, embedding, { brandId: client.id, limit: 6 });
+          const near = await similarFirstPartyChunksQuery(ws, embedding, {
+            brandId: client.id,
+            limit: retrievalMode === "off" ? 6 : 16,
+          });
           rows = near.filter((r) => Number(r.score) >= OWN_FLOOR);
           how = "by meaning";
         }
         if (rows.length < 3) {
           const words = searchWords(campaign, client.name, clientTopics(client.profile ?? null, client.name));
-          const found = await keywordFirstPartyChunksQuery(ws, words, { brandId: client.id, limit: 6 - rows.length });
+          const found = await keywordFirstPartyChunksQuery(ws, words, {
+            brandId: client.id,
+            limit: (retrievalMode === "off" ? 6 : 16) - rows.length,
+          });
           rows = [...rows, ...found.filter((f) => !rows.some((r) => r.content === f.content))];
           how = how ? `${how} and by keyword (${words.join(", ")})` : `by keyword (${words.join(", ")})`;
         }
-        const own = ownPassages(rows);
+
+        const legacyOwn = ownPassages(rows).slice(0, 6);
+        let own = legacyOwn;
+        let counter: BriefEvidence | null = null;
+        if (retrievalMode !== "off") {
+          try {
+            const [brainNear, refutedNear] = await Promise.all([
+              embedding ? similarBrainChunksQuery(ws, embedding, 20) : Promise.resolve([]),
+              embedding ? listSimilarRefutedBrainChunks(ws, embedding, 10) : Promise.resolve([]),
+            ]);
+            const fullBrain = await getBrainChunksByIds(ws, [
+              ...brainNear.map((b) => b.id),
+              ...refutedNear.map((r) => r.id),
+            ]);
+            const byId = new Map(fullBrain.map((b) => [b.id, b]));
+            const selected = selectBriefEvidence({
+              ownRows: rows,
+              brainRows: brainNear
+                .map((b) => byId.get(b.id))
+                .filter((b): b is NonNullable<typeof b> => Boolean(b)),
+              refutedRows: refutedNear.map((r) => byId.get(r.id) ?? r),
+              derivedShare,
+              budgetOn,
+              k: 6,
+            });
+            if (retrievalMode === "on") {
+              own = selected.own;
+              counter = selected.counter;
+              void recordBrainEvent({
+                workspaceId: ws,
+                stage: "retrieval",
+                decision: "on",
+                detail: { caller: "opportunity-brief", ...selected.stats },
+              });
+            } else {
+              const oldTexts = new Set(legacyOwn.map((o) => o.text));
+              void recordBrainEvent({
+                workspaceId: ws,
+                stage: "retrieval",
+                decision: "shadow",
+                detail: {
+                  caller: "opportunity-brief",
+                  ...selected.stats,
+                  overlap: selected.own.filter((o) => oldTexts.has(o.text)).length,
+                  oldCount: legacyOwn.length,
+                  newCount: selected.own.length,
+                },
+              });
+            }
+          } catch (err) {
+            if (retrievalMode === "on") {
+              void recordBrainEvent({
+                workspaceId: ws,
+                stage: "retrieval",
+                decision: "fallback",
+                detail: {
+                  caller: "opportunity-brief",
+                  error: err instanceof Error ? err.message : String(err),
+                },
+              });
+            }
+          }
+        }
         step(
           "own",
           `Searched ${client.name}'s own pages`,
@@ -78,10 +163,11 @@ export async function POST(request: Request, props: { params: Promise<{ ws: stri
             tier: "quality",
             json: true,
             system: "You write evidence-cited campaign briefs. Cite ids exactly as given. Never invent facts or numbers.",
-            prompt: buildBriefPrompt({ clientName: client.name, campaign, facts, own }),
+            prompt: buildBriefPrompt({ clientName: client.name, campaign, facts, own, counter }),
           }),
         );
-        const brief = parseBrief(raw, facts, own);
+        const parsed = parseBrief(raw, facts, own);
+        const brief = counter ? { ...parsed, counterEvidence: counter.text } : parsed;
         step(
           "check",
           "Checked every citation",

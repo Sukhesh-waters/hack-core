@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { buildDigest, planConsolidation, similarity, weightsOf, words, type BrainRow } from "./consolidate";
+import {
+  buildDigest,
+  maxSoleHypothesisGeneration,
+  planConsolidation,
+  similarity,
+  spearmanCorrelation,
+  weightsOf,
+  words,
+  type BrainRow,
+} from "./consolidate";
 import type { TrustStat } from "./credit";
 
 const now = new Date("2026-10-01T02:00:00Z");
@@ -65,5 +74,31 @@ describe("buildDigest", () => {
     expect(d.lines[0]).toBe("Gained weight: suggestions with pfas analysis (50% → 71%).");
     expect(d.lines[3]).toBe("Brain: 2 repeated insights folded into the 1 they repeat (kept, not deleted); 0 retired.");
     expect(d.lines[4]).toContain("90-day half-life");
+  });
+
+  it("B9 Goodhart: Spearman correlation flags when proxy vs outcome drops below 0.3, and refuses below min-N", () => {
+    expect(spearmanCorrelation([{ proxy: 1, outcome: 2 }, { proxy: 2, outcome: 3 }], 5)).toEqual({
+      status: "insufficient",
+      n: 2,
+    });
+    const aligned = spearmanCorrelation([
+      { proxy: 10, outcome: 2 },
+      { proxy: 20, outcome: 4 },
+      { proxy: 30, outcome: 6 },
+      { proxy: 40, outcome: 8 },
+      { proxy: 50, outcome: 10 },
+    ]);
+    expect(aligned).toEqual({ status: "ok", rho: 1, n: 5, flagged: false });
+
+    const diverged = spearmanCorrelation([
+      { proxy: 10, outcome: 10 },
+      { proxy: 20, outcome: 8 },
+      { proxy: 30, outcome: 6 },
+      { proxy: 40, outcome: 4 },
+      { proxy: 50, outcome: 2 },
+    ]);
+    expect(diverged).toEqual({ status: "ok", rho: -1, n: 5, flagged: true });
+    expect(maxSoleHypothesisGeneration([0, 1])).toEqual({ maxGeneration: 1, ok: true });
+    expect(maxSoleHypothesisGeneration([0, 2])).toEqual({ maxGeneration: 2, ok: false });
   });
 });

@@ -41,7 +41,91 @@ export type BrainRow = {
   absorbedChunkIds: string[];
   lastRetrievedAt: Date | null;
   createdAt: Date;
+  /** B9: preserved on the survivor when near-duplicate insights merge. */
+  falsifier?: unknown;
+  generation?: number;
 };
+
+/**
+ * B9 Goodhart check: Spearman rank correlation (with average ranks for ties)
+ * between the proxy (engagement index / review verdict) and the outcome
+ * (`qualified_leads` when supplied, else `leads`). Below `minN`, or when
+ * either series has zero variance, returns `insufficient` — never a
+ * synthesised number. Flags when rho < 0.3.
+ */
+export const PROXY_OUTCOME_RHO_FLOOR = 0.3;
+
+export type ProxyOutcomeCorrelation =
+  | { status: "ok"; rho: number; n: number; flagged: boolean }
+  | { status: "insufficient"; n: number };
+
+function averageRanks(values: number[]): number[] {
+  const indexed = values.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+  const ranks = new Array<number>(values.length);
+  let i = 0;
+  while (i < indexed.length) {
+    let j = i;
+    while (j + 1 < indexed.length && indexed[j + 1].v === indexed[i].v) j += 1;
+    const avgRank = (i + j + 2) / 2;
+    for (let k = i; k <= j; k += 1) ranks[indexed[k].i] = avgRank;
+    i = j + 1;
+  }
+  return ranks;
+}
+
+export function spearmanCorrelation(
+  pairs: { proxy: number | null | undefined; outcome: number | null | undefined }[],
+  minN = 5,
+): ProxyOutcomeCorrelation {
+  const valid = pairs.filter(
+    (p): p is { proxy: number; outcome: number } =>
+      typeof p.proxy === "number" &&
+      Number.isFinite(p.proxy) &&
+      typeof p.outcome === "number" &&
+      Number.isFinite(p.outcome),
+  );
+  if (valid.length < minN) {
+    return { status: "insufficient", n: valid.length };
+  }
+  const rx = averageRanks(valid.map((p) => p.proxy));
+  const ry = averageRanks(valid.map((p) => p.outcome));
+  const n = valid.length;
+  const meanX = (n + 1) / 2;
+  const meanY = (n + 1) / 2;
+  let cov = 0;
+  let varX = 0;
+  let varY = 0;
+  for (let i = 0; i < n; i += 1) {
+    const dx = rx[i] - meanX;
+    const dy = ry[i] - meanY;
+    cov += dx * dy;
+    varX += dx * dx;
+    varY += dy * dy;
+  }
+  if (varX === 0 || varY === 0) {
+    return { status: "insufficient", n };
+  }
+  const rho = Math.round((cov / Math.sqrt(varX * varY)) * 1000) / 1000;
+  return {
+    status: "ok",
+    rho,
+    n,
+    flagged: rho < PROXY_OUTCOME_RHO_FLOOR,
+  };
+}
+
+/**
+ * B9 consolidation ceiling: maximum generation used as sole support must stay
+ * strictly below 2 (`canCiteHypothesisAlone`).
+ */
+export function maxSoleHypothesisGeneration(generations: number[]): {
+  maxGeneration: number | null;
+  ok: boolean;
+} {
+  if (generations.length === 0) return { maxGeneration: null, ok: true };
+  const maxGen = Math.max(...generations);
+  return { maxGeneration: maxGen, ok: maxGen < 2 };
+}
 
 const STOP = new Set(["the", "and", "for", "with", "that", "this", "from", "their", "they", "are", "was", "were", "has", "have", "its", "into", "than", "more", "about", "over", "which", "while", "been", "also", "will", "can", "not", "but", "our", "your"]);
 
@@ -64,7 +148,16 @@ export function similarity(a: Set<string>, b: Set<string>): number {
   return shared / (a.size + b.size - shared);
 }
 
-export type Merge = { keepId: string; keep: string; absorbIds: string[]; absorbed: string[]; priorAbsorbed: string[]; similarity: number };
+export type Merge = {
+  keepId: string;
+  keep: string;
+  absorbIds: string[];
+  absorbed: string[];
+  priorAbsorbed: string[];
+  similarity: number;
+  /** B9: the survivor's falsifier is kept intact across consolidation merges. */
+  keepFalsifier?: unknown;
+};
 export type Retire = { id: string; content: string; why: string };
 
 export type ConsolidationPlan = { merges: Merge[]; retire: Retire[] };
@@ -96,6 +189,7 @@ export function planConsolidation(input: { brain: BrainRow[]; trust: TrustStat[]
       absorbed: absorbed.map((a) => a.row.content),
       priorAbsorbed: keep.absorbedChunkIds,
       similarity: Math.round(Math.min(...absorbed.map((a) => a.sim)) * 100) / 100,
+      ...(keep.falsifier !== undefined ? { keepFalsifier: keep.falsifier } : {}),
     });
   }
 
@@ -125,6 +219,8 @@ export type Digest = {
   failed: string[];
   merged: number;
   retired: number;
+  proxyVsOutcome?: ProxyOutcomeCorrelation;
+  maxSoleSupportGeneration?: number | null;
 };
 
 type Weights = { features: Record<string, number>; publicLane: Record<string, number>; trust: Record<string, number> };
@@ -148,6 +244,9 @@ export function buildDigest(input: {
   titles: Map<string, string>;
   plan: ConsolidationPlan;
   halfLifeDays: number;
+  proxyVsOutcomePairs?: { proxy: number | null | undefined; outcome: number | null | undefined }[];
+  minN?: number;
+  soleSupportGenerations?: number[];
 }): Digest {
   const before = input.previous;
   const moves: { what: string; from: number; to: number }[] = [];
@@ -177,6 +276,23 @@ export function buildDigest(input: {
     `Brain: ${input.plan.merges.reduce((n, m) => n + m.absorbIds.length, 0)} repeated insights folded into the ${input.plan.merges.length} they repeat (kept, not deleted); ${input.plan.retire.length} retired.`,
     `All counts fade with a ${input.halfLifeDays}-day half-life, so older evidence weighs less each month.`,
   ];
+  let proxyVsOutcome: ProxyOutcomeCorrelation | undefined;
+  if (input.proxyVsOutcomePairs) {
+    proxyVsOutcome = spearmanCorrelation(input.proxyVsOutcomePairs, input.minN ?? 5);
+    if (proxyVsOutcome.status === "ok") {
+      lines.push(
+        proxyVsOutcome.flagged
+          ? `Warning: engagement proxy and leads diverged (Spearman ρ = ${proxyVsOutcome.rho} over ${proxyVsOutcome.n} items, below ${PROXY_OUTCOME_RHO_FLOOR}).`
+          : `Engagement proxy tracks leads (Spearman ρ = ${proxyVsOutcome.rho} over ${proxyVsOutcome.n} items).`,
+      );
+    } else {
+      lines.push(`Engagement vs leads correlation: not enough data yet (${proxyVsOutcome.n} of ${input.minN ?? 5} needed).`);
+    }
+  }
+  let maxSoleSupportGeneration: number | null | undefined;
+  if (input.soleSupportGenerations) {
+    maxSoleSupportGeneration = maxSoleHypothesisGeneration(input.soleSupportGenerations).maxGeneration;
+  }
   return {
     month: input.month,
     lines,
@@ -186,5 +302,7 @@ export function buildDigest(input: {
     failed,
     merged: input.plan.merges.reduce((n, m) => n + m.absorbIds.length, 0),
     retired: input.plan.retire.length,
+    ...(proxyVsOutcome ? { proxyVsOutcome } : {}),
+    ...(maxSoleSupportGeneration !== undefined ? { maxSoleSupportGeneration } : {}),
   };
 }

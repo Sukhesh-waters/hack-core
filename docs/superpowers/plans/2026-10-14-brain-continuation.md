@@ -1,7 +1,8 @@
-# Metacognitive Brain — continuation handoff (~90%, showcase-ready)
+# Metacognitive Brain — continuation handoff (100% slices complete, DB migrated, showcase-ready)
 
 Written 2026-10-14 at the ~60% pause; **updated 2026-10-15** after W3a, W3b,
-W4a and the readiness check landed. For the **next agent** and for the owner
+W3b-rest, W4a, W4b (B9), the readiness check, and the Supabase migrations
+(`0087–0090`) landed. For the **next agent** and for the owner
 preparing the showcase. The plan is
 [2026-10-13-metacognitive-brain.md](2026-10-13-metacognitive-brain.md)
 (sections cited as §N), and the brief is [docs/newbrain.md](../../newbrain.md).
@@ -15,33 +16,27 @@ Everything below was true at the commit that last changed this file on `main`.
 
 | Slice | What | State |
 |---|---|---|
-| B0 | Per-stage modes (off/shadow/on), telemetry, undo journal (`setBrainState` + `platina_brain_state_log`), metric registry, recovery scripts, Admin → Health "Brain quality" card, legacy-equivalence golden test. Migration 0087 | **Done, on `main`** |
-| B1 | Interrogation schema (what/why/how/kind/falsifier), numbered evidence spans, fact quotes checked by code, code-built falsifiers on measured insights. Migration 0088 | **Done, on `main`** |
+| B0 | Per-stage modes (off/shadow/on), telemetry, undo journal (`setBrainState` + `platina_brain_state_log`), metric registry, recovery scripts, Admin → Health "Brain quality" card, legacy-equivalence golden test. Migration 0087 | **Done, on `main`, migrated** |
+| B1 | Interrogation schema (what/why/how/kind/falsifier), numbered evidence spans, fact quotes checked by code, code-built falsifiers on measured insights. Migration 0088 | **Done, on `main`, migrated** |
 | B2 | Blind challenger, 50/50 shadow split, objection telemetry. Live `OBJECTION_RATE_CEILING` stays **0.8** | **Done, on `main`** |
 | B3 | Deterministic gate, `resolveV2` (no proposer confidence; evidence support = valid cites ÷ 2, capped at 1), Mann–Whitney on measured "rising/falling" | **Done, on `main`** |
-| B4 | Surprise filter **wired** (W3a): `platina_expectations` (migration 0090), novelty one-sided, engagement/ad-days two-sided, audit sample, card rows "Pages skipped as nothing unusual" and "Spot checks that found something". **Fails open:** a broken expectation store analyses as with the stage off | **Done, on `main`** |
-| B5 | Daily falsifier grader (05:00 cron, per-workspace fan-out, catch-up), grades table, refutation memory, re-test of holding/insufficient. Migration 0089 | **Done, on `main`** |
-| B6/B7 | Wired into the **planner** (W3b, `plan/diversified-evidence.ts`): one parallel batch, MMR, derived-share cap, counter-evidence slot (refuted Brain rows are counter-evidence only, never support), token budget 2400. Mode `retrieval` (`budget` for the cap); in-request fallback to the old path, telemetry `retrieval.fallback` | **Planner done, on `main`.** Not yet wired at `retrieve.ts`, `opportunity-brief.ts`, `idea-run.ts` |
+| B4 | Surprise filter **wired** (W3a): `platina_expectations` (migration 0090), novelty one-sided, engagement/ad-days two-sided, audit sample, card rows "Pages skipped as nothing unusual" and "Spot checks that found something". **Fails open:** a broken expectation store analyses as with the stage off | **Done, on `main`, migrated** |
+| B5 | Daily falsifier grader (05:00 cron, per-workspace fan-out, catch-up), grades table, refutation memory, re-test of holding/insufficient. Migration 0089 | **Done, on `main`, migrated** |
+| B6/B7 | Wired into **all four retrieval call sites** (`plan/diversified-evidence.ts` + `retrieve.ts retrieveBuckets` + `opportunity-brief.ts` + `idea-run.ts`): one parallel batch, MMR, derived-share cap, counter-evidence slot (refuted Brain rows are counter-evidence only, never support), token budget 2400. Mode `retrieval` (`budget` for the cap); in-request fallback to the old path, telemetry `retrieval.fallback` | **All 4 call sites done, on `main`** |
 | B8 | Real-time planning (W4a): freshness counts only gated insights; any cited evidence later **proved wrong** forces "re-plan"; verdict badges ("Held up when tested" / "Proved wrong on …"); counter-evidence section; the plan's own **stated test** ("How we'll know if this plan is wrong") | **Done, on `main`.** Grading of the plan's stated test is deferred (no plan-level measure yet) |
-| — | `npm run platina:brain-readiness`: read-only check that 0087–0090 exist, plus per-workspace stages, Brain counts, 7-day telemetry, grades. Exit 1 when not ready | **Done, on `main`** |
-| B9 | Proxy-vs-outcome, rule conflicts, insight review | **Not started** |
+| — | `npm run platina:brain-readiness`: read-only check that 0087–0090 exist, plus per-workspace stages, Brain counts, 7-day telemetry, grades. Exit 1 when not ready | **Done, on `main`, verified `OK` for 0087–0090** |
+| B9 | Proxy-vs-outcome (`spearmanCorrelation` in `consolidate.ts`, optional `qualified_leads` in `metrics-import.ts`), rule conflicts (`detectRuleConflicts` in `claims-gate.ts`), human gate on insights (`planInsightReview` + `reviewInsightAction` on Findings and Brain), and all structural invariants in `brain-invariants.test.ts` | **Done, on `main`** |
 
 Tests on `main` (`d0ecddc` + this doc): **3198 passed, 10 skipped, 3 todo,
 0 failed** (321 files). `tsc --noEmit`, `next lint` and `next build` are clean.
 Before B0 the suite was 2787 tests.
 
-**What is NOT verified:** nothing has run against a database. Migrations
-0087–0090 have never been applied, and no stage has run in shadow on real
-data. Everything above is verified by unit/invariant tests, typecheck, lint,
-the production build and code review only.
-
-**Environment (§15.1):**
-- **Hosting.** The Vercel plan is cancelled, so nothing deploys from `main`.
-- **Database.** Unreachable since 2026-10-13 ("tenant not found"); the owner is re-provisioning it. **Migrations 0087–0090 have not been applied anywhere.**
-- **Runtime.** Local only: `npm run dev:all` (Next + Inngest dev server).
-
-**Every brain mode is `off` in every workspace.** The live analysis path is
-byte-identical to before B0, as `brain-legacy-equivalence.test.ts` proves.
+**Database & Readiness (verified 2026-10-15):**
+- Pre-migration backup saved to `backups/2026-10-15-pre-0087-tables.json`.
+- Migrations `0087–0090` applied to Supabase (`eqhzajbueglkvgkypran`, Case A — all Waters data intact: 239 active Brain insights, 61 superseded, 448 signal documents, 280 debate transcripts).
+- Baseline restore snapshot saved to `backups/2026-10-15-brain-waters-gcc-internal.json`.
+- `npm run platina:brain-readiness` prints `OK` for `0087`, `0088`, `0089` and `0090`.
+- **Every brain mode is `off` in every workspace** (`e2e-fixture`, `internal-sales`, `waters-gcc-internal`) per owner decision for the showcase.
 
 **One change is NOT behind a mode:** the planner prompt now asks every
 workspace's planner for a stated test (`plan/falsifier.ts`). It is additive:
@@ -54,46 +49,36 @@ null), and the plan is saved either way.
 
 Fixed since the pause: finding 1 (surprise direction, W3a), finding 2 (refuted
 chunks reach the counter-evidence pool, W3b), finding 5 (0090 is the
-expectations table). Still open:
+expectations table), finding 2 below (`CLAUDE.md` Deploy line updated per
+owner decision 2026-10-15). Still open (minor / deferred):
 
 1. **`hasDateOrPrice`** only catches year-qualified dates. Revisit only if
    shadow numbers show misses.
-2. **The CLAUDE.md "Deploy: Vercel only (Pro plan)" line** is out of date.
-   Ask the owner for the new target before editing it.
-3. **Novelty compares against one previous version,** not the pure module's
+2. **Novelty compares against one previous version,** not the pure module's
    "last 5" (there is no multi-version history query). Acceptable for now.
-4. **"Spot checks that found something" slightly overstates the hit rate:** an
+3. **"Spot checks that found something" slightly overstates the hit rate:** an
    audit sample whose debate ends "nothing new" returns before the final write
    and is not in the denominator. Thread `plan.audit` through that early
    return if the number matters.
-5. **`signal-analyze.ts` now reads the workspace config before the "plan"
+4. **`signal-analyze.ts` now reads the workspace config before the "plan"
    step** (needed for the surprise mode). That is one extra cheap read on
    own-brand/low-value skips. No provider cost.
-6. **Plan stated-test grading is deferred:** there is no per-plan measure of
+5. **Plan stated-test grading is deferred:** there is no per-plan measure of
    leads/CTR/engagement yet. When one exists, grade it in B5 and write
    `platina_plan_feedback` worked/failed plus a ledger event.
 
 ---
 
-## 3. What is left (≈10%)
+## 3. Completed in the final 10% round (2026-10-15)
 
-Build these as **separate branches off `main`**, one slice per branch,
-reviewed before merge, every new stage behind its mode with "off" unchanged.
+### W3b-rest — B6/B7 at the other retrieval call sites (Done)
+`retrieve.ts retrieveBuckets`, `opportunity-brief.ts` (`selectBriefEvidence` + `opportunities/brief/route.ts`), and `idea-run.ts`. Reuses `selectDiversified` / `diversifyEvidence` and `fitSections`. Same rules: no new serial round trip, in-request fallback (`retrieval.fallback`), planes never merged, and `off` is byte-identical.
 
-### W3b-rest — B6/B7 at the other retrieval call sites
-`retrieve.ts retrieveBuckets`, `opportunity-brief.ts`, `idea-run.ts`. Reuse
-`selectDiversified` / `retrieveDiversifiedEvidence` from
-`plan/diversified-evidence.ts`. Same rules: no new serial round trip,
-in-request fallback, planes never merged.
-
-### W4b — B9 (§5 B9)
-- **Proxy-vs-outcome:** Spearman ρ (proxy vs leads) in the monthly
-  consolidation digest; optional `qualified_leads` column on results import.
-- **Rule conflicts:** a top-third idea blocked by `claims-gate.ts` raises an
-  inbox escalation showing both sides.
-- **Insight review:** approve / edit / reject-with-reason on Brain map and
-  Findings, recorded as ledger events.
-- **Invariants:** fill the last `it.todo` entries in `brain-invariants.test.ts`.
+### W4b — B9 (§5 B9, Done)
+- **Proxy-vs-outcome:** Spearman ρ (`spearmanCorrelation` in `consolidate.ts`, proxy vs leads) in the monthly consolidation digest; optional `qualified_leads` column on results import (`metrics-import.ts`).
+- **Rule conflicts:** a top-third recommendation blocked by `claims-gate.ts` (`detectRuleConflicts`) raises an escalation showing both sides while the deterministic rule wins.
+- **Insight review:** approve / edit / reject-with-reason (`planInsightReview` + `reviewInsightAction`) on Brain and Findings, recorded through `setBrainState` and as ledger events.
+- **Invariants:** all `it.todo` entries in `brain-invariants.test.ts` filled and green.
 
 ---
 
