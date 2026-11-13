@@ -28,7 +28,8 @@
     "platina:brain-undo": "npx tsx scripts/platina-brain-undo.ts",
     "platina:brain-replay": "npx tsx scripts/platina-brain-replay.ts",
     "platina:brain-readiness": "npx tsx scripts/brain-readiness.ts",
-    "platina:plan-eval": "npx tsx scripts/platina-plan-eval.ts"
+    "platina:plan-eval": "npx tsx scripts/platina-plan-eval.ts",
+    "platina:validate-usecases": "npx tsx scripts/platina-validate-usecases.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",
