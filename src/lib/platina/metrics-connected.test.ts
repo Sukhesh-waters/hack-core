@@ -39,10 +39,12 @@ describe("matchConnectedMetrics", () => {
 });
 
 describe("readInstagramPostMetrics (read-only Graph calls)", () => {
-  it("reads media then insights, GET only, and survives an insights failure", async () => {
+  it("reads media then insights with Bearer auth (no token in URL), and survives an insights failure", async () => {
     const urls: string[] = [];
-    const fetchImpl = async (url: string) => {
+    const headers: (Record<string, string> | undefined)[] = [];
+    const fetchImpl = async (url: string, init?: { headers?: Record<string, string> }) => {
       urls.push(url);
+      headers.push(init?.headers);
       if (url.includes("/media?")) {
         return {
           ok: true,
@@ -56,17 +58,27 @@ describe("readInstagramPostMetrics (read-only Graph calls)", () => {
         };
       }
       if (url.includes("m1/insights")) {
-        return { ok: true, status: 200, json: async () => ({ data: [{ name: "reach", values: [{ value: 300 }] }, { name: "saved", values: [{ value: 4 }] }] }) };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            data: [
+              { name: "views", values: [{ value: 520 }] },
+              { name: "reach", values: [{ value: 300 }] },
+              { name: "saved", values: [{ value: 4 }] },
+            ],
+          }),
+        };
       }
       return { ok: false, status: 400, json: async () => ({}) };
     };
     const out = await readInstagramPostMetrics("ig1", "tok en", fetchImpl);
-    expect(out[0]).toMatchObject({ externalId: "m1", reach: 300, saves: 4, likes: 7, comments: 1 });
+    expect(out[0]).toMatchObject({ externalId: "m1", views: 520, reach: 300, saves: 4, likes: 7, comments: 1 });
     expect(out[0].postedAt?.toISOString()).toBe("2026-09-20T10:00:00.000Z");
     expect(out[1]).toMatchObject({ externalId: "m2", likes: 3 });
     expect(out[1].reach).toBeUndefined();
-    expect(urls.every((u) => u.startsWith("https://graph.facebook.com/"))).toBe(true);
-    expect(urls[0]).toContain("access_token=tok%20en");
+    expect(urls.every((u) => u.startsWith("https://graph.facebook.com/") && !u.includes("access_token"))).toBe(true);
+    expect(headers[0]).toEqual({ authorization: "Bearer tok en" });
   });
 
   it("a failed listing is an error, not an empty result", async () => {

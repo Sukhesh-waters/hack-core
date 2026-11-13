@@ -88,7 +88,7 @@ async function main() {
       specId,
       trigger: "event",
       idempotencyKey: `first-pass:${specId}`,
-      configSnapshot: snapshotRunConfig(config),
+      configSnapshot: { ...snapshotRunConfig(config), operator: "scripts/add-linkedin.ts" },
     });
     if (runId) runs.push(runId);
   }

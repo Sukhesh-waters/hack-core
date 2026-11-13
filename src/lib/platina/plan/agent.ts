@@ -23,22 +23,32 @@ export class PlanError extends Error {
 
 export type GeneratedPlan = { title: string; doc: PlanDoc };
 
+const trimTo = (max: number) => (s: string) => {
+  const clean = s.replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  const cut = clean.slice(0, Math.max(0, max - 1));
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > max * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+};
+
 const phaseSchema = z.object({
-  name: z.string().trim().min(2).max(60),
+  name: z.string().trim().min(2).transform(trimTo(60)),
   startDay: z.number().int().min(1).max(365),
   endDay: z.number().int().min(1).max(365),
-  channel: z.string().trim().min(2).max(40),
-  message: z.string().trim().min(3).max(200),
+  channel: z.string().trim().min(2).transform(trimTo(40)),
+  message: z.string().trim().min(3).transform(trimTo(200)),
   // Ids of evidence this phase rests on, from ONE evidence list only.
   evidenceIds: z.array(z.string()).max(4).default([]),
 });
 
 const planResponseSchema = z.object({
-  title: z.string().trim().min(3).max(80),
-  summary: z.string().trim().min(10).max(300),
+  title: z.string().trim().min(3).transform(trimTo(80)),
+  // Verbose model summaries are trimmed on a word boundary (same principle as
+  // critiqueSchema below) so a 305-char summary never voids a whole plan.
+  summary: z.string().trim().min(10).transform(trimTo(300)),
   phases: z.array(phaseSchema).min(1).max(8),
   // Only meaningful when revising an earlier plan.
-  revisionNote: z.string().trim().max(240).optional(),
+  revisionNote: z.string().trim().transform(trimTo(240)).optional(),
   // B8: validated by parsePlanFalsifier; a bad test is dropped, never fatal.
   falsifier: z.unknown().optional(),
 });
@@ -144,10 +154,11 @@ export function buildPlanPrompt(context: PlanContext): string {
 /** Planner agent: proposes a plan; the orchestrator validates and persists it. */
 export async function generateCampaignPlan(
   context: PlanContext,
+  options: { tier?: "fast" | "quality" } = {},
 ): Promise<GeneratedPlan> {
   const raw = await routeAI({
     kind: "chat",
-    tier: "quality",
+    tier: options.tier ?? "quality",
     json: true,
     system:
       "You are a campaign planner. Turn a short brief into a concrete phased plan. Keep every message to one plain sentence. Never fabricate performance data.",

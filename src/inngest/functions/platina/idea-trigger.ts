@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { latestSuggestionsForSubjectsQuery } from "@/db/queries/platina-learning";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { loadTriggers } from "@/lib/platina/idea-load";
@@ -15,7 +16,10 @@ const REDRAFT_AFTER_DAYS = 7;
  */
 export const platinaIdeaTrigger = inngest.createFunction(
   { id: "platina-idea-trigger", triggers: [{ cron: "0 6 * * *" }], concurrency: { limit: 1 } },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-idea-trigger", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const workspaceIds = await step.run("list-workspaces", () => listAllWorkspaceIds());
     const drafted: { workspaceId: string; trigger: string | null; ideas: number; error?: string }[] = [];
     for (const ws of workspaceIds) {

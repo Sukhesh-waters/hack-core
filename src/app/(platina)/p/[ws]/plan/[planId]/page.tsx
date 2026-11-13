@@ -9,7 +9,7 @@ import { getPlan, getPlanFeedback, listPlanRevisions } from "@/db/queries/platin
 import { listCreativesForPlan } from "@/db/queries/platina-learning";
 import { isStale } from "@/lib/platina/plan/evidence";
 import { describePlanFalsifier } from "@/lib/platina/plan/falsifier";
-import { freshnessMessage, refutedMessage, verdictLabel } from "@/lib/platina/plan/freshness";
+import { freshnessMessage, refutedMessage, revisionReason, verdictLabel } from "@/lib/platina/plan/freshness";
 import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
 import { cn } from "@/lib/utils";
 import { recordPlanFeedbackAction, revisePlanAction } from "../actions";
@@ -66,6 +66,11 @@ export default async function PlanDetailPage(
       <p className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         {plan.origin ? (
           <span className="rounded-full border border-border px-2.5 py-0.5">{plan.origin.label}</span>
+        ) : null}
+        {revisionReason(plan.origin) ? (
+          <span className="rounded-full border border-border px-2.5 py-0.5">
+            {revisionReason(plan.origin)}
+          </span>
         ) : null}
         {plan.parentPlanId ? (
           <Link

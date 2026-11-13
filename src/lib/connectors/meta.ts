@@ -35,16 +35,18 @@ type InsightsPayload = {
 async function fetchMediaInsights(
   mediaId: string,
   accessToken: string,
-): Promise<{ reach?: number; saves?: number; shares?: number }> {
+): Promise<{ views?: number; reach?: number; saves?: number; shares?: number }> {
   try {
     const response = await fetch(
-      `${GRAPH_BASE}/${mediaId}/insights?metric=reach,saved,shares&access_token=${accessToken}`,
+      `${GRAPH_BASE}/${mediaId}/insights?metric=views,reach,saved,shares`,
+      { headers: { authorization: `Bearer ${accessToken}` } },
     );
     if (!response.ok) return {};
     const payload = (await response.json()) as InsightsPayload;
     const metric = (name: string) =>
       payload.data?.find((m) => m.name === name)?.values?.[0]?.value;
     return {
+      views: metric("views"),
       reach: metric("reach"),
       saves: metric("saved"),
       shares: metric("shares"),
@@ -60,7 +62,8 @@ export async function pullMetaMedia(
   limit = 50,
 ): Promise<ParsedPostRow[]> {
   const response = await fetch(
-    `${GRAPH_BASE}/${igUserId}/media?fields=id,caption,timestamp,media_type,like_count,comments_count&limit=${limit}&access_token=${accessToken}`,
+    `${GRAPH_BASE}/${igUserId}/media?fields=id,caption,timestamp,media_type,like_count,comments_count&limit=${limit}`,
+    { headers: { authorization: `Bearer ${accessToken}` } },
   );
   if (!response.ok) {
     throw new MetaConnectorError(

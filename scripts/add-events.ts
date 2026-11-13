@@ -124,7 +124,11 @@ async function main() {
       specId,
       trigger: "event",
       idempotencyKey: `approved:${specId}`,
-      configSnapshot: seed ? { ...snapshotRunConfig(config), seedPages: 1 } : snapshotRunConfig(config),
+      configSnapshot: {
+        ...snapshotRunConfig(config),
+        ...(seed ? { seedPages: 1 } : {}),
+        operator: "scripts/add-events.ts",
+      },
     });
     if (runId) runs.push(runId);
   }

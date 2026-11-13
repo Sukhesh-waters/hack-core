@@ -6,6 +6,8 @@
  * Pure shaping here; the reads are in the query layer.
  */
 
+import type { PlanOrigin } from "@/db/platina-schema";
+
 export type FreshnessLevel = "current" | "review" | "replan";
 
 export type FreshnessEvidence = {
@@ -77,4 +79,20 @@ export function freshnessMessage(newCount: number, scopeLabel: string | null): s
     case "replan":
       return `${newCount} new validated signals ${where} since this plan was written. Worth re-planning.`;
   }
+}
+
+/**
+ * WTR-0 C3: plain-language label for why a plan was revised, read from its
+ * stored `origin.trigger`. Refuted cited evidence wins over any signal count;
+ * `current` with zero refuted and zero new signals reads "Revised on request";
+ * returns null for non-revisions or revisions created before WTR-0.
+ */
+export function revisionReason(origin: PlanOrigin | null | undefined): string | null {
+  if (!origin || origin.kind !== "revision" || !origin.trigger) return null;
+  const { refuted, newSignals } = origin.trigger;
+  if (refuted >= 1) return "Revised after evidence it cited was proved wrong";
+  if (newSignals >= 1) {
+    return `Revised after ${newSignals} new checked signal${newSignals === 1 ? "" : "s"}`;
+  }
+  return "Revised on request";
 }

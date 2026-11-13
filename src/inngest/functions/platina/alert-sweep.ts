@@ -17,6 +17,7 @@ import {
   type AlertSource,
 } from "@/lib/platina/alerts";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 
 /**
  * Alert sweep (Slice 14). Each rule evaluates against its source's record:
@@ -32,7 +33,10 @@ export const platinaAlertSweep = inngest.createFunction(
     // alert arrives at once instead of at the next hour.
     triggers: [{ cron: "0 * * * *" }, { event: "platina/alerts.sweep.requested" }],
   },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-alert-sweep", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const rules = await step.run("list-rules", () => listActiveAlertRules());
     let sent = 0;
     let suppressed = 0;

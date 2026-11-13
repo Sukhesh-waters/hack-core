@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { backfillEmbeddings, openDueReviews } from "@/lib/platina/learning-service";
 import { syncConnectedMetrics } from "@/lib/platina/metrics-connected";
@@ -17,7 +18,10 @@ export const platinaLearning = inngest.createFunction(
     concurrency: { key: "event.data.workspaceId", limit: 1 },
     debounce: { key: "event.data.workspaceId", period: "30s" },
   },
-  async ({ event, step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-learning", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const data = (event?.data ?? {}) as { workspaceId?: string; brandId?: string | null };
     const workspaceIds =
       typeof data.workspaceId === "string"

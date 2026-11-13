@@ -16,7 +16,7 @@ import {
 } from "@/db/queries/platina-learning";
 import { inngest } from "@/inngest/client";
 import { confirmReview, draftReview } from "@/lib/platina/learning-service";
-import { parseCount, parseMetricsSheet, parseSheetDate, refKey } from "@/lib/platina/metrics-import";
+import { parseCount, parseMetricsSheet, parseSheetDate, splitImportRows } from "@/lib/platina/metrics-import";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
 
 const CAPABILITY = "platina.outcome.import";
@@ -130,32 +130,16 @@ export async function importNumbersAction(formData: FormData): Promise<void> {
   if (parsed.errors.length > 0) refuse(back, `Nothing was imported. ${parsed.errors.slice(0, 5).join("; ")}`);
 
   const creatives = await listCreatives(ws);
-  const byRef = new Map<string, string>();
-  for (const c of creatives) {
-    byRef.set(c.id, c.id);
-    if (c.url) byRef.set(refKey(c.url), c.id);
-    if (c.externalId) byRef.set(refKey(c.externalId), c.id);
-  }
-  const unknown = parsed.rows.filter((r) => !byRef.has(r.ref) && !byRef.has(refKey(r.ref)));
-  if (unknown.length > 0) {
-    refuse(
-      back,
-      `Nothing was imported: ${unknown.length} row(s) match no creative (${unknown
-        .slice(0, 3)
-        .map((r) => r.ref)
-        .join(", ")}). Add those creatives first, with the same post link.`,
-    );
-  }
+  const split = splitImportRows(parsed.rows, creatives);
   const source = parsed.layout === "linkedin" ? "csv:linkedin" : "csv";
-  const rows: MetricInput[] = parsed.rows.map(({ ref, ...r }) => ({
+  const rows: MetricInput[] = split.matched.map(({ ref: _ref, title: _title, postedAt: _postedAt, ...r }) => ({
     ...r,
-    creativeId: byRef.get(ref) ?? byRef.get(refKey(ref))!,
     source,
   }));
-  const written = await upsertMetricSnapshots(ws, user.id, rows);
-  await signalResults(ws, null);
+  const written = rows.length > 0 ? await upsertMetricSnapshots(ws, user.id, rows) : 0;
+  if (written > 0) await signalResults(ws, null);
   revalidatePath(back);
-  redirect(`${back}?imported=${written}`);
+  redirect(`${back}?imported=${written}&unassigned=${split.unassigned.length}`);
 }
 
 /** Opens (or redoes) the drafted review now, without waiting for the daily job. */

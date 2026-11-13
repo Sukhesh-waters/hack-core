@@ -72,7 +72,7 @@ async function main() {
       specId: spec.id,
       trigger: "event",
       idempotencyKey: `backfill:${spec.id}:${lookback}:${new Date().toISOString().slice(0, 10)}`,
-      configSnapshot: snapshotRunConfig(config),
+      configSnapshot: { ...snapshotRunConfig(config), operator: "scripts/linkedin-backfill.ts" },
     });
     if (runId) runs.push(runId);
   }

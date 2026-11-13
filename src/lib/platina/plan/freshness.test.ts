@@ -6,6 +6,7 @@ import {
   levelWithVerdicts,
   refutedMessage,
   REPLAN_THRESHOLD,
+  revisionReason,
   verdictLabel,
   type CitedVerdict,
 } from "./freshness";
@@ -77,5 +78,50 @@ describe("freshnessLevel / freshnessMessage", () => {
     );
     expect(freshnessMessage(4, null)).toContain("in this workspace");
     expect(freshnessMessage(4, null)).toContain("Worth re-planning");
+  });
+});
+
+describe("revisionReason (WTR-0 Part C3)", () => {
+  it("prioritises proved-wrong evidence over any signal count", () => {
+    expect(
+      revisionReason({
+        kind: "revision",
+        label: "Revised: Plan",
+        trigger: { level: "replan", newSignals: 5, refuted: 1 },
+      }),
+    ).toBe("Revised after evidence it cited was proved wrong");
+  });
+
+  it("reports the count of new checked signals when nothing was refuted", () => {
+    expect(
+      revisionReason({
+        kind: "revision",
+        label: "Revised: Plan",
+        trigger: { level: "review", newSignals: 1, refuted: 0 },
+      }),
+    ).toBe("Revised after 1 new checked signal");
+    expect(
+      revisionReason({
+        kind: "revision",
+        label: "Revised: Plan",
+        trigger: { level: "replan", newSignals: 4, refuted: 0 },
+      }),
+    ).toBe("Revised after 4 new checked signals");
+  });
+
+  it("reads 'Revised on request' when freshness was current", () => {
+    expect(
+      revisionReason({
+        kind: "revision",
+        label: "Revised: Plan",
+        trigger: { level: "current", newSignals: 0, refuted: 0 },
+      }),
+    ).toBe("Revised on request");
+  });
+
+  it("returns null for non-revisions or revisions before WTR-0 without a trigger", () => {
+    expect(revisionReason(null)).toBeNull();
+    expect(revisionReason({ kind: "brief", label: "Your brief" })).toBeNull();
+    expect(revisionReason({ kind: "revision", label: "Revised: Old" })).toBeNull();
   });
 });

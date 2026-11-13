@@ -102,7 +102,11 @@ export async function startAdScan(
       specId,
       trigger: "manual",
       idempotencyKey: `ads:${trigger}:${specId}:${stamp}`,
-      configSnapshot: { ...snapshotRunConfig(config), seedPages: row.maxAds },
+      configSnapshot: {
+        ...snapshotRunConfig(config),
+        seedPages: row.maxAds,
+        ...(trigger === "operator" ? { operator: "scripts/platina-ads-sweep.ts" } : {}),
+      },
     });
     if (runId) runs.push({ brandId: row.brandId, name: row.name, runId });
   }

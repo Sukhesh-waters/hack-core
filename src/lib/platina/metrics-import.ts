@@ -1,11 +1,12 @@
 /**
- * Creative numbers from a pasted spreadsheet (C6 L2/L3). Pure.
+ * Creative numbers from a pasted spreadsheet (C6 L2/L3 + WTR-0 A1/A2). Pure.
  *
  * Two layouts are understood:
  *  - Platina's own: creative (URL or id), captured_at, impressions, reach,
  *    clicks, engagements, saves, shares, video_views, leads, spend.
  *  - LinkedIn page analytics "Update engagement" export: Post link / Update
- *    link, Created date, Impressions, Clicks, Reactions, Comments, Reposts
+ *    link, Created date (the post's creation date -> postedAt, NOT capturedAt),
+ *    Update title, Impressions, Clicks, Reactions, Comments, Reposts
  *    (engagements = reactions + comments + reposts; reposts count as shares).
  *    LinkedIn's organic API needs partner approval we do not have, so the
  *    export is the connected-account path for now.
@@ -18,6 +19,10 @@
 export type ImportedMetricRow = {
   /** Creative URL or id, as written in the sheet. */
   ref: string;
+  /** Display title from LinkedIn's "Update title" / "Title" column, when present. */
+  title: string | null;
+  /** When the post itself was created (LinkedIn "Created date"); null when not supplied. */
+  postedAt: Date | null;
   capturedAt: Date;
   impressions: number | null;
   reach: number | null;
@@ -38,7 +43,22 @@ export type MetricsParse = {
   errors: string[];
 };
 
-type Field = Exclude<keyof ImportedMetricRow, "ref" | "capturedAt"> | "ref" | "capturedAt" | "reactions" | "comments" | "reposts";
+type NumericField =
+  | "impressions"
+  | "reach"
+  | "clicks"
+  | "engagements"
+  | "saves"
+  | "shares"
+  | "videoViews"
+  | "leads"
+  | "qualifiedLeads"
+  | "spend"
+  | "reactions"
+  | "comments"
+  | "reposts";
+
+type Field = NumericField | "ref" | "title" | "postedAt" | "capturedAt";
 
 const ALIASES: Record<string, Field> = {
   creative: "ref",
@@ -48,9 +68,13 @@ const ALIASES: Record<string, Field> = {
   post_link: "ref",
   update_link: "ref",
   post_url: "ref",
+  update_title: "title",
+  post_title: "title",
+  title: "title",
   captured_at: "capturedAt",
   date: "capturedAt",
-  created_date: "capturedAt",
+  created_date: "postedAt",
+  posted_at: "postedAt",
   impressions: "impressions",
   reach: "reach",
   unique_impressions: "reach",
@@ -135,6 +159,8 @@ export function parseSheetDate(raw: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+const NON_METRIC_FIELDS = new Set<Field | null>([null, "ref", "title", "postedAt", "capturedAt"]);
+
 export function parseMetricsSheet(text: string, today: Date): MetricsParse {
   const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
   if (lines.length < 2) return { layout: null, rows: [], errors: ["Paste a header row and at least one row of numbers."] };
@@ -148,7 +174,7 @@ export function parseMetricsSheet(text: string, today: Date): MetricsParse {
       errors: ['The header needs a column naming the creative: "creative" (URL or id), or LinkedIn\'s "Post link".'],
     };
   }
-  const known = fields.filter((f) => f !== null && f !== "ref" && f !== "capturedAt");
+  const known = fields.filter((f) => !NON_METRIC_FIELDS.has(f));
   if (known.length === 0) {
     return { layout: null, rows: [], errors: ["No number columns found (impressions, clicks, engagements, reactions, ...)."] };
   }
@@ -159,15 +185,28 @@ export function parseMetricsSheet(text: string, today: Date): MetricsParse {
   for (let i = 1; i < lines.length; i += 1) {
     const cells = splitCsvLine(lines[i], delimiter);
     const lineNo = i + 1;
-    const values: Partial<Record<Field, number | null>> = {};
+    const values: Partial<Record<NumericField, number | null>> = {};
     let ref = "";
+    let title: string | null = null;
+    let postedAt: Date | null = null;
     let capturedAt: Date | null = null;
     let bad = false;
     fields.forEach((field, col) => {
       if (!field) return;
       const cell = cells[col] ?? "";
-      if (field === "ref") ref = cell.replace(/^"|"$/g, "").trim();
-      else if (field === "capturedAt") {
+      if (field === "ref") {
+        ref = cell.replace(/^"|"$/g, "").trim();
+      } else if (field === "title") {
+        const clean = cell.replace(/^"|"$/g, "").trim();
+        title = clean || null;
+      } else if (field === "postedAt") {
+        if (cell.trim() === "") return;
+        postedAt = parseSheetDate(cell);
+        if (!postedAt) {
+          errors.push(`line ${lineNo}: "${cell}" is not a date (use YYYY-MM-DD)`);
+          bad = true;
+        }
+      } else if (field === "capturedAt") {
         if (cell.trim() === "") return;
         capturedAt = parseSheetDate(cell);
         if (!capturedAt) {
@@ -193,6 +232,8 @@ export function parseMetricsSheet(text: string, today: Date): MetricsParse {
     const engagements = values.engagements ?? (parts.length > 0 ? parts.reduce((a, b) => a + b, 0) : null);
     rows.push({
       ref,
+      title,
+      postedAt,
       capturedAt: capturedAt ?? today,
       impressions: values.impressions ?? null,
       reach: values.reach ?? null,
@@ -218,4 +259,77 @@ export function refKey(ref: string): string {
     .replace(/^www\./, "")
     .replace(/[?#].*$/, "")
     .replace(/\/$/, "");
+}
+
+export type CreativeLookupRef = {
+  id: string;
+  url: string | null;
+  externalId: string | null;
+};
+
+export type MatchedMetricRow = Omit<ImportedMetricRow, "ref" | "title" | "postedAt"> & {
+  creativeId: string;
+  ref: string;
+  title: string | null;
+  postedAt: Date | null;
+};
+
+export type UnassignedMetricRow = {
+  ref: string;
+  title: string | null;
+  postedAt: string | null;
+  impressions: number | null;
+};
+
+export type SplitImportResult = {
+  matched: MatchedMetricRow[];
+  unassigned: UnassignedMetricRow[];
+  duplicates: number;
+};
+
+/**
+ * WTR-0 A2: splits parsed rows into matched creatives vs unassigned posts,
+ * collapsing duplicate rows for the same post within one sheet (last row wins
+ * and increments `duplicates`, preventing Postgres ON CONFLICT DO UPDATE from
+ * failing when one statement touches the same row twice).
+ */
+export function splitImportRows(
+  rows: ImportedMetricRow[],
+  creatives: CreativeLookupRef[],
+): SplitImportResult {
+  const byRef = new Map<string, string>();
+  for (const c of creatives) {
+    byRef.set(c.id, c.id);
+    byRef.set(refKey(c.id), c.id);
+    if (c.url) byRef.set(refKey(c.url), c.id);
+    if (c.externalId) byRef.set(refKey(c.externalId), c.id);
+  }
+
+  const matchedByKey = new Map<string, MatchedMetricRow>();
+  const unassignedByKey = new Map<string, UnassignedMetricRow>();
+  let duplicates = 0;
+
+  for (const row of rows) {
+    const normalized = refKey(row.ref);
+    const creativeId = byRef.get(row.ref) ?? byRef.get(normalized);
+    if (creativeId) {
+      const dedupeKey = `${creativeId}:${row.capturedAt.toISOString()}`;
+      if (matchedByKey.has(dedupeKey)) duplicates += 1;
+      matchedByKey.set(dedupeKey, { ...row, creativeId });
+    } else {
+      if (unassignedByKey.has(normalized)) duplicates += 1;
+      unassignedByKey.set(normalized, {
+        ref: row.ref,
+        title: row.title,
+        postedAt: row.postedAt ? row.postedAt.toISOString().slice(0, 10) : null,
+        impressions: row.impressions,
+      });
+    }
+  }
+
+  return {
+    matched: Array.from(matchedByKey.values()),
+    unassigned: Array.from(unassignedByKey.values()),
+    duplicates,
+  };
 }

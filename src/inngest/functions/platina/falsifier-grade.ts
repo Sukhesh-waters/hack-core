@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { getWorkspaceConfig } from "@/db/queries/platina";
 import {
@@ -162,7 +163,10 @@ async function gradeOnePage(
  */
 export const platinaFalsifierGradeSweep = inngest.createFunction(
   { id: "platina-falsifier-grade-sweep", triggers: [{ cron: "0 5 * * *" }] },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-falsifier-grade-sweep", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const workspaceIds = await step.run("list-workspaces", () => listAllWorkspaceIds());
     const now = Date.now();
     if (workspaceIds.length > 0) {

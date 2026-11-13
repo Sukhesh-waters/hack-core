@@ -27,6 +27,7 @@ export type ConnectedPostMetrics = {
   externalId: string;
   permalink: string | null;
   postedAt: Date | null;
+  views?: number;
   reach?: number;
   likes?: number;
   comments?: number;
@@ -34,7 +35,10 @@ export type ConnectedPostMetrics = {
   shares?: number;
 };
 
-export type GraphFetch = (url: string) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+export type GraphFetch = (
+  url: string,
+  init?: { headers?: Record<string, string> },
+) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
 
 export async function listMetricConnections(workspaceId: string): Promise<MetricConnection[]> {
   return db
@@ -65,9 +69,10 @@ export async function readInstagramPostMetrics(
   fetchImpl: GraphFetch,
   limit = 50,
 ): Promise<ConnectedPostMetrics[]> {
-  const token = encodeURIComponent(accessToken);
+  const auth = { headers: { authorization: `Bearer ${accessToken}` } };
   const listing = await fetchImpl(
-    `${GRAPH_BASE}/${igUserId}/media?fields=id,permalink,timestamp,like_count,comments_count&limit=${limit}&access_token=${token}`,
+    `${GRAPH_BASE}/${igUserId}/media?fields=id,permalink,timestamp,like_count,comments_count&limit=${limit}`,
+    auth,
   );
   if (!listing.ok) throw new Error(`Instagram media listing failed (${listing.status})`);
   const media = ((await listing.json()) as { data?: MediaItem[] }).data ?? [];
@@ -83,10 +88,11 @@ export async function readInstagramPostMetrics(
       comments: item.comments_count,
     };
     try {
-      const res = await fetchImpl(`${GRAPH_BASE}/${item.id}/insights?metric=reach,saved,shares&access_token=${token}`);
+      const res = await fetchImpl(`${GRAPH_BASE}/${item.id}/insights?metric=views,reach,saved,shares`, auth);
       if (res.ok) {
         const data = ((await res.json()) as { data?: { name: string; values?: { value?: number }[] }[] }).data ?? [];
         const metric = (name: string) => data.find((m) => m.name === name)?.values?.[0]?.value;
+        row.views = metric("views");
         row.reach = metric("reach");
         row.saves = metric("saved");
         row.shares = metric("shares");
@@ -103,7 +109,7 @@ export async function readInstagramPostMetrics(
 export async function readConnectionPostMetrics(
   workspaceId: string,
   connectionId: string,
-  fetchImpl: GraphFetch = (url) => fetch(url, { signal: AbortSignal.timeout(20_000) }),
+  fetchImpl: GraphFetch = (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(20_000) }),
 ): Promise<ConnectedPostMetrics[]> {
   const [row] = await db
     .select({ igUserId: connectedAccounts.igUserId, token: connectedAccounts.accessTokenEnc, provider: connectedAccounts.provider })

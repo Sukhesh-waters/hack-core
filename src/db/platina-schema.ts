@@ -948,6 +948,12 @@ export type PlatinaRunConfigSnapshot = {
    * workspace daily cap (scripts/platina-force.ts). Absent on every other run.
    */
   seedPages?: number;
+  /**
+   * WTR-0 B1: script path when a run was started from `scripts/` rather than
+   * the product UI, so study measure L2 can separate person-driven runs from
+   * operator scripts.
+   */
+  operator?: string;
 };
 
 export const platinaAuditRuns = pgTable(
@@ -1235,6 +1241,15 @@ export type PlanOrigin = {
   label: string;
   /** Days from today to a fixed date the plan must land on (events). */
   anchorDay?: number;
+  /**
+   * WTR-0 C1: what prompted a revision — new checked signals, cited evidence
+   * proved wrong, or a person's choice when freshness was "current".
+   */
+  trigger?: {
+    level: "current" | "review" | "replan";
+    newSignals: number;
+    refuted: number;
+  };
 };
 
 export type PlanDoc = {

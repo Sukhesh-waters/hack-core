@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000",
     "dev:all": "node scripts/dev-all.mjs",
-    "dev:jobs": "npx inngest-cli@latest dev -u http://localhost:3000/api/inngest",
+    "start:all": "node scripts/dev-all.mjs --prod",
+    "dev:jobs": "npx inngest-cli@1.51.0 dev -u http://localhost:3000/api/inngest",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -26,7 +27,8 @@
     "platina:brain-snapshot": "npx tsx scripts/platina-brain-snapshot.ts",
     "platina:brain-undo": "npx tsx scripts/platina-brain-undo.ts",
     "platina:brain-replay": "npx tsx scripts/platina-brain-replay.ts",
-    "platina:brain-readiness": "npx tsx scripts/brain-readiness.ts"
+    "platina:brain-readiness": "npx tsx scripts/brain-readiness.ts",
+    "platina:plan-eval": "npx tsx scripts/platina-plan-eval.ts"
   },
   "dependencies": {
     "@anthropic-ai/bedrock-sdk": "^0.32.0",

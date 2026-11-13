@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import {
   getBrand,
   insertInterestSignals,
@@ -41,7 +42,10 @@ export const platinaInterestExtract = inngest.createFunction(
     concurrency: { key: "event.data.brandId", limit: 1 },
     debounce: { key: "event.data.brandId", period: "2m" },
   },
-  async ({ event, step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-interest-extract", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const data = (event?.data ?? {}) as { workspaceId?: string; brandId?: string };
     if (typeof data.workspaceId === "string" && typeof data.brandId === "string") {
       const extracted = await step.run(`extract-${data.brandId}`, () =>

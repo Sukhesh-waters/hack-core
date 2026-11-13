@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { MINUTE, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listSchedulableSpecs, listStaleQueuedRuns } from "@/db/queries/platina";
 import {
   isDue,
@@ -16,7 +17,10 @@ export const platinaScanCoordinator = inngest.createFunction(
     id: "platina-scan-coordinator",
     triggers: [{ cron: "*/5 * * * *" }],
   },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-scan-coordinator", eventName: event.name, runId, minGapMs: 4 * MINUTE })) {
+      return REPLAYED_TICK;
+    }
     const specs = await step.run("list-schedulable-specs", () =>
       listSchedulableSpecs(),
     );

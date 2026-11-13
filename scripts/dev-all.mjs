@@ -14,17 +14,18 @@ import { createInterface } from "node:readline";
 
 const port = process.env.PORT ?? "3000";
 const win = process.platform === "win32";
+const prod = process.argv.includes("--prod");
 
 // Deliberately not --turbo: Turbopack dev loads a second React copy into the
 // SSR chunk, so when an async server component resumes after suspending the
 // render dies on a null hook dispatcher inside Next's own ErrorBoundary. It
 // surfaces as a 500 with "Invalid hook call" and hides the page's real error.
 const services = [
-  { name: "app ", cmd: "npx", args: ["next", "dev", "-p", port] },
+  { name: "app ", cmd: "npx", args: ["next", prod ? "start" : "dev", "-p", port] },
   {
     name: "jobs",
     cmd: "npx",
-    args: ["inngest-cli@latest", "dev", "-u", `http://localhost:${port}/api/inngest`],
+    args: ["inngest-cli@1.51.0", "dev", "-u", `http://localhost:${port}/api/inngest`],
   },
 ];
 

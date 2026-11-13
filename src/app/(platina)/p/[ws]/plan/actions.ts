@@ -16,6 +16,7 @@ import { actionErrorMessage } from "@/lib/action-errors";
 import { runWithAiCost } from "@/lib/ai/usage-context";
 import { briefSchema } from "@/lib/platina/plan/brief";
 import { runPlanFlow } from "@/lib/platina/plan/flow";
+import { readPlanFreshness } from "@/lib/platina/plan/freshness-read";
 import { recordSubjectDecision } from "@/lib/platina/suggestions-record";
 import {
   briefFromClient,
@@ -178,6 +179,20 @@ export async function revisePlanAction(formData: FormData): Promise<void> {
     const anchor =
       left === undefined ? null : { label: parent.origin?.label ?? "the fixed date", day: left };
 
+    // WTR-0 C2: record what prompted the revision; fail open if the read fails.
+    const trigger = await readPlanFreshness({
+      workspaceId: ws,
+      brandId: parent.brandId,
+      createdAt: parent.createdAt,
+      evidenceIds: (parent.plan.evidence ?? []).map((e) => e.id),
+    })
+      .then((fresh) => ({
+        level: fresh.level,
+        newSignals: fresh.count,
+        refuted: fresh.verdicts.filter((v) => v.verdict === "refuted").length,
+      }))
+      .catch(() => undefined);
+
     const result = await runWithAiCost(
       { workspaceId: ws, purpose: "campaign-plan-revision" },
       () =>
@@ -191,6 +206,7 @@ export async function revisePlanAction(formData: FormData): Promise<void> {
             refId: parent.id,
             label: `Revised: ${parent.title}`,
             ...(anchor ? { anchorDay: anchor.day } : {}),
+            ...(trigger ? { trigger } : {}),
           },
           anchor,
           revision: {

@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { campaignsQuery } from "@/db/queries/platina";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 
@@ -12,7 +13,10 @@ export const platinaEventWindow = inngest.createFunction(
     id: "platina-event-window",
     triggers: [{ cron: "0 6 * * *" }],
   },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-event-window", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const workspaceIds = await step.run("list-workspaces", () =>
       listAllWorkspaceIds(),
     );

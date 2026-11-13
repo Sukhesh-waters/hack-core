@@ -183,7 +183,7 @@ async function main() {
       specId,
       trigger: "event",
       idempotencyKey: `first-pass:${specId}`,
-      configSnapshot: snapshotRunConfig(config),
+      configSnapshot: { ...snapshotRunConfig(config), operator: "scripts/onboard-client.ts" },
     });
     if (runId) runs.push(runId);
     console.log(`  spec ${spec.name} → run ${runId ?? "(duplicate)"}`);

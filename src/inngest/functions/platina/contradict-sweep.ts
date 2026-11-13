@@ -19,6 +19,7 @@ import {
   objectionRate,
 } from "@/lib/platina/objection-rate";
 import { broadcastPlatinaSignal } from "@/lib/platina/realtime-server";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 
 /**
  * Contradiction sweep — the dispatcher. Triggered by a new signal batch (event
@@ -40,7 +41,10 @@ export const platinaContradictSweep = inngest.createFunction(
       { event: "platina/contradict.requested" },
     ],
   },
-  async ({ event, step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-contradict-sweep", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const data = (event as { data?: Record<string, unknown> } | undefined)?.data;
     const requestedWorkspace =
       typeof data?.workspaceId === "string" ? data.workspaceId : null;

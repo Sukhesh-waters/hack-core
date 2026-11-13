@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { listApprovedBrandSources } from "@/db/queries/platina";
 import { runBrandExtraction } from "@/lib/platina/brand-extract";
@@ -17,7 +18,10 @@ export const platinaBrandRefresh = inngest.createFunction(
     id: "platina-brand-refresh",
     triggers: [{ cron: "0 3 * * *" }],
   },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-brand-refresh", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const workspaceIds = await step.run("list-workspaces", () =>
       listAllWorkspaceIds(),
     );

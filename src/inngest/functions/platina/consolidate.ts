@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { runConsolidation } from "@/lib/platina/learning-engine";
 
@@ -11,7 +12,10 @@ import { runConsolidation } from "@/lib/platina/learning-engine";
  */
 export const platinaConsolidate = inngest.createFunction(
   { id: "platina-consolidate", triggers: [{ cron: "0 2 1 * *" }], concurrency: { limit: 1 } },
-  async ({ step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-consolidate", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const workspaceIds = await step.run("list-workspaces", () => listAllWorkspaceIds());
     const done: { workspaceId: string; applied: boolean; merged: number; retired: number }[] = [];
     for (const ws of workspaceIds) {

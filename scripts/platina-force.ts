@@ -144,7 +144,11 @@ async function main() {
       specId: item.specId,
       trigger: "manual",
       idempotencyKey: `seed:${today}:${item.specId}${retry ? ":retry" : ""}`,
-      configSnapshot: { ...snapshotRunConfig(config), seedPages: item.seedPages },
+      configSnapshot: {
+        ...snapshotRunConfig(config),
+        seedPages: item.seedPages,
+        operator: "scripts/platina-force.ts",
+      },
     });
     if (runId) runs.push({ runId, name: item.name });
     else console.log(`  = ${item.name}: already force-run today${retry ? " (and retried)" : " (--retry allows one more)"}`);

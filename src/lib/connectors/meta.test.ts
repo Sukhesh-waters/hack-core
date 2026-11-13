@@ -51,6 +51,10 @@ describe("pullMetaMedia", () => {
       shares: 10,
     });
     expect(String(fetchMock.mock.calls[0][0])).toContain("graph.facebook.com");
+    expect(String(fetchMock.mock.calls[0][0])).not.toContain("access_token=");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      headers: { authorization: "Bearer token" },
+    });
   });
 
   it("keeps the row without reach when insights fail — unscored, not fabricated", async () => {

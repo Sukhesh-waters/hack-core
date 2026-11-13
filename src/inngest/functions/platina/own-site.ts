@@ -1,4 +1,5 @@
 import { inngest } from "@/inngest/client";
+import { BURST_WINDOW_MS, REPLAYED_TICK, isReplayedTick } from "@/lib/platina/cron-guard";
 import { listOwnSiteClients } from "@/db/queries/platina-learning";
 import { listAllWorkspaceIds } from "@/db/queries/workspaces";
 import { ownSiteDeps as deps } from "@/lib/platina/own-site-deps";
@@ -21,7 +22,10 @@ export const platinaOwnSite = inngest.createFunction(
     concurrency: { key: "event.data.brandId", limit: 1 },
     debounce: { key: "event.data.brandId", period: "1m" },
   },
-  async ({ event, step }) => {
+  async ({ event, runId, step }) => {
+    if (isReplayedTick({ jobId: "platina-own-site", eventName: event.name, runId, minGapMs: BURST_WINDOW_MS })) {
+      return REPLAYED_TICK;
+    }
     const data = (event?.data ?? {}) as { workspaceId?: string; brandId?: string; forceRemap?: boolean };
     const targets: { workspaceId: string; brandId: string }[] = [];
     if (typeof data.workspaceId === "string" && typeof data.brandId === "string") {

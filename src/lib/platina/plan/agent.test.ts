@@ -100,6 +100,27 @@ describe("generateCampaignPlan", () => {
     await expect(generateCampaignPlan(COLD)).rejects.toBeInstanceOf(PlanError);
   });
 
+  it("runs on the fast tier only when asked (plan test set)", async () => {
+    routeAIMock.mockResolvedValue(planJson());
+    await generateCampaignPlan(COLD, { tier: "fast" });
+    expect(routeAIMock.mock.calls.at(-1)?.[0]).toMatchObject({ tier: "fast" });
+  });
+
+  it("trims an overly verbose summary or phase message on a word boundary instead of rejecting the plan", async () => {
+    const longSummary = `${"Drive booth visits at the regional lab expo with targeted technical proof points ".repeat(5)}end.`;
+    expect(longSummary.length).toBeGreaterThan(300);
+    routeAIMock.mockResolvedValue(
+      JSON.stringify({
+        title: "Gulf Water Lab Expo campaign",
+        summary: longSummary,
+        phases: PHASES,
+      }),
+    );
+    const plan = await generateCampaignPlan(COLD);
+    expect(plan.doc.summary.length).toBeLessThanOrEqual(300);
+    expect(plan.doc.summary.endsWith("…")).toBe(true);
+  });
+
   it("rejects an out-of-schema phase (no phases at all)", async () => {
     routeAIMock.mockResolvedValue(planJson([]));
     await expect(generateCampaignPlan(COLD)).rejects.toBeInstanceOf(PlanError);
